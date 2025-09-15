@@ -69,6 +69,13 @@ button {
 	min-width: 60px;
 	min-height: 28px;
 	transition: background 0.2s;
+    /* はみ出し抑止のベース（JSの自動フィットと併用） */
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
 }
 button:hover {
 	background: #444;

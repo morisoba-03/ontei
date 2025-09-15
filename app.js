@@ -201,6 +201,153 @@ const PRACTICE_SCHED_AHEAD=0.6; // seconds ahead to schedule call notes
 let practiceScheduledSet=new Set(); // keys of scheduled plan items (idx)
 let practiceMutedUntil=0; // audio time until which call gain is held at 0 (for pause masking)
 
+// =============================
+// UI: ボタン文字の自動フィット
+// - 各ボタンのクライアント幅/高さに収まるようにフォントサイズを縮小
+// - リサイズやテキスト変更にも追従
+// =============================
+(function initAutoFitButtons(){
+    try{
+        const MIN_PX = 9; // 可読性を保つ下限
+        const MAX_ITER = 9; // 二分探索の繰り返し回数
+    const FIT_SELECTOR = 'button:not([data-no-autofit="true"])';
+        const buttons = Array.from(document.querySelectorAll(FIT_SELECTOR));
+
+        // 1. 初期スタイルの付与（オーバーフロー抑止）
+        for(const btn of buttons){
+            // 既存のUIデザインを崩さない範囲で安全に指定
+            btn.style.overflow = btn.style.overflow || 'hidden';
+            // 高さ固定系のボタンは改行で高さが増えると崩れるため nowrap 優先
+            if(!btn.style.whiteSpace) btn.style.whiteSpace = 'nowrap';
+            if(!btn.style.textOverflow) btn.style.textOverflow = 'ellipsis';
+            if(!btn.style.alignItems) btn.style.alignItems = 'center';
+            if(!btn.style.justifyContent) btn.style.justifyContent = 'center';
+            if(!btn.style.display){
+                // 既存CSSで inline-flex 指定済みの箇所が多いが、未指定時のフォールバック
+                btn.style.display = 'inline-flex';
+            }
+        }
+
+        function fits(btn){
+            // scrollWidth/Height が client を超えていなければ収まっている
+            // わずかな誤差バッファを設ける（サブピクセル繰り返しを避ける）
+            const EPS = 0.5;
+            return (btn.scrollWidth <= btn.clientWidth + EPS) && (btn.scrollHeight <= btn.clientHeight + EPS);
+        }
+
+        function fitOne(btn){
+            // 非表示（display:none 等）だと測れないためスキップ
+            const cs = getComputedStyle(btn);
+            if(cs.display === 'none' || btn.clientWidth === 0 || btn.clientHeight === 0){
+                return; // 次回のResizeで再試行
+            }
+            // 元のフォントサイズ（上限）を取得
+            const basePx = parseFloat(cs.fontSize) || 12;
+            const maxPx = basePx; // デザインの既定値を上限に
+            let low = MIN_PX, high = Math.max(MIN_PX, Math.min(64, maxPx));
+
+            // 一旦上限へリセット
+            btn.style.fontSize = high + 'px';
+            // すでに収まる場合は終了（できるだけ大きく）
+            if(fits(btn)) return;
+
+            // 二分探索で最大で収まるサイズを探す
+            let best = MIN_PX;
+            for(let i=0;i<MAX_ITER;i++){
+                const mid = Math.floor((low + high) / 2);
+                btn.style.fontSize = mid + 'px';
+                if(fits(btn)){
+                    best = mid;
+                    low = mid + 1; // さらに大きくできるか探る
+                } else {
+                    high = mid - 1; // 小さくする
+                }
+            }
+            btn.style.fontSize = Math.max(MIN_PX, Math.min(best, maxPx)) + 'px';
+        }
+
+        // 初回フィット
+        function fitAll(){
+            for(const btn of buttons){
+                fitOne(btn);
+            }
+        }
+        fitAll();
+
+        // 2. リサイズで再フィット（デバウンス）
+        let resizeTimer = 0;
+        window.addEventListener('resize', ()=>{
+            if(resizeTimer) cancelAnimationFrame(resizeTimer);
+            resizeTimer = requestAnimationFrame(()=>{
+                fitAll();
+                resizeTimer = 0;
+            });
+        }, { passive: true });
+
+        // 3. 各ボタンのサイズ変化監視（個別のレイアウト変化にも追従）
+        const ro = new ResizeObserver(entries => {
+            for(const entry of entries){
+                const btn = entry.target;
+                fitOne(btn);
+            }
+        });
+        for(const btn of buttons){ ro.observe(btn); }
+
+        // 4. ボタン配下のテキストや子DOMの変更を監視して再フィット
+        const mo = new MutationObserver(mutations => {
+            let need = false;
+            for(const m of mutations){
+                if(m.type === 'characterData' || m.type === 'childList'){
+                    need = true; break;
+                }
+            }
+            if(need){
+                // 変更が多発しても1フレームに集約
+                requestAnimationFrame(fitAll);
+            }
+        });
+        for(const btn of buttons){
+            mo.observe(btn, { subtree: true, characterData: true, childList: true });
+        }
+
+        // 5. 遅延で追加されるボタンにも対応（最小限の処理）
+        const addMo = new MutationObserver(muts => {
+            let added = [];
+            for(const m of muts){
+                m.addedNodes && m.addedNodes.forEach(node => {
+                    if(node.nodeType === 1){ // ELEMENT_NODE
+                        if(node.matches && node.matches(FIT_SELECTOR)){
+                            added.push(node);
+                        }
+                        // 子孫も検索
+                        const found = node.querySelectorAll ? node.querySelectorAll(FIT_SELECTOR) : [];
+                        if(found && found.length){ added.push(...found); }
+                    }
+                });
+            }
+            if(added.length){
+                for(const btn of added){
+                    // 初期スタイル
+                    btn.style.overflow = btn.style.overflow || 'hidden';
+                    if(!btn.style.whiteSpace) btn.style.whiteSpace = 'nowrap';
+                    if(!btn.style.textOverflow) btn.style.textOverflow = 'ellipsis';
+                    if(!btn.style.alignItems) btn.style.alignItems = 'center';
+                    if(!btn.style.justifyContent) btn.style.justifyContent = 'center';
+                    if(!btn.style.display) btn.style.display = 'inline-flex';
+                    // 監視とフィット
+                    ro.observe(btn);
+                    mo.observe(btn, { subtree: true, characterData: true, childList: true });
+                    fitOne(btn);
+                    buttons.push(btn);
+                }
+            }
+        });
+        addMo.observe(document.body, { childList: true, subtree: true });
+    }catch(e){
+        console.warn('AutoFitButtons init error', e);
+    }
+})();
+
 function parseNoteNameToMidi(s){
     try{
         if(typeof s==='number') return Math.max(0,Math.min(127, s|0));
