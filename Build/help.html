@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ヘルプ - 音程練習</title>
+<link rel="stylesheet" href="styles.css"></head>
+<body><main style="padding:16px;max-width:900px;margin:auto">
+<h1>ヘルプ</h1>
+<p>本アプリはブラウザだけで動く音程練習ツールです。ガイド（メロディ）に合わせて歌い、マイクの音程をリアルタイムに可視化・採点します。</p>
+<h2>起動・ファイル</h2>
+<ul>
+<li>対応拡張子：<b>.mid/.midi/.musicxml/.xml</b>（<b>.mxl は次版</b>）。</li>
+<li>file:// でも動作しますが、<b>マイクはブラウザ制約で https または http://localhost が必要</b>です。README を参照。</li>
+</ul>
+<h2>主な設定</h2>
+<ul>
+<li><b>A4 基準</b>：音名/セント算出の基準周波数。</li>
+<li><b>音程の許容範囲（±セント）</b>：採点・ガイド帯の幅。</li>
+<li><b>解析レート</b>：高いほど滑らかですが CPU 負荷増。</li>
+<li><b>ゲート（dBFS）</b>：この閾値以下の音は無視。</li>
+<li><b>縦ズーム/オフセット/ラベル倍率</b>：チャートの見た目調整。</li>
+<li><b>移調（半音）</b>：表示・再生・判定すべてに適用。</li>
+<li><b>テンポ倍率</b>：0.8～1.2x。メトロノームも追従。</li>
+<li><b>オクターブ合わせ</b>：±12 半音の誤認を緩和。</li>
+<li><b>鍵盤ハイライト対象</b>：ガイド/マイクどちらを強調。</li>
+</ul>
+<h2>採点ロジック概要</h2>
+<ol>
+<li>各フレームの推定ピッチをセントに換算（A4 基準・移調・オクターブ補正を反映）。</li>
+<li>メロディのガイドと比較。許容帯内で +1、±50c 超は減点用に別カウント。</li>
+<li>時間加重平均で基本点を算出。ボーナス（センタリング・安定度）を加算、最大 100。</li>
+<li>終了時レポートに詳細統計（合致率、平均誤差、最大外れ、安定度指標）。</li>
+</ol>
+<h2>デバッグ</h2>
+<p>URL の末尾に <code>#debug</code> を付与するか、UI のトグルでデバッグを表示。ログ/計測/自己診断を確認できます。</p>
+</main></body></html>
