@@ -158,10 +158,10 @@
       <div class="transport-hint">停止ボタン: 1回=一時停止, 2回目=頭出し</div>
     </div>
     <div class="transport-right" style="margin-left:auto; display:flex; align-items:center; gap:12px; flex-wrap:wrap;">
-      <button id="clearDotsButton" type="button" title="記録済みの赤点をすべて削除" style="white-space:nowrap; font-size:12px; line-height:1; padding:4px 8px;">🗑 赤点削除</button>
+  <button id="clearDotsButton" type="button" title="記録済みの棒線をすべて削除" style="white-space:nowrap; font-size:12px; line-height:1; padding:4px 8px;">🗑 棒線削除</button>
       <div style="display:flex; align-items:center; gap:8px;">
         <span style="color:#fff;">メロディ再生</span>
-        <input id="guideVolumeSlider" type="range" min="0" max="1" value="0.8" step="0.01" style="width:120px;" title="メロディ音量" />
+  <input id="guideVolumeSlider" type="range" min="0" max="1" value="0.2" step="0.01" style="width:120px;" title="メロディ音量" />
       </div>
       <div style="display:flex; align-items:center; gap:8px;">
         <span style="color:#fff;">伴奏再生</span>
@@ -186,9 +186,9 @@
       <span id="toleranceValue">20</span>
       <div class="help-text">音程一致とみなす範囲。±20セントが標準。</div>
     </div>
-    <!-- 要望: 許容範囲 と A再生ボタン群の間に Bluetooth 遅延補正 UI を配置 -->
+    <!-- 遅延補正 UI -->
     <div class="control-group" id="btLatencyGroup">
-      <label>Bluetooth遅延補正</label><br/>
+      <label>遅延補正</label><br/>
       <label style="display:inline-flex;align-items:center;gap:6px;">
         <input id="btLatencyToggle" type="checkbox" /> 有効
       </label>
@@ -197,10 +197,10 @@
         <span id="btLatencyValue">100 ms</span>
       </div>
       <div style="display:flex;align-items:center;gap:10px;margin-top:6px;flex-wrap:wrap;">
-        <button id="btLatencyCalibBtn" type="button" title="4拍子のクリックに合わせて発声し、自動で遅延値を推定します">⚙ 遅延補正（自動）</button>
+        <button id="btLatencyCalibBtn" type="button" title="カウントダウン後、停止ボタンを押すまで一定間隔のノーツが流れます。ノーツに合わせて短く発声し、下の遅延補正スライダを動かしてタイミングを合わせてください。">🧭 遅延補正アシスト</button>
         <span id="btCalibStatus" style="font-size:12px;color:#ccc;">未測定</span>
       </div>
-      <div class="help-text">Bluetoothイヤホン等で発生する再生遅延を前倒し補正。値はお使いの環境に合わせて調整できます。</div>
+      <div class="help-text">イヤホン等で発生する再生遅延を前倒し補正します。アシストでは音程は無視し、音を拾ったタイミングだけで棒線を描画します。スライダ操作は即時反映されます。</div>
     </div>
     
     <div class="control-group">
@@ -264,6 +264,38 @@
       <label for="guideLineWidthSlider">ガイド線の太さ (px)</label><br />
       <input id="guideLineWidthSlider" type="range" min="1" max="10" value="4" />
       <div class="help-text">メロディガイド線の太さ。</div>
+    </div>
+    
+    <!-- 可視化補正パラメータ -->
+    <div class="control-group">
+      <label for="visTimeSnapMs">時間スナップ許容 (ms)</label><br />
+      <input id="visTimeSnapMs" type="range" min="60" max="260" step="10" value="180" />
+      <span id="visTimeSnapMsVal">180</span>
+      <div class="help-text">ガイドノート境界に時刻を吸着させる許容幅。速いフレーズで短切れを防ぎます。</div>
+    </div>
+    <div class="control-group">
+      <label for="visBridgeGapMs">ギャップ連結(一般) (ms)</label><br />
+      <input id="visBridgeGapMs" type="range" min="60" max="300" step="10" value="150" />
+      <span id="visBridgeGapMsVal">150</span>
+      <div class="help-text">検出が一瞬切れた場合に同一棒として繋ぐ最大ギャップ。</div>
+    </div>
+    <div class="control-group">
+      <label for="visBridgeGapInNoteMs">ギャップ連結(同一ノート内) (ms)</label><br />
+      <input id="visBridgeGapInNoteMs" type="range" min="120" max="500" step="10" value="300" />
+      <span id="visBridgeGapInNoteMsVal">300</span>
+      <div class="help-text">同一ガイドノート内に限り、より大きなギャップまで連結します。</div>
+    </div>
+    <div class="control-group">
+      <label for="visChangeTolSemi">分割しきい値 (半音)</label><br />
+      <input id="visChangeTolSemi" type="range" min="0.2" max="1.0" step="0.05" value="0.65" />
+      <span id="visChangeTolSemiVal">0.65</span>
+      <div class="help-text">棒を分割する音程変化のしきい値。大きいほど繋がりやすくなります。</div>
+    </div>
+    <div class="control-group">
+      <label for="visEdgePadMs">端の吸着 (ms)</label><br />
+      <input id="visEdgePadMs" type="range" min="0" max="300" step="10" value="160" />
+      <span id="visEdgePadMsVal">160</span>
+      <div class="help-text">棒線の端がガイド端に近い時に延長・吸着する許容幅。</div>
     </div>
     
     

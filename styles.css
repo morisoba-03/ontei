@@ -295,10 +295,51 @@ button:hover {
 
 /* Tablet 縦（ポートレート） */
 @media (max-width: 1024px) and (orientation: portrait) {
-	#top-bar { flex-direction: row; }
-	#transportBar { gap: 8px; }
+	#top-bar { 
+		flex-direction: row; 
+		background: #1f2228; 
+		border: 1px solid #444; 
+		border-radius: 6px; 
+		padding: 2px 6px; 
+		row-gap: 2px; 
+		column-gap: 4px; 
+		display: flex; 
+		flex-wrap: wrap; 
+		align-items: center; 
+		box-sizing: border-box;
+	}
+	#top-bar > * { flex: 0 1 auto !important; min-width: 0; gap: 4px !important; flex-wrap: nowrap !important; align-items: center !important; }
+	#mic-permission-bar { flex-wrap: nowrap !important; gap: 4px !important; }
+	#top-bar button { min-width: auto !important; margin: 0 2px !important; }
+	#melodyAudioLabel, #accompAudioLabel { white-space: nowrap !important; overflow: hidden !important; text-overflow: ellipsis !important; min-width: 0 !important; max-width: 28vw; }
+	#top-bar button, #top-bar select, #top-bar input[type="number"], #top-bar input[type="file"] + label {
+		min-height: 24px; height: 24px; padding: 1px 6px; font-size: 12px; line-height: 1;
+	}
+	#top-bar span { line-height: 1; font-size: 12px; margin: 0 2px; }
+	/* スクロールは不便との要望により廃止。必要行数だけ自然に折り返す（コンパクトなまま全機能可視）。*/
+	#top-bar { max-height: none; overflow: visible; }
+
+	/* 上段に必須ボタンを優先配置（:has は最新ブラウザで対応） */
+	#top-bar > div:has(#editModeToggle) { order: 1; }
+	#top-bar > div:has(#practiceModeOn),
+	#top-bar > div:has(#practiceModeOff) { order: 2; }
+	/* 音声選択（メロディ/伴奏）は必須なので先頭グループの後に配置 */
+	#top-bar > div:has(#melodyAudioSelectBtn) { order: 3; }
+	#top-bar > div:has(#accompAudioSelectBtn) { order: 4; }
+	/* 記録/読込は次点 */
+	#top-bar > div:has(#sessionSaveBtn),
+	#top-bar > div:has(#sessionLoadBtn) { order: 5; }
+	/* マイク許可とアドバイスは上位（3行内）に確実に入れる */
+	#top-bar > #mic-permission-bar { order: 6; }
+	#transportBar { gap: 6px; }
+	/* タイムラインとチャートは常に全幅 */
+	#timelineScrollBar { width: 100%; padding: 0 6px; box-sizing: border-box; margin: 2px 0 4px; }
+	#timelineScrollBar input[type="range"] { width: 100% !important; max-width: 100% !important; }
+	#chartCanvas { width: 100% !important; height: auto !important; max-width: 100%; }
+	#chartContainer { margin-top: 2px; }
 	/* マーカーは最小gapで左詰め */
-	.markers-grid { gap: 0; row-gap: 2px; justify-content: flex-start; }
+	.markers-grid { gap: 0; row-gap: 2px; justify-content: flex-start; display:flex; flex-wrap:wrap; }
+	.marker-pair { gap: 2px; }
 }
 
 /* Tablet 横（ランドスケープ） */

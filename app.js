@@ -1,7 +1,7 @@
 /* =====================================================================
  * app.js  最小安定クリーン版
  * ===================================================================== */
-window.onerror=(m,s,l,c,e)=>{ console.error('JSエラー',m,s,l,c,e); alert('JSエラー:'+m); };
+window.onerror=(m,s,l,c,e)=>{ console.error('JSエラー',m,s,l,c,e); /* ダイアログは出さない */ };
 // ---- State ----
 // 音声ベース運用: currentTracks は [0]=メロディ(単音化), [1]=伴奏(参考描画なし) の想定
 let currentMidi=null,currentTracks=[];let melodyTrackIndex=0,accompTrackIndexes=[];
@@ -12,6 +12,58 @@ let _keepAliveHiOsc=null,_keepAliveHiGain=null; // destination直結の微小信
 let _keepAliveConst=null,_keepAliveConstGain=null; // チェーン内の微小DC
 let audioActivated=false; // ユーザー操作でAudioContextを有効化したか
 let micStream=null,micSource=null,micAnalyser=null,micData=null,analysisTimer=null;
+let _micSilentFrames=0,_micReinitInFlight=false;
+let _initMicInFlight=false, _lastPromptAt=0;
+let _autoMicPromptDone=false; // ページ読み込み直後の自動プロンプトは一度だけ
+let _userExplicitMicInit=false; // ユーザーがボタンで明示的に許可要求したか
+let _firstInteractionArmed=false; // 初回操作フックが装着済みか
+let _insecureWarned=false; // 不安全コンテキスト警告の再表示抑止
+
+async function getMicPermissionState(){
+    try{
+        if(navigator.permissions && navigator.permissions.query){
+            const st = await navigator.permissions.query({name:'microphone'});
+            return st.state; // 'granted' | 'denied' | 'prompt'
+        }
+    }catch(_){ }
+    return null; // 不明（Safari等）
+}
+
+async function canInitMicWithoutPrompt(){
+    const st = await getMicPermissionState();
+    if(st==='granted') return true;
+    // Permissions API 未対応（null）の場合は、明示ボタン操作済みのみ許可
+    if(st===null && _userExplicitMicInit) return true;
+    return false;
+}
+// 初回操作で一度だけ自動的にマイク許可を促す（ユーザー操作必須ブラウザ向けフォールバック）
+function armFirstInteractionMicPrompt(){
+    try{
+        if(_firstInteractionArmed) return; _firstInteractionArmed=true;
+        const handler = async()=>{
+            try{ await initMic(true).catch(()=>{}); }finally{
+                try{ window.removeEventListener('pointerdown', handler, true); }catch(_){ }
+                try{ window.removeEventListener('keydown', handler, true); }catch(_){ }
+                try{ window.removeEventListener('touchstart', handler, true); }catch(_){ }
+            }
+        };
+        window.addEventListener('pointerdown', handler, {capture:true, once:true, passive:true});
+        window.addEventListener('keydown', handler, {capture:true, once:true});
+        window.addEventListener('touchstart', handler, {capture:true, once:true, passive:true});
+    }catch(_){ }
+}
+
+// 不安全コンテキスト(file:// など)では getUserMedia が使えないため、明示的に警告
+function warnIfInsecureContext(){
+    try{
+        const insecure = (location.protocol==='file:') || (!window.isSecureContext && location.protocol!=='https:');
+        if(!insecure || _insecureWarned) return;
+        _insecureWarned = true;
+        // 表示上の注意文やボタン無効化は行わない（ユーザー要望）。
+        // 開発者向けにコンソールへだけ情報を残す。
+        try{ console.warn('Insecure context detected (file:// or non-secure). Microphone may not work due to browser policy.'); }catch(_){ }
+    }catch(_){ }
+}
 let micHPF=null, micLPF=null; // マイク前段フィルタ（高域/低域ノイズを除去）
 let playbackStartTime=0,playbackStartPos=0,playbackPosition=0,isPlaying=false,tempoFactor=1.0;
 let schedTimer=null; // RAFに加えた冗長スケジューラ
@@ -19,11 +71,26 @@ let toleranceCents=20,gateThreshold=-40,analysisRate=45,A4Frequency=442,octaveAl
 let verticalZoom=3,verticalOffset=0,pxPerSec=100,timelineOffsetSec=0,isPanning=false,panStartX=0,panStartOffset=0;
 let autoCenterFrozen=false; // ノーツ編集以降は自動センタリングを凍結
 let pitchHistory=[],markers={A:null,B:null,C:null,D:null,E:null,F:null,G:null},stopStage=0;
+// 可視化補正パラメータ（UIで変更可）
+let visTimeSnapMs = 180;           // ガイド時間スナップ許容（ms）
+let visBridgeGapMs = 150;          // 一般ギャップ連結（ms）
+let visBridgeGapInNoteMs = 300;    // 同一ノート内の最大ギャップ連結（ms）
+let visChangeTolSemi = 0.65;       // 分割しきい値（半音）
+let visEdgePadMs = 160;            // 端吸着の許容（ms）
 let guideLineWidth=4; // ガイド線太さ（スライダ反映）
 // Live pitch state
 let lastMicFreq=0,lastMicMidi=0; const pitchSmoothBuf=[]; const PITCH_SMOOTH_WINDOW=7;
+// ライブ用: 短遅延Viterbiで候補系列から最尤のf0を選ぶ（オクターブ跨ぎ安定化）
+const LIVE_VIT_LAG = 5;           // フレーム遅延（約0.1〜0.15s）
+const LIVE_VIT_MAX = 48;          // バッファ保持上限
+let liveVitFrames = [];           // [{cands:number[], costs:number[], time:number}]
 // 視覚化タイミング補正（検出・スムージング遅延を見越して左に寄せる秒数）
-const PITCH_TIME_OFFSET_SEC = 0.10; // 100ms 前倒し（必要に応じて調整）
+const PITCH_TIME_OFFSET_SEC = 0.10; // 基本の前倒し
+function getPitchVisOffsetSec(){
+    // 測定された出力遅延の一部を可視化にも反映（行き過ぎないよう上限）
+    const extra = btLatencyEnabled? Math.min(0.15, (btLatencySec||0)*0.6) : 0;
+    return PITCH_TIME_OFFSET_SEC + extra;
+}
 // 強制全域探索フラグ（固着判定では設定しない。外部イベントや境界条件で用いる想定）
 let _forceGlobalSearch=0;
 // 追加状態
@@ -39,7 +106,11 @@ let _pauseAdviceTimer = null; // 停止時のアドバイス遅延表示用
 // 音種×オクターブ統計
 let scoreDetailByOct = {}; // { [octaveString]: { [pc]: {in:0,out:0,count:0} } }
 // キャリブレーション表示用状態
-let isCalibrating=false; let _calibRAF=0; let calibPrevPos=0; let calibBasePos=0; let calibMoveStartPerf=0; let calibCountdownText=null;
+let isCalibrating=false; let _calibRAF=0; let calibPrevPos=0; let calibBasePos=0; let calibMoveStartPerf=0; let calibCountdownText=null; let _calibAbort=false;
+// 遅延補正アシスト用フラグ/ループ
+let isAssistMode=false; let _assistRAF=0; let _assistAbort=false;
+
+function isAssistActive(){ return !!isAssistMode; }
 let calibAnchorActive=false; let calibAnchorTime=0; let calibAnchorMidi=60;
 
 // MIDIアラインの仮ノーツ可視化用
@@ -285,10 +356,18 @@ let practiceMutedUntil=0; // audio time until which call gain is held at 0 (for 
         }, { passive: true });
 
         // 3. 各ボタンのサイズ変化監視（個別のレイアウト変化にも追従）
+        // ResizeObserver: 直接スタイル更新すると再レイアウトを同期誘発し得るため、rAFで遅延実行
+        let roPending=false; const roQueue=new Set();
         const ro = new ResizeObserver(entries => {
             for(const entry of entries){
                 const btn = entry.target;
-                fitOne(btn);
+                roQueue.add(btn);
+            }
+            if(!roPending){
+                roPending=true;
+                requestAnimationFrame(()=>{
+                    try{ roQueue.forEach(el=>fitOne(el)); }finally{ roQueue.clear(); roPending=false; }
+                });
             }
         });
         for(const btn of buttons){ ro.observe(btn); }
@@ -301,10 +380,7 @@ let practiceMutedUntil=0; // audio time until which call gain is held at 0 (for 
                     need = true; break;
                 }
             }
-            if(need){
-                // 変更が多発しても1フレームに集約
-                requestAnimationFrame(fitAll);
-            }
+            if(need){ requestAnimationFrame(fitAll); }
         });
         for(const btn of buttons){
             mo.observe(btn, { subtree: true, characterData: true, childList: true });
@@ -409,6 +485,12 @@ function parseFromTo(){
 function startBasicPractice(){
     if(isPracticing) return;
     ensureAudio();
+    // 採点開始: 練習モードでも統計をリセットし、集計を有効化
+    try{
+        scoreSessionId++;
+        scoreStats = { total:0, bins: Array.from({length:12},()=>({count:0,sum:0,sumAbs:0,inTol:0,outTol:0,sharp:0,flat:0})) };
+        scoreDetailByOct = {};
+    }catch(_){ scoreStats=null; scoreDetailByOct={}; }
     const bpm = Math.max(40, Math.min(200, parseInt(practiceBpmEl?.value||practiceTempoBpm)));
     practiceTempoBpm=bpm; const beatSec = 60 / bpm; const noteDur = beatSec;
     const rootMidi = parseNoteNameToMidi(practiceRootSel?.value||'C5');
@@ -1041,9 +1123,27 @@ function activateAudioOnce(){
 }
 
 // マイク入力の初期化（解析チェーンのみ。スピーカへは出さない）
-async function initMic(){
+async function initMic(allowPrompt=false){
     ensureAudio();
     try{
+        if(_initMicInFlight) return false;
+        _initMicInFlight = true;
+        // 権限状態によりサイレント初期化を判定。明示クリック時は常に getUserMedia を実行し、
+        // ブラウザ標準の権限プロンプトを許す（クールダウンでブロックしない）。
+        let state = await getMicPermissionState();
+        const nowMs = (performance.now? performance.now(): Date.now());
+        if(!allowPrompt){
+            const canProceedSilently = (state==='granted') || (state===null && _userExplicitMicInit);
+            if(!canProceedSilently){
+                // 自動/サイレント呼び出しではプロンプトを出さない
+                return false;
+            }
+        } else {
+            // 明示操作時はプロンプト許可（連打対策として時刻だけ記録）
+            _lastPromptAt = nowMs;
+        }
+        // 念のため AudioContext を再開（ユーザー操作由来の呼び出しで成功しやすい）
+        try{ if(audioCtx && audioCtx.state==='suspended'){ await audioCtx.resume().catch(()=>{}); } }catch(_){ }
         if(!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia){ throw new Error('getUserMedia not available'); }
         // 既存の停止
         try{ if(micStream){ micStream.getTracks().forEach(t=>t.stop()); } }catch(_){ }
@@ -1052,10 +1152,16 @@ async function initMic(){
         micSource = audioCtx.createMediaStreamSource(stream);
         // 前段フィルタ
         micHPF = audioCtx.createBiquadFilter(); micHPF.type='highpass'; micHPF.frequency.setValueAtTime(70, audioCtx.currentTime);
-        micLPF = audioCtx.createBiquadFilter(); micLPF.type='lowpass'; micLPF.frequency.setValueAtTime(3000, audioCtx.currentTime);
+        micLPF = audioCtx.createBiquadFilter(); micLPF.type='lowpass';
+        // 高域まで検出できるようにローパスを緩める（D8≈4699Hz を確実に通す）
+        try{
+            const sr = audioCtx.sampleRate || 48000;
+            const cutoff = Math.min(14000, Math.max(6000, sr * 0.45)); // 6k〜14kHzの範囲で自動設定
+            micLPF.frequency.setValueAtTime(cutoff, audioCtx.currentTime);
+        }catch(_){ micLPF.frequency.value = 8000; }
         // アナライザ
         micAnalyser = audioCtx.createAnalyser();
-        micAnalyser.fftSize = 1024; // 約45fps
+    micAnalyser.fftSize = 2048; // 分解能を上げ高音域の安定性を改善（約22fps）
         micAnalyser.smoothingTimeConstant = 0.0;
         micData = new Float32Array(micAnalyser.fftSize);
         // 配線: mic -> HPF -> LPF -> analyser （destination へは繋がない）
@@ -1063,8 +1169,12 @@ async function initMic(){
         micSource.connect(micHPF); micHPF.connect(micLPF); micLPF.connect(micAnalyser);
         // 解析タイマー
         if(!analysisTimer){ analysisTimer = setInterval(analyzePitch, 1000/analysisRate); }
+        // MIC ステータス表示
+        try{ setMicStatus('ON'); }catch(_){ }
+        try{ (micStream.getAudioTracks? micStream.getAudioTracks(): micStream.getTracks()).forEach(t=>{ if(t && !t._onteiBound){ t._onteiBound=true; t.onended = ()=>{ try{ setMicStatus('OFF'); }catch(_){} }; } }); }catch(_){ }
         return true;
-    }catch(e){ console.warn('initMic failed', e); throw e; }
+    }catch(e){ console.warn('initMic failed', e); try{ setMicStatus('OFF'); }catch(_){ } return false; }
+    finally{ _initMicInFlight = false; }
 }
 
 // 出力レイテンシ推定（端末依存）
@@ -1089,22 +1199,23 @@ async function runLatencyCalibration(){
         ensureAudio();
         // 既に初期化済みなら再要求しない（許可ダイアログを二度出さない）
         if(!micAnalyser){
-            await initMic().catch(()=>{});
+            await initMic(false).catch(()=>{});
         }
         // 再生中なら一時停止（計測の邪魔を避ける）
         if(isPlaying){ try{ pausePlayback(); }catch(_){ } }
-        // 表示用のゴーストノーツを8個生成（タイムライン上: 現在位置の少し右から開始）
+    // 表示用のゴーストノーツを4個生成（タイムライン上: 現在位置の少し右から開始）
         const startLeadSec = 0.0; // カウントダウン0時点で動かす
         const spacingSec = 0.9;   // ノーツ間隔を広げる
         const noteDurSec = 0.45;  // ノーツ長
-        const count = 8;
+    const count = 4;
         const baseMidi = 60; // C4 をデフォルト
         const startSong = (playbackPosition||0) + 0.8; // 画面上でより右側から開始
         const ghost=[]; const targetTimes=[];
         for(let i=0;i<count;i++){
             ghost.push({midi:baseMidi, time:startSong + i*spacingSec, duration:noteDurSec, role:'calib'});
         }
-        // カウントダウン前にゴーストを表示（静止）し、アンカーを設定してノーツ近傍にカウントを描く
+    // カウントダウン前にゴーストを表示（静止）し、アンカーを設定してノーツ近傍にカウントを描く
+    _calibAbort = false; // 中断フラグ初期化
         isCalibrating = true;
         midiGhostNotes = ghost; calibPrevPos = playbackPosition; calibBasePos = startSong;
         calibAnchorActive = true; calibAnchorTime = ghost[0].time; calibAnchorMidi = ghost[0].midi; drawChart();
@@ -1112,13 +1223,13 @@ async function runLatencyCalibration(){
     calibCountdownText='3'; drawChart(); setTimeout(()=>drawChart(), 0); if(btCalibStatus) btCalibStatus.textContent='準備… 3';
     await new Promise(r=>setTimeout(r,600)); calibCountdownText='2'; drawChart(); setTimeout(()=>drawChart(), 0); if(btCalibStatus) btCalibStatus.textContent='準備… 2';
     await new Promise(r=>setTimeout(r,600)); calibCountdownText='1'; drawChart(); setTimeout(()=>drawChart(), 0); if(btCalibStatus) btCalibStatus.textContent='準備… 1';
-        await new Promise(r=>setTimeout(r,500)); calibCountdownText=null; drawChart(); if(btCalibStatus) btCalibStatus.textContent='測定中…（表示された8つのノーツに合わせて発声）';
+    await new Promise(r=>setTimeout(r,500)); calibCountdownText=null; drawChart(); if(btCalibStatus) btCalibStatus.textContent='測定中…（表示された4つのノーツに合わせて発声）';
         // 簡易アニメーションループ（再生状態を使わずに timelineOffsetSec 相当を動かす）
         // カウントゼロ時点を基準に動かす（事前にstartPerfを設定しない）
         calibMoveStartPerf = performance.now()/1000;
         calibPrevPos = playbackPosition;
         const animate = ()=>{
-            if(!isCalibrating) return;
+            if(!isCalibrating || _calibAbort) return;
             try{
                 const nowP = performance.now()/1000;
                 const dt = Math.max(0, nowP - calibMoveStartPerf);
@@ -1130,28 +1241,43 @@ async function runLatencyCalibration(){
             }catch(_){ _calibRAF = requestAnimationFrame(animate); }
         };
         if(_calibRAF) cancelAnimationFrame(_calibRAF); _calibRAF = requestAnimationFrame(animate);
-        // ガイド音を実再生（AudioContext 時間）: カウントゼロから即時スケジュール
-        const t0 = (audioCtx?.currentTime||0) + startLeadSec + 0.02; // わずかに先に
-        for(let i=0;i<count;i++){
-            const when = t0 + i*spacingSec;
-            // Piano/Sfz で短音再生（内部で出力チェーンに接続）
-            try{ simplePlaySfz(baseMidi, when, noteDurSec, masterGain||audioCtx.destination); }catch(_){ }
-            targetTimes.push(when);
-        }
+        // 音は鳴らさない（可視ゴーストのみ）。開始時刻列を作成。
+        const t0 = (audioCtx?.currentTime||0) + startLeadSec + 0.02;
+        for(let i=0;i<count;i++){ const when = t0 + i*spacingSec; targetTimes.push(when); }
         const sr = audioCtx.sampleRate||48000; const win=2048; const tmp=new Float32Array(win);
         const onsetTimes=[];
-        const deadline = t0 + count*spacingSec + 1.2;
+        const deadline = t0 + count*spacingSec + 1.2; // AudioContext 時間ベース
+        const wallDeadline = (performance.now()/1000) + (count*spacingSec + 2.0); // 壁時計ベースの保険
         // ループして閾値超えを時刻化
         let lastDb=-120; const threshUp=8; // dB 上昇量で検出
-        while(audioCtx.currentTime < deadline){
+        while(true){
+            if(_calibAbort) break;
+            const nowCtx = (audioCtx?.currentTime)||0;
+            const nowPerf = performance.now()/1000;
+            if(nowCtx >= deadline || nowPerf >= wallDeadline) break;
             if(!micAnalyser){ await new Promise(r=>setTimeout(r,10)); continue; }
             micAnalyser.getFloatTimeDomainData(tmp);
             // 簡易RMS->dB
             let rms=0; for(let i=0;i<tmp.length;i++){ rms+=tmp[i]*tmp[i]; } rms=Math.sqrt(rms/tmp.length); const db=20*Math.log10(Math.max(1e-9,rms));
             // 上昇検出
-            if(db - lastDb > threshUp && db>-50){ onsetTimes.push(audioCtx.currentTime); }
+            if(db - lastDb > threshUp && db>-50){
+                // 解析フレームの中心遅延とポーリングジッタを控除してオンセットを前倒し補正
+                const srLoc = (audioCtx?.sampleRate)||48000;
+                const frameCenter = ((micAnalyser?.fftSize)||2048) / (2*srLoc); // 約21ms@48k
+                const pollJitter = 0.005; // 5ms 仮定
+                const onset = Math.max(0, audioCtx.currentTime - frameCenter - pollJitter);
+                onsetTimes.push(onset);
+            }
             lastDb = db*0.8 + lastDb*0.2; // 少しスムージング
             await new Promise(r=>setTimeout(r, 10));
+        }
+        if(_calibAbort){
+            // ユーザー中断: 後片付けして終了
+            try{ if(_calibRAF) cancelAnimationFrame(_calibRAF); }catch(_){ }
+            _calibRAF = 0; isCalibrating=false; calibAnchorActive=false; midiGhostNotes=null; drawChart();
+            if(btCalibStatus) btCalibStatus.textContent='測定は中断されました';
+            try{ seekTo(0); }catch(_){ playbackPosition=0; playbackStartPos=0; drawChart(); }
+            return;
         }
         // マッチング: それぞれ最も近い onset と対応付け
         const deltas=[];
@@ -1162,11 +1288,17 @@ async function runLatencyCalibration(){
     // ゴーストノーツとアニメーションの後始末
     isCalibrating=false; if(_calibRAF){ try{ cancelAnimationFrame(_calibRAF); }catch(_){ } _calibRAF=0; }
     calibAnchorActive=false;
-    midiGhostNotes = null; drawChart();
+    midiGhostNotes = null; drawChart(); // メロディ表示を復帰
         if(deltas.length>=4){
             // 外れ値除去の中央値
             deltas.sort((a,b)=>a-b); const med=deltas[Math.floor(deltas.length/2)];
-            const ms=Math.round(Math.max(0, Math.min(0.5, med))*1000);
+            // 入力側の系統遅延（解析窓中心＋ポーリング＋検出バイアス ~ 数ms）を控除し、出力遅延に近づける
+            const srLoc = (audioCtx?.sampleRate)||48000;
+            const frameCenter = ((micAnalyser?.fftSize)||2048) / (2*srLoc);
+            const detectBias = 0.015; // 閾値・包絡立上り等のバイアス推定(15ms)
+            const inputBiasSec = frameCenter + 0.005 + detectBias; // ≈ 21ms + 5ms + 15ms = ~41ms @48k
+            const medOut = Math.max(0, med - inputBiasSec);
+            const ms=Math.round(Math.max(0, Math.min(0.5, medOut))*1000);
             const oldMs = Math.round((btLatencySec||0)*1000);
             btLatencySec = ms/1000;
             btLatencyEnabled = true;
@@ -1175,15 +1307,103 @@ async function runLatencyCalibration(){
             if(btLatencyValue) btLatencyValue.textContent = `${ms} ms`;
             if(btCalibStatus) btCalibStatus.textContent = `測定結果: 約 ${ms} ms（自動適用）`;
             try{
-                alert(`自動遅延補正の結果\n\n検出ノーツ: ${deltas.length} 個\n推定遅延: 約 ${ms} ms\n適用: ${oldMs} ms → ${ms} ms\n\n（この遅延値を用いて再生スケジュールを前倒しします）`);
+                // 測定結果のダイアログを表示（ユーザー要望により復活）
+                setTimeout(()=>{ try{ alert(`自動遅延補正の結果を適用しました:\n\n推定出力遅延: 約 ${ms} ms\n(以前: ${oldMs} ms)`); }catch(_){ } }, 0);
             }catch(_){ }
+            // UI反映後に再描画（適用結果とメロディを表示）
+            drawChart();
         }else{
             if(btCalibStatus) btCalibStatus.textContent = '測定できませんでした。ノーツに合わせてもう一度お試しください。';
-            try{ alert('自動遅延補正に失敗しました\n\n十分な発声検出ができませんでした。ノーツに合わせてもう一度お試しください。'); }catch(_){ }
+            try{ setTimeout(()=>{ try{ alert('自動遅延補正: 測定できませんでした。\n\n周囲のノイズを減らし、ノーツに合わせて短く発声してください。'); }catch(_){ } }, 0); }catch(_){ }
+            // 失敗時もダイアログは出さない（UI上の表示に委ねる）
         }
         // キャリブレーション終了後は頭に戻る
         try{ seekTo(0); }catch(_){ playbackPosition=0; playbackStartPos=0; drawChart(); }
-    }catch(e){ console.warn('calibration failed',e); if(btCalibStatus) btCalibStatus.textContent='測定エラー'; }
+    }catch(e){
+        console.warn('calibration failed',e);
+        if(btCalibStatus) btCalibStatus.textContent='測定エラー';
+    } finally {
+        // どんな経路でもリソースを確実に解放し、表示を復帰
+        try{ if(_calibRAF) cancelAnimationFrame(_calibRAF); }catch(_){ }
+        _calibRAF = 0;
+        if(isCalibrating || midiGhostNotes){
+            isCalibrating=false; calibAnchorActive=false; midiGhostNotes=null;
+            drawChart();
+        }
+    }
+}
+
+// ---- 遅延補正アシスト（無限ループ） ----
+async function runLatencyAssist(){
+    try{
+        ensureAudio();
+        if(!micAnalyser){ await initMic(false).catch(()=>{}); }
+        if(isPlaying){ try{ pausePlayback(); }catch(_){ } }
+        // 既存のキャリブレーション表示変数を流用
+        _assistAbort = false; isAssistMode = true; isCalibrating = true; // カウントダウン表示のため calibrating フラグも使う
+        // ノーツ生成: 現在位置の少し右から開始し、一定間隔で流し続ける
+        const baseMidi = 60; // C4
+        const spacingSec = 0.8; // 一定間隔
+        const noteDurSec = 0.45;
+        const startSong = (playbackPosition||0) + 0.8;
+        midiGhostNotes = [];
+        calibPrevPos = playbackPosition; calibBasePos = startSong;
+        calibAnchorActive = true; calibAnchorTime = startSong; calibAnchorMidi = baseMidi;
+        // カウントダウン
+        calibCountdownText='3'; drawChart(); setTimeout(()=>drawChart(), 0); if(btCalibStatus) btCalibStatus.textContent='準備… 3';
+        await new Promise(r=>setTimeout(r,600)); calibCountdownText='2'; drawChart(); setTimeout(()=>drawChart(), 0); if(btCalibStatus) btCalibStatus.textContent='準備… 2';
+        await new Promise(r=>setTimeout(r,600)); calibCountdownText='1'; drawChart(); setTimeout(()=>drawChart(), 0); if(btCalibStatus) btCalibStatus.textContent='準備… 1';
+    await new Promise(r=>setTimeout(r,500)); calibCountdownText=null; drawChart(); if(btCalibStatus) btCalibStatus.textContent='アシスト中… 停止ボタンで終了できます';
+    // 遅延補正を有効化（即時反映用）
+    btLatencyEnabled = true; if(btLatencyToggle){ btLatencyToggle.checked = true; }
+    if(btLatencySlider){ btLatencySlider.disabled = false; }
+    // 以降は記録を許可するため calibrating は解除
+    isCalibrating = false;
+    // 解析タイマーを起動
+    if(!analysisTimer){ analysisTimer = setInterval(analyzePitch, 1000/analysisRate); }
+    // 既存の赤点履歴はクリア（調整を見やすく）
+    pitchHistory = []; scoreSessionId++;
+    // アニメーション開始
+        calibMoveStartPerf = performance.now()/1000; calibPrevPos = playbackPosition;
+        const animate = ()=>{
+            if(!isAssistMode || _assistAbort) return;
+            try{
+                const nowP = performance.now()/1000; const dt = Math.max(0, nowP - calibMoveStartPerf);
+                playbackPosition = calibPrevPos + dt; // 1x速度
+                // ゴーストノーツを必要分だけ補充
+                const tNow = playbackPosition;
+                const wantAhead = 8; // 先読みノーツ数
+                let lastTime = (midiGhostNotes.length? (midiGhostNotes[midiGhostNotes.length-1].time + midiGhostNotes[midiGhostNotes.length-1].duration) : startSong - spacingSec);
+                // 可視領域からだいぶ左の古いゴーストは間引く
+                const keepAfter = tNow - 5;
+                if(Array.isArray(midiGhostNotes) && midiGhostNotes.length){
+                    while(midiGhostNotes.length && (midiGhostNotes[0].time + midiGhostNotes[0].duration) < keepAfter){ midiGhostNotes.shift(); }
+                }
+                // 未来側を埋める
+                while(true){
+                    const futureCount = midiGhostNotes.filter(n=> n.time >= tNow - 0.1).length;
+                    if(futureCount >= wantAhead) break;
+                    const nextStart = (midiGhostNotes.length? (midiGhostNotes[midiGhostNotes.length-1].time + spacingSec) : (startSong));
+                    midiGhostNotes.push({midi:baseMidi, time: nextStart, duration: noteDurSec, role:'calib'});
+                }
+                drawChart();
+                _assistRAF = requestAnimationFrame(animate);
+            }catch(_){ _assistRAF = requestAnimationFrame(animate); }
+        };
+        if(_assistRAF) cancelAnimationFrame(_assistRAF); _assistRAF = requestAnimationFrame(animate);
+    }catch(e){
+        console.warn('assist start failed', e);
+        // 失敗時はクリーンアップ
+        try{ if(_assistRAF) cancelAnimationFrame(_assistRAF); }catch(_){ }
+        _assistRAF=0; isAssistMode=false; isCalibrating=false; calibAnchorActive=false; midiGhostNotes=null; drawChart();
+        if(btCalibStatus) btCalibStatus.textContent='アシスト開始に失敗しました';
+    }
+}
+
+function stopLatencyAssist(){
+    try{ _assistAbort = true; if(_assistRAF){ cancelAnimationFrame(_assistRAF); } }catch(_){ }
+    _assistRAF = 0; isAssistMode=false; isCalibrating=false; calibAnchorActive=false; midiGhostNotes=null; drawChart();
+    if(btCalibStatus) btCalibStatus.textContent='アシスト終了';
 }
 // 旧・下部固定バッジは廃止（index.htmlのコントロールに集約）
 
@@ -1867,7 +2087,10 @@ async function extractMelodyNotesFromBuffer(buf){
 
     currentTracks=[{name:'Melody', notes: finalNotes}];
     melodyTrackIndex=0; accompTrackIndexes=[]; melodyNotesExtracted=true;
+    // ノーツを全置換したため自動センタリングを再有効化して実行
+    autoCenterFrozen = false;
     autoCenterMelodyTrack();
+    drawChart();
     if(overlay){ overlay.classList.add('hidden'); }
 }
 
@@ -1898,7 +2121,7 @@ function ensureAtLeastOneTestTone(){
     }catch(e){ console.warn('Fallback tone failed',e); }
 }
 function midiToFreq(m){ return A4Frequency*Math.pow(2,(m-69)/12); }
-function seekTo(sec){ sec=Math.max(0,Math.min(sec,getSongDuration())); playbackPosition=sec; playbackStartPos=sec; if(isPlaying){ pausePlayback(); startPlayback(); } else drawChart(); }
+function seekTo(sec){ sec=Math.max(0,Math.min(sec,getSongDuration())); playbackPosition=sec; playbackStartPos=sec; scheduleAll(); if(isPlaying){ pausePlayback(); startPlayback(); } else drawChart(); }
 function seekRelative(d){ seekTo(playbackPosition+d); }
 function getSongDuration(){
     // NaN混入や未定義を無視して最終ノート時刻を堅牢に取得
@@ -1924,7 +2147,7 @@ function getSongDuration(){
 if(chartCanvas){ chartCanvas.onmousedown=e=>{ isPanning=true; panStartX=e.clientX; panStartOffset=timelineOffsetSec; }; }
 window.onmousemove=e=>{ if(isPanning){ const dx=e.clientX-panStartX; timelineOffsetSec=panStartOffset-dx/pxPerSec; drawChart(); }};
 window.onmouseup=()=>{ if(isPanning){ applyPanCommit(); isPanning=false; }};
-function applyPanCommit(){ if(timelineOffsetSec===0) return; playbackPosition+=timelineOffsetSec; if(playbackPosition<0) playbackPosition=0; timelineOffsetSec=0; if(isPlaying){ pausePlayback(); startPlayback(); } else drawChart(); }
+function applyPanCommit(){ if(timelineOffsetSec===0) return; playbackPosition+=timelineOffsetSec; if(playbackPosition<0) playbackPosition=0; playbackStartPos=playbackPosition; timelineOffsetSec=0; scheduleAll(); if(isPlaying){ pausePlayback(); startPlayback(); } else drawChart(); }
 // 水平スクロールバーの範囲更新
 function updateTimelineScrollRange(){
     if(!timelineScroll) return;
@@ -1959,6 +2182,15 @@ function analyzePitch(){
     const db=20*Math.log10(Math.max(1e-9,rms));
     if(micLevelBar){ const norm=Math.min(1,Math.max(0,(db+60)/60)); micLevelBar.style.width=(norm*100)+'%'; }
     if(micDbText){ micDbText.textContent=db.toFixed(1)+' dB'; }
+    // 入力が極端に小さい状態が続く場合は自己回復を試みる（デバイス切替/一時無効化対策）
+    try{
+        if(db < -55){ _micSilentFrames++; } else { _micSilentFrames=0; }
+        const thresholdFrames = Math.max(analysisRate*2, 60); // 約2秒
+        if(_micSilentFrames>thresholdFrames && !_micReinitInFlight){
+            _micReinitInFlight=true; _micSilentFrames=0;
+            setTimeout(async()=>{ try{ await initMic(false).catch(()=>{}); }finally{ _micReinitInFlight=false; } }, 0);
+        }
+    }catch(_){ }
     if(db<gateThreshold) { return; }
 
     const srLive = audioCtx? audioCtx.sampleRate: 44100;
@@ -1969,7 +2201,9 @@ function analyzePitch(){
     let mean=0; for(let i=0;i<W;i++) mean+=micData[i]; mean/=W; const frame=new Float32Array(W);
     for(let i=0;i<W;i++){ frame[i]=(micData[i]-mean)*hann[i]; }
     // 探索範囲（65..1200Hz 相当）。のちに lastMicFreq とガイドノートで緩くバイアス
-    const tauMin = Math.max(2, Math.floor(srLive/1200));
+    // 高音域（D8≈4.7kHz, E8≈5.2kHz）まで拾えるように上限fmaxLiveを拡張
+    const fmaxLive = 6000; // Hz（端末SR48kで Nyquist=24k の十分内側）
+    const tauMin = Math.max(2, Math.floor(srLive/Math.min(fmaxLive, srLive*0.49)));
     const tauMax = Math.max(tauMin+2, Math.min(Math.floor(srLive/65), Math.floor(W*0.9)));
     // 連続性制約（±2半音）
     // 連続性制約: 基本は±6半音だが、相関が弱いフレームではさらに広げ、強いときは少し狭める
@@ -1985,7 +2219,8 @@ function analyzePitch(){
     // （注意）探索範囲の過度な狭窄はハンチングの原因 → 緩やかな連続性のみ適用
     // NACF 最大探索（粗→微）
     let bestTau=-1, bestR=-1;
-    const coarseStep=2;
+    // 小tau帯（高周波）では刻みを細かくし、取りこぼしを防ぐ
+    const coarseStep = (localTauMin <= 32 ? 1 : 2);
     // ユーティリティ: 指定範囲で粗探索
     function coarseSearch(tMin, tMax){
         let bTau=-1, bR=-1;
@@ -2037,7 +2272,7 @@ function analyzePitch(){
     let freq=(bestR>=NACF_THRESH && estTau>0)? (srLive/estTau) : 0;
     // 全域探索モードでのSHS粗サーチ（固着検出では起動しない）
     function shsReacquire(frameArr, sr){
-        const fMin=70, fMax=1200; const bins=96; let bestF=0, bestS=0; const scores=new Float32Array(bins);
+    const fMin=80, fMax=fmaxLive; const bins=128; let bestF=0, bestS=0; const scores=new Float32Array(bins);
         for(let i=0;i<bins;i++){
             const r=i/(bins-1); const f = fMin * Math.pow(fMax/fMin, r);
             const s = shsScore(frameArr, sr, f, 5);
@@ -2055,13 +2290,69 @@ function analyzePitch(){
     }
     function shsScore(frameArr, sr, f0, K){ if(!(f0>0)) return 0; const kMax=Math.max(1, K|0); let sum=0, used=0; for(let k=1;k<=kMax;k++){ const fk=f0*k; if(fk>=sr*0.5) break; const p=goertzelPower(frameArr, sr, fk); sum += (p>0? Math.sqrt(p):0) * (1/k); used++; } return used? sum/used: 0; }
     let conf=0.0;
+    // --- ライブViterbi候補系列の更新（freq確定の前段で行う） ---
+    // cFreqs, cCosts はこの上のブロックで構築される（無声音も含む）
+    // ここでは現フレームの候補数を過度に増やさないため、コストの低い上位のみ採用
+    try{
+        if(Array.isArray(cFreqs) && Array.isArray(cCosts) && cFreqs.length===cCosts.length){
+            const idx = Array.from({length:cFreqs.length}, (_,i)=>i).sort((a,b)=> cCosts[a]-cCosts[b]);
+            const keep = Math.min(5, idx.length);
+            const selCands = new Array(keep);
+            const selCosts = new Array(keep);
+            for(let ii=0; ii<keep; ii++){ selCands[ii]=cFreqs[idx[ii]]; selCosts[ii]=cCosts[idx[ii]]; }
+            liveVitFrames.push({ cands: selCands, costs: selCosts, time: playbackPosition });
+            if(liveVitFrames.length > LIVE_VIT_MAX) liveVitFrames.shift();
+            // 短遅延Viterbiで安定な周波数を選ぶ
+            const vit = (function runLiveViterbi(frames, lag){
+                try{
+                    const N = frames.length; if(N===0) return null;
+                    const outIndex = N - 1 - Math.max(0, lag|0);
+                    if(outIndex < 0) return null; // まだ遅延分が溜まっていない
+                    // DP配列
+                    const dp = frames.map(f => new Array(f.cands.length).fill(Infinity));
+                    const pv = frames.map(f => new Array(f.cands.length).fill(-1));
+                    // 初期化
+                    const f0 = frames[0]; for(let j=0;j<f0.cands.length;j++){ dp[0][j] = f0.costs[j]; }
+                    const beta = 0.10; const octPenalty = 1.25;
+                    for(let i=1;i<N;i++){
+                        const fi = frames[i]; const fi_1 = frames[i-1];
+                        for(let j=0;j<fi.cands.length;j++){
+                            const f2 = fi.cands[j]; const lc = fi.costs[j];
+                            let best=Infinity, bestk=-1;
+                            for(let k=0;k<fi_1.cands.length;k++){
+                                const f1 = fi_1.cands[k];
+                                let trans=0;
+                                if(f1===0 || f2===0){ trans = 0.26; }
+                                else {
+                                    const dSemi = Math.abs(12*Math.log2(f2/f1));
+                                    const nearOct = Math.min(Math.abs(dSemi-12), Math.abs(dSemi-24));
+                                    trans = beta*dSemi + (nearOct<0.7? octPenalty: 0);
+                                    if(dSemi<=3) trans -= 0.04; else if(dSemi<12) trans += 0.03;
+                                }
+                                const cost = dp[i-1][k] + lc + trans;
+                                if(cost<best){ best=cost; bestk=k; }
+                            }
+                            dp[i][j]=best; pv[i][j]=bestk;
+                        }
+                    }
+                    // 末尾から最小コストのパスを復元
+                    let lastJ=0; { let minv=Infinity; const last=dp[N-1]; for(let j=0;j<last.length;j++){ if(last[j]<minv){ minv=last[j]; lastJ=j; } } }
+                    const pathIdx = new Array(N).fill(0); pathIdx[N-1]=lastJ; for(let i=N-1;i>0;i--){ const k=pv[i][pathIdx[i]]; pathIdx[i-1] = (k>=0? k: 0); }
+                    const selJ = pathIdx[outIndex];
+                    return { idx: outIndex, freq: frames[outIndex].cands[selJ], time: frames[outIndex].time };
+                }catch(_){ return null; }
+            })(liveVitFrames, LIVE_VIT_LAG);
+            if(vit && vit.freq>0){ freq = vit.freq; var __vitTimeOverride = vit.time; }
+        }
+    }catch(_){ }
+
     if(freq>0){
         const base = freq; const half=base*0.5; const dbl=base*2;
         const sBase = shsScore(frame, srLive, base, 5);
         const sHalf = shsScore(frame, srLive, half, 5);
         const sDbl  = shsScore(frame, srLive, Math.min(dbl, srLive*0.49), 5);
     // 下オクターブ（f/2）に流れにくくし、上オクターブ（2f）は近接時に取りやすくする重み付け
-    const wHalf=0.88, wBase=1.00, wDbl=1.08;
+    let wHalf=0.88, wBase=1.00, wDbl=1.12;
         // 直近のトレンドで弱いバイアス（上昇→高い候補に+、下降→低い候補に+）。過剰にしない
         let trend=0; try{
             if(pitchSmoothBuf.length>=4){
@@ -2086,6 +2377,11 @@ function analyzePitch(){
         const mHalf = 69+12*Math.log2(Math.max(1e-9,half)/A4Frequency);
         const mBase = 69+12*Math.log2(Math.max(1e-9,base)/A4Frequency);
         const mDbl  = 69+12*Math.log2(Math.max(1e-9,dbl)/A4Frequency);
+        // 高音域では下オクターブ（f/2）への誤判定を強めに抑制し、2f をわずかに優遇
+        if(mBase>=80){ // だいたい G#5 以上
+            wHalf *= 0.85; // より下を取りにくく
+            wDbl  *= 1.05;
+        }
 
         let rHalf = sHalf * wHalf * (trend<0? 1.04:1.00) * contMul(mHalf); // 下降傾向では半分側を微優遇
         let rBase = sBase * wBase * contMul(mBase);
@@ -2160,11 +2456,40 @@ function analyzePitch(){
         let dCentsForDot = null; // ガイドに対するセント偏差（±600c折畳み）
         let pcForDot = null;     // ピッチクラス 0..11（C=0）
         try{
+            // ガイドノートの取得: 1) メロディトラック 2) 練習モードのゴーストノート
+            let nn=null;
             const tr=currentTracks[melodyTrackIndex];
+            const t = ((typeof __vitTimeOverride==='number')? __vitTimeOverride: playbackPosition) - getPitchVisOffsetSec(); // 記録・保存に用いる時刻
+            const T_TOL = 0.12; // 120ms 以内は同一ノートとして扱う（可視化の“合っている扱い”）
             if(tr && tr.notes && tr.notes.length){
-                const t = playbackPosition - PITCH_TIME_OFFSET_SEC; // 記録・保存に用いる時刻と一致させる
-                const nn = tr.notes.find(n=> t>=n.time && t<=n.time+n.duration) || tr.notes.find(n=> n.time>t) || tr.notes[tr.notes.length-1];
-                if(nn){
+                // まずは通常の包含検索
+                nn = tr.notes.find(n=> t>=n.time && t<=n.time+n.duration);
+                if(!nn){
+                    // 前後の最近傍を取得し、時間誤差が閾値内なら最寄りを採用
+                    let prev=null, next=null;
+                    for(const n of tr.notes){ if(n.time<=t) prev=n; if(n.time>t){ next=n; break; } }
+                    let best=null, bd=1e9;
+                    if(prev){ const d=Math.min(Math.abs(t-prev.time), Math.abs((prev.time+prev.duration)-t)); if(d<bd){ bd=d; best=prev; } }
+                    if(next){ const d=Math.min(Math.abs(t-next.time), Math.abs((next.time+next.duration)-t)); if(d<bd){ bd=d; best=next; } }
+                    if(best && bd<=T_TOL) nn=best;
+                    // それでも見つからなければ最後のノートをフォールバック
+                    if(!nn) nn = next || tr.notes[tr.notes.length-1];
+                }
+            }
+            if(!nn && Array.isArray(midiGhostNotes) && midiGhostNotes.length){
+                // 近い時間のゴーストノートを採用（±durationの範囲優先、なければ最近傍、さらに120ms許容）
+                let best=null, bd=1e9;
+                for(const g of midiGhostNotes){
+                    const dCenter = Math.abs(t - (g.time + (g.duration||0)/2));
+                    const score = dCenter / Math.max(0.001, g.duration||0.4);
+                    if(score < bd){ bd=score; best=g; }
+                }
+                if(best){
+                    const dEdge = Math.min(Math.abs(t-best.time), Math.abs((best.time+(best.duration||0))-t));
+                    if(dEdge<=T_TOL || (t>=best.time && t<=best.time+(best.duration||0))) nn = { midi: best.midi, time: best.time, duration: best.duration };
+                }
+            }
+            if(nn){
                     // nn.midi を基準に ±2オクターブ候補から liveMidi に最も近いオクターブを選ぶ
                     let best=nn.midi, bestD=1e9;
                     for(let k=-2;k<=2;k++){
@@ -2180,7 +2505,7 @@ function analyzePitch(){
                     pcForDot = ((nn.midi%12)+12)%12;
                     // 統計を更新（採点中のみ）
                     try{
-                        if(isPlaying && scoreStats && Number.isFinite(centErr)){
+                        if((isPlaying || isPracticing) && scoreStats && Number.isFinite(centErr)){
                             const bin = scoreStats.bins[pcForDot];
                             bin.count++;
                             scoreStats.total++;
@@ -2193,12 +2518,11 @@ function analyzePitch(){
                             else if(centErr <= -bias) bin.flat++;
                         }
                     }catch(_){ }
-                }
             }
         }catch(_){ /* fall back to liveMidi */ }
         // 詳細統計（音種×オクターブ）更新
         try{
-            if(isPlaying && dCentsForDot!=null && pcForDot!=null){
+            if((isPlaying || isPracticing) && dCentsForDot!=null && pcForDot!=null){
                 const tol = toleranceCents||0; const ok = Math.abs(dCentsForDot) <= tol;
                 const mForOct = (typeof dispMidi==='number') ? dispMidi : (69 + 12*Math.log2(Math.max(1e-9,lastMicFreq)/A4Frequency));
                 const oct = Math.floor(mForOct/12) - 1; const key = String(oct);
@@ -2210,7 +2534,9 @@ function analyzePitch(){
         // 視覚化遅延補正: 少し過去側に時刻をずらして保存（スクロール位置でノーツと揃えやすく）
         // キャリブレーション中は赤点を残さない
         if(!isCalibrating){
-            pitchHistory.push({ time: playbackPosition - PITCH_TIME_OFFSET_SEC, freq: lastMicFreq, conf, dispMidi, dCents: dCentsForDot, pc: pcForDot, sid: scoreSessionId });
+            const vOff = getPitchVisOffsetSec();
+            const recTime = ((typeof __vitTimeOverride==='number')? __vitTimeOverride: playbackPosition) - vOff;
+            pitchHistory.push({ time: recTime, visOff: vOff, freq: lastMicFreq, conf, dispMidi, dCents: dCentsForDot, pc: pcForDot, sid: scoreSessionId });
             if(pitchHistory.length>2000) pitchHistory.shift();
         }
     }
@@ -2253,7 +2579,8 @@ function drawChart(){
         ctx.stroke();
     }
     // メロディノート（ラインのみ、枠無し） + 選択ハイライト
-    if(currentTracks[melodyTrackIndex]){
+    // キャリブレーション中はメロディ表示を抑止（ゴーストのみ表示）
+    if(!isCalibrating && currentTracks[melodyTrackIndex]){
         ctx.lineWidth=guideLineWidth; ctx.strokeStyle='#4e8cff';
         const notes=currentTracks[melodyTrackIndex].notes;
     // 可視領域時間範囲（余白: 2秒）: x = playX + ((t-eff)*pxPerSec/tempoFactor) を反転
@@ -2333,32 +2660,84 @@ function drawChart(){
             if(gM!=null) guideMidiAtPlayhead = gM;
         }
     }catch(_){ }
-    // ピッチ履歴 (再生時のみ蓄積) を線ではなく点で描画
-    if(pitchHistory.length){
-        const radius = 2.0;
-        const MIN_DX_PX = 2;
-        const MIN_DX_SEC = 0.02;
-        let lastDrawX = -Infinity;
-        let lastDrawTime = -Infinity;
-        let lastDrawMidi = null;
+    // ピッチ履歴をDAM風: 連続トーン（音程が続く間）を一本の棒として描画
+    // アシスト中: 音程は無視し、音が鳴ったフレームの時刻をゴーストノーツに“合わせて”横棒を描画
+    if(isAssistActive()){
+        const LAG_MS = Math.round((getPitchVisOffsetSec())*1000);
+        const lag = LAG_MS/1000;
+        const effStart = eff - (playX/pxPerSec)*tempoFactor - 1;
+        const effEnd   = eff + ((w-playX)/pxPerSec)*tempoFactor + 1;
+    const drawUntil = (playbackPosition - lag);
+        // 対象フレームを抽出（信頼度/ゲートでフィルタ）
+    const pts = [];
+    const curOff = getPitchVisOffsetSec();
+        for(const p of pitchHistory){
+            const t = p.time + ((p.visOff!=null)? (p.visOff - curOff) : 0);
+            if(!(t>=effStart && t<=effEnd)) continue; if(t>drawUntil) continue;
+            if(typeof p.conf==='number' && p.conf < 0.3) continue; // 低信頼は無視
+            if(isCallAt(t)) continue; // コール音時はスキップ
+            // 音程は使わない
+            pts.push({t});
+        }
+        pts.sort((a,b)=>a.t-b.t);
+        // 近傍のゴーストノーツに吸着して横棒を引く
+        if(Array.isArray(midiGhostNotes) && midiGhostNotes.length){
+            // ガイドに対して一定の許容で割当
+            const TOL = 0.15; // 150ms 以内であればそのノートに合わせる
+            for(const p of pts){
+                let best=null, bd=1e9;
+                for(const g of midiGhostNotes){ const c=g.time+(g.duration||0)/2; const d=Math.abs(p.t - c); if(d<bd){ bd=d; best=g; } }
+                if(!best) continue;
+                // 端からの距離も見る
+                const dEdge = Math.min(Math.abs(p.t-best.time), Math.abs((best.time+(best.duration||0))-p.t));
+                if(Math.min(bd, dEdge) > TOL) continue;
+                // best のYに短い横棒を描画（棒の長さは一定）
+                const y = h - (best.midi - vmin + 1) * pxSemi;
+                const x1 = playX + ((p.t - 0.06 - eff) * pxPerSec / tempoFactor);
+                const x2 = playX + ((p.t + 0.06 - eff) * pxPerSec / tempoFactor);
+                if(x2<0 || x1>w) continue;
+                ctx.save();
+                ctx.lineWidth = 3;
+                ctx.strokeStyle = 'rgba(24,200,70,0.8)';
+                ctx.beginPath(); ctx.moveTo(x1,y); ctx.lineTo(x2,y); ctx.stroke();
+                ctx.restore();
+            }
+        }
+    }
+    // キャリブレーション中は非表示
+    else if(!isCalibrating && pitchHistory.length){
+    const LAG_MS = Math.round((getPitchVisOffsetSec())*1000); // 測定遅延も反映
+        // 補正なし: サンプル間の自然な連続のみ（解析レートから最小連結幅を算出）
+        const CHANGE_TOL_SEMI = 0.5;      // 基本の分割しきい値（半音）
+        const lag = LAG_MS/1000;
+        const bridgeGap = Math.max(0.001, (1/Math.max(1,(analysisRate||20))) * 1.5);
+        // 可視時間帯に合わせて履歴を抽出（少し余裕）
+        const visStart = eff - (playX/pxPerSec)*tempoFactor - 1;
+        const visEnd = eff + ((w-playX)/pxPerSec)*tempoFactor + 1;
+        // 遅延を加味した描画対象時間の上限
+        const drawUntil = (playbackPosition - lag);
+
+        // 1) 範囲内の点を抽出し、時間順に並べ、表示用MIDIとdCentsを整形
+        const pts = [];
+        // 補正なし: アウトライヤ除去は行わない（信頼度の下限のみ適用）
+        const WIN = 0;
         for(let i=0;i<pitchHistory.length;i++){
             const p = pitchHistory[i];
-            // 現セッションとは異なる履歴は描画のみ許容（集計は既に済み）
-            if(typeof p.conf==='number' && p.conf < 0.35) continue;
-            // 練習モードのコール中は赤点非表示
-            if(isCallAt(p.time)) continue;
-            const x = playX + ((p.time - eff) * pxPerSec / tempoFactor);
-            if(x < 0 || x > w) continue;
-            if((p.time - lastDrawTime) < MIN_DX_SEC) continue;
-            if(Math.abs(x - lastDrawX) < MIN_DX_PX) continue;
-            // 表示用MIDI（ガイド優先: トラック→ゴースト）
+            // 保存時の可視オフセット差分を現在値に合わせて再配置
+            const t = p.time + ((p.visOff!=null)? (p.visOff - curOff) : 0);
+            if(!(t>=visStart && t<=visEnd)) continue;
+            if(t > drawUntil) continue;   // 遅延より後はまだ描かない
+            if(typeof p.conf==='number' && p.conf < 0.3) continue; // 低信頼は無視
+            if(isCallAt(t)) continue;     // コール中は非表示
+            // 表示用MIDI（ガイド優先: トラック→ゴースト→生）
             let midi;
+            let dCents = (p.dCents!=null && Number.isFinite(p.dCents))? p.dCents : null;
             (function(){
                 try{
                     const tr=currentTracks[melodyTrackIndex];
                     if(tr&&tr.notes&&tr.notes.length){
-                        const t=p.time;
-                        const nn=tr.notes.find(n=> t>=n.time && t<=n.time+n.duration) || tr.notes.find(n=> n.time>t) || tr.notes[tr.notes.length-1];
+                        // 補正なし: ノート時間内にある場合のみガイド参照（近傍スナップなし）
+                        let nn=tr.notes.find(n=> t>=n.time && t<=n.time+n.duration);
                         if(nn){
                             if(typeof p.dispMidi === 'number'){
                                 midi = p.dispMidi;
@@ -2370,53 +2749,69 @@ function drawChart(){
                                     if(d<bestD){ bestD=d; best=cand; }
                                 }
                                 const fTar = midiToFreq(best);
-                                let centErr = 1200*Math.log2(Math.max(1e-9,p.freq)/Math.max(1e-9,fTar));
+                                let centErr = 1200*Math.log2(Math.max(1e-9,(p.freq||midiToFreq(best)))/Math.max(1e-9,fTar));
                                 centErr = wrapToPm600(centErr);
                                 midi = nn.midi + (centErr/100);
+                                if(dCents==null) dCents = centErr;
                             }
                             return;
                         }
                     }
                 }catch(_){ }
-                // トラックが無い場合はゴースト(resp優先)へオクターブ寄せ
-                try{
-                    const gM = ghostMidiAt(p.time);
-                    if(gM!=null){
-                        const liveBase = (p.freq>0) ? (69+12*Math.log2(p.freq/A4Frequency)) : gM;
-                        let mAdj = liveBase;
-                        while(mAdj - gM > 6) mAdj -= 12;
-                        while(gM - mAdj > 6) mAdj += 12;
-                        midi = mAdj;
-                        return;
-                    }
-                }catch(_){ }
-                midi = (typeof p.dispMidi === 'number') ? p.dispMidi : (69+12*Math.log2(p.freq/A4Frequency));
+                midi = (typeof p.dispMidi === 'number') ? p.dispMidi : (69+12*Math.log2(Math.max(1e-9,p.freq)/A4Frequency));
             })();
             if(!(midi>=vmin && midi<=vmax)) continue;
-            if(lastDrawMidi!=null && Math.abs(midi - lastDrawMidi) > 9) { /* スパイク抑制 */ }
-            const y = h - (midi - vmin + 1) * pxSemi;
-            const alpha = (typeof p.conf==='number') ? Math.max(0.3, Math.min(1, 0.4 + 0.6*p.conf)) : 0.9;
-            // 許容範囲に収まっているかで色分け（ガイドがある時のみ判定）
-            let fill = `rgba(255,0,0,${alpha})`;
-            if(p.dCents!=null && Number.isFinite(p.dCents)){
-                const within = Math.abs(p.dCents) <= (toleranceCents||0);
-                fill = within? `rgba(24,200,70,${alpha})` : `rgba(255,64,64,${alpha})`;
-            }
-            ctx.fillStyle = fill;
-            ctx.beginPath(); ctx.arc(x, y, radius, 0, Math.PI*2); ctx.fill();
-            // オーバーレイ（ガイド無し時のみ）
-            if(scorePitchClassOverlay && isPlaying && guideMidiAtPlayhead==null){
-                const pc = ((Math.round(midi)%12)+12)%12; const baseInt = Math.round(midi);
-                const minM=vmin, maxM=vmax;
-                const overlayAlpha = Math.max(0.15, Math.min(0.6, (typeof p.conf==='number'? 0.25+0.25*p.conf : 0.3)));
-                const prevFill = ctx.fillStyle; ctx.fillStyle = `rgba(255,0,0,${overlayAlpha})`;
-                for(let m=minM; m<=maxM; m++){
-                    if(m%12!==pc || m===baseInt) continue; const yy = h-(m-minM+1)*pxSemi; ctx.beginPath(); ctx.arc(x, yy, radius, 0, Math.PI*2); ctx.fill();
-                }
-                ctx.fillStyle = prevFill;
-            }
-            lastDrawX = x; lastDrawTime = p.time; lastDrawMidi = midi;
+            pts.push({t, midi, dCents, conf:(typeof p.conf==='number'? p.conf: 0.7)});
         }
+        if(pts.length){
+            // 時間順（pitchHistoryは時間順だが安全のためソート）
+            pts.sort((a,b)=>a.t-b.t);
+            // 2) 連続トーンに分割
+            let run=null; // {t0, t1, sumMidi, sumW, lastT, baseKey, inTol, outTol, confSum, cnt}
+            const flushRun=(r)=>{
+                if(!r) return;
+                const mAvg = r.sumMidi / Math.max(1e-6, r.sumW);
+                const y = h - (mAvg - vmin + 1) * pxSemi;
+                const x1 = playX + ((r.t0 - eff) * pxPerSec / tempoFactor);
+                const x2 = playX + ((r.t1 - eff) * pxPerSec / tempoFactor);
+                if(x2<0 || x1>w) return;
+                // 色分け: 許容内割合で決定（50%以上で緑）
+                const tol = toleranceCents||0;
+                const okRatio = (r.inTol + r.outTol) > 0 ? (r.inTol/(r.inTol + r.outTol)) : 0;
+                const alpha = Math.max(0.35, Math.min(1, 0.45 + 0.55*(r.confSum/Math.max(1,r.cnt)) ));
+                const stroke = (okRatio >= 0.5) ? `rgba(24,200,70,${alpha})` : `rgba(255,64,64,${alpha})`;
+                ctx.save();
+                ctx.lineWidth = 3;
+                ctx.strokeStyle = stroke;
+                ctx.beginPath(); ctx.moveTo(x1, y); ctx.lineTo(x2, y); ctx.stroke();
+                ctx.restore();
+            };
+            for(const p of pts){
+                const key = Math.round(p.midi); // 半音丸め（ビブラートを同一トーンとして扱う）
+                const w = 0.5 + 0.5*p.conf;
+                if(!run){
+                    run = { t0:p.t, t1:p.t, sumMidi:p.midi*w, sumW:w, lastT:p.t, baseKey:key, inTol:0, outTol:0, confSum:p.conf, cnt:1 };
+                    if(p.dCents!=null){ (Math.abs(p.dCents) <= (toleranceCents||0)) ? run.inTol++ : run.outTol++; }
+                    continue;
+                }
+                const gap = p.t - run.lastT;
+                const deltaSemi = Math.abs(p.midi - run.baseKey);
+                const continuous = (gap <= bridgeGap) && (deltaSemi <= CHANGE_TOL_SEMI);
+                if(continuous){
+                    run.t1 = p.t; run.lastT = p.t;
+                    run.sumMidi += p.midi*w; run.sumW += w;
+                    run.confSum += p.conf; run.cnt++;
+                    if(p.dCents!=null){ (Math.abs(p.dCents) <= (toleranceCents||0)) ? run.inTol++ : run.outTol++; }
+                } else {
+                    // いまのrunを確定して新規開始
+                    flushRun(run);
+                    run = { t0:p.t, t1:p.t, sumMidi:p.midi*w, sumW:w, lastT:p.t, baseKey:key, inTol:0, outTol:0, confSum:p.conf, cnt:1 };
+                    if(p.dCents!=null){ (Math.abs(p.dCents) <= (toleranceCents||0)) ? run.inTol++ : run.outTol++; }
+                }
+            }
+            flushRun(run);
+        }
+        // ガイド無し時のピッチクラス・オーバーレイはドット専用表現のため省略
     }
     // 仮ノーツ（MIDIアライン/練習ゴーストのプレビュー）
     // 通常: 赤の破線。基礎練習モード中はメロディと同じ青の実線で表示。
@@ -2476,7 +2871,8 @@ function drawChart(){
         ctx.restore();
     }
     // ライブインジケータ (再生中/停止中共通)
-    if(lastMicFreq>0){
+    // キャリブレーション中は非表示（ゴーストのみ見せる）
+    if(!isCalibrating && lastMicFreq>0){
         // 表示用に、ガイド（トラック or ゴースト）がある場合は最も近いオクターブに寄せる
         // 基準は必ず生周波数由来のMIDI（lastMicFreq）
         let midi = 69 + 12*Math.log2(lastMicFreq/A4Frequency);
@@ -2696,7 +3092,9 @@ function applyOctaveShift(delta){
     } else if(sel.type==='range' && sel.startSec!=null && sel.endSec!=null){
         for(let i=0;i<notes.length;i++){ const st=notes[i].time,en=st+notes[i].duration; if(!(en<sel.startSec || st>sel.endSec)){ notes[i].midi = clamp(notes[i].midi + delta); } }
     }
-    autoCenterMelodyTrack(); drawChart();
+    autoCenterMelodyTrack();
+    // ノート配列が変わったのでスケジュールをリセット
+    scheduleAll(); if(isPlaying){ pausePlayback(); startPlayback(); } else { drawChart(); }
 }
 function applySemitoneShift(delta){
     autoCenterFrozen = true; // 以降の自動センタリングを停止
@@ -2711,7 +3109,9 @@ function applySemitoneShift(delta){
     } else if(sel.type==='range' && sel.startSec!=null && sel.endSec!=null){
         for(let i=0;i<notes.length;i++){ const st=notes[i].time,en=st+notes[i].duration; if(!(en<sel.startSec || st>sel.endSec)){ notes[i].midi = clamp(notes[i].midi + delta); } }
     }
-    autoCenterMelodyTrack(); drawChart();
+    autoCenterMelodyTrack();
+    // ノート配列が変わったのでスケジュールをリセット
+    scheduleAll(); if(isPlaying){ pausePlayback(); startPlayback(); } else { drawChart(); }
 }
 // キーボード操作: ↑/↓=±12、Shift併用で以降にも適用
 window.addEventListener('keydown',(e)=>{ if(e.key==='ArrowUp' || e.key==='ArrowDown'){ const delta=(e.key==='ArrowUp')? +12 : -12; if(window._selection.type==='single' && window._selection.index!=null && e.shiftKey){ const prev=applyForwardToggle? applyForwardToggle.checked: false; if(applyForwardToggle) applyForwardToggle.checked=true; applyOctaveShift(delta); if(applyForwardToggle) applyForwardToggle.checked=prev; } else { applyOctaveShift(delta); } e.preventDefault(); } });
@@ -2777,7 +3177,7 @@ if(midiRefInput){ midiRefInput.onchange=async (e)=>{
     try{
         const arr=await f.arrayBuffer();
         const parsed = parseMidiAllTracks(new Uint8Array(arr)); // [{notes:[{midi,st,en}], index}]
-        if(!parsed || !parsed.length){ alert('MIDIから参照トラックを検出できませんでした'); return; }
+    if(!parsed || !parsed.length){ console.warn('MIDIから参照トラックを検出できませんでした'); return; }
         _midiTracksCache = parsed;
         if(parsed.length===1){
             // 単一トラックでも自動適用せず、まずは全体プレビュー（赤の破線）を表示（秒ベース）
@@ -2827,7 +3227,7 @@ if(midiRefInput){ midiRefInput.onchange=async (e)=>{
             buildAlignDropdowns(refNotesSec);
             if(midiAlignPanel) midiAlignPanel.style.display='flex';
         }
-    }catch(err){ alert('MIDI参照の読み込みに失敗: '+err); }
+    }catch(err){ console.warn('MIDI参照の読み込みに失敗:', err); }
 }; }
 if(midiApplyBtn){ midiApplyBtn.onclick=()=>{
     if(!_midiTracksCache || !_midiTracksCache.length) return;
@@ -2837,25 +3237,27 @@ if(midiApplyBtn){ midiApplyBtn.onclick=()=>{
     // 適用時はプレビューを消す
     midiGhostNotes = null;
     pushHistory(); alignOctaveToReferenceDP(refNotes);
-    drawChart(); alert(`MIDI参照: Track ${idx+1} を適用しました`);
+    drawChart();
 }; }
 // MIDIからノーツ生成
 if(midiGenerateBtn){ midiGenerateBtn.onclick=()=>{
-    if(!_midiTracksCache || !_midiTracksCache.length){ alert('先にMIDIを読み込んでください'); return; }
+    if(!_midiTracksCache || !_midiTracksCache.length){ console.warn('先にMIDIを読み込んでください'); return; }
     const idx = Math.max(0, Math.min(_midiTracksCache.length-1, (midiTrackSelect && midiTrackSelect.selectedIndex) || 0));
     const ref = _midiTracksCache[idx];
     // 生成先はメロディトラック
     const notesRaw = normalizeMidiToSeconds(ref.notes);
     const notes = applyAlignMapping(notesRaw);
-    if(!Array.isArray(notes) || !notes.length){ alert('MIDIから有効なノーツを生成できませんでした'); return; }
+    if(!Array.isArray(notes) || !notes.length){ console.warn('MIDIから有効なノーツを生成できませんでした'); return; }
     // 現在のメロディトラックに置換
     pushHistory();
     currentTracks[melodyTrackIndex] = { notes: notes.map(n=>({ midi:n.midi, time:n.time, duration:n.duration })) };
+    // ノーツ全置換: 自動センタリングを再有効化して適用
+    autoCenterFrozen = false;
     autoCenterMelodyTrack();
     // 生成後はプレビューを消す
     midiGhostNotes = null;
     drawChart();
-    alert(`MIDIトラック ${idx+1} からノーツを生成しました`);
+    // 成功メッセージのダイアログは表示しない
 }; }
 
 function normalizeMidiNotesForAlign(trackNotes){
@@ -3104,10 +3506,10 @@ function noteName(pc){
     return arr[((pc%12)+12)%12];
 }
 function buildAdviceText(){
-    if(!scoreStats || scoreStats.total<10) return 'データが十分ではありません。まずは再生して歌ってください。';
+    if(!scoreStats || scoreStats.total<5) return 'データが十分ではありません。まずは再生して歌ってください。';
     const msgs=[]; const flats=[], sharps=[], weak=[];
     for(let pc=0; pc<12; pc++){
-        const b=scoreStats.bins[pc]; if(!b||b.count<4) continue;
+        const b=scoreStats.bins[pc]; if(!b||b.count<3) continue;
         const avg=b.sum/b.count; const avgAbs=b.sumAbs/b.count; const tolRate=b.inTol/b.count;
         if(b.flat > b.sharp && (b.flat>=Math.max(3, b.count*0.25)) && Math.abs(avg)>=4){ flats.push(noteName(pc)); }
         else if(b.sharp > b.flat && (b.sharp>=Math.max(3, b.count*0.25)) && Math.abs(avg)>=4){ sharps.push(noteName(pc)); }
@@ -3242,7 +3644,7 @@ function startPlayback(){
     const practiceMode = (!melodyBuffer && !accompBuffer);
     try{ if(audioCtx.state!=='running'){ audioCtx.resume().catch(()=>{}); } }catch(_){ }
     isPlaying=true;
-    const START_LAT=0.02; const startLead = btLatencyEnabled? btLatencySec: 0;
+    const START_LAT=0.02; const startLead = 0; // btLatencySec は scheduleMore 側で補正する（ここでは加算しない）
     playbackStartTime=audioCtx.currentTime + START_LAT + startLead;
     playbackStartPerf=performance.now()/1000 + START_LAT + startLead;
     playbackStartPos=playbackPosition;
@@ -3251,8 +3653,8 @@ function startPlayback(){
         if(melodyBuffer){ melodySource=createAndStartSource(melodyBuffer, playbackStartTime, playbackPosition, melodyGain||masterGain||audioCtx.destination); }
         if(accompBuffer){ accompSource=createAndStartSource(accompBuffer, playbackStartTime, playbackPosition, accompGain||masterGain||audioCtx.destination); }
     } else {
-        // 必要ならマイク初期化（ユーザーの操作由来の再生ボタンで許可ダイアログが出せる）
-        if(!micAnalyser || !micData){ try{ /* 非同期だが開始を待たずに解析タイマーを張る */ initMic().catch(()=>{}); }catch(_){ } }
+        // 自動ではプロンプトしない。権限が granted のときだけ静かに初期化。
+    if(!micAnalyser || !micData){ try{ canInitMicWithoutPrompt().then(ok=>{ if(ok) initMic(false).catch(()=>{}); }); }catch(_){ } }
     }
     if(analysisTimer){ clearInterval(analysisTimer); analysisTimer=null; }
     analysisTimer=setInterval(analyzePitch, 1000/analysisRate);
@@ -3264,10 +3666,7 @@ function startPlayback(){
     }catch(_){ scoreStats=null; }
     // 停止アドバイス保留があればキャンセル
     if(_pauseAdviceTimer){ try{ clearTimeout(_pauseAdviceTimer); }catch(_){} _pauseAdviceTimer=null; }
-    // 練習モードでマイクが未許可の場合のヒント
-    if((!melodyBuffer && !accompBuffer) && !micAnalyser){
-        try{ setTimeout(()=>{ if(!micAnalyser){ alert('練習モード: マイクを許可すると赤点で音程が記録されます（画面上部の「MIC ON」表示を確認）'); } }, 300); }catch(_){ }
-    }
+    // 練習モードでもダイアログは表示しない
 }
 function pausePlayback(){
     isPlaying=false;
@@ -3275,6 +3674,8 @@ function pausePlayback(){
     try{ if(schedTimer) clearInterval(schedTimer); schedTimer=null; }catch(_){ }
     stopAllSources();
     forceStopAllVoices();
+    // 次回再生に備えて先読み境界をリセット
+    scheduleAll();
     // アドバイスの自動表示はしない（ボタンで開く方式）。保留タイマーはクリアのみ。
     if(_pauseAdviceTimer){ try{ clearTimeout(_pauseAdviceTimer); }catch(_){} _pauseAdviceTimer=null; }
 }
@@ -3420,12 +3821,22 @@ function autoCenterMelodyTrack(){
     const notes=tr.notes; let minM=Infinity, maxM=-Infinity;
     for(const n of notes){ if(n.midi<minM) minM=n.midi; if(n.midi>maxM) maxM=n.midi; }
     if(!isFinite(minM) || !isFinite(maxM)) return;
-    // 1オクターブ刻みの縦ズーム内で、ノートの上下に少しマージン（±1半音）を付けて収める
-    const margin=1; const span = (maxM - minM) + margin*2; // 半音数
-    const total=verticalZoom*12; // 現表示半音数
+    // 曲全体で存在しないオクターブは隠す: 上下に±1半音のマージンを取り、必要最小限のズームへ自動調整
+    const margin=1; // 半音
+    const desiredLow = Math.max(36, Math.min(132, Math.floor(minM - margin)));
+    const desiredHigh= Math.max(36, Math.min(132, Math.ceil(maxM + margin)));
+    let desiredSpan = Math.max(1, desiredHigh - desiredLow + 1); // 半音幅
+    // 現在の縦ズームより狭くできるなら縮小（最低1オクターブ）
+    const minZoomOct = 1; const maxZoomOct = 8; // 安全範囲
+    const targetZoomOct = Math.max(minZoomOct, Math.min(maxZoomOct, Math.ceil(desiredSpan/12)));
+    if(verticalZoom !== targetZoomOct){
+        verticalZoom = targetZoomOct;
+        if(vZoom){ try{ vZoom.value = String(verticalZoom); }catch(_){ } }
+    }
+    // ズームが決まったら、その範囲が中央に来るよう verticalOffset を調整
+    const total=verticalZoom*12; // 表示半音数
     const min=36; const max=132; const allowRange=(max-min-total);
-    // 表示領域内に収まらないほど広い場合は、最小に合わせて中心付近に寄せる
-    const desiredCenter = (minM + maxM)/2;
+    const desiredCenter = (desiredLow + desiredHigh)/2;
     const clampedCenter = Math.max(min + total/2, Math.min(max - total/2, desiredCenter));
     const desiredVmin = Math.round(clampedCenter - total/2);
     const rel = Math.max(0, Math.min(allowRange, desiredVmin - min));
@@ -3457,9 +3868,13 @@ if(melodyAudioInput){ melodyAudioInput.onchange=async e=>{ const f=e.target.file
     melodyOrigName=f.name; melodyOrigExt=(f.name.split('.').pop()||'bin').toLowerCase(); if(!audioCtx) ensureAudio();
     // デコード自体は元のabを使用（detachしても保存用は別バッファ）
     melodyBuffer=await new Promise((res,rej)=> audioCtx.decodeAudioData(ab, b=>res(b), e=>rej(e)));
-    melodyDuration=melodyBuffer.duration||0; await extractMelodyNotesFromBuffer(melodyBuffer); drawChart(); }catch(err){ alert('メロディ音声の読込に失敗: '+err); } finally { if(overlay){ overlay.classList.add('hidden'); } } }; }
+    melodyDuration=melodyBuffer.duration||0; await extractMelodyNotesFromBuffer(melodyBuffer);
+    // 解析によりノーツが更新されたので自動センタリングを解除して適用
+    autoCenterFrozen = false;
+    autoCenterMelodyTrack();
+    drawChart(); }catch(err){ console.warn('メロディ音声の読込に失敗:', err); } finally { if(overlay){ overlay.classList.add('hidden'); } } }; }
 if(accompAudioBtn && accompAudioInput){ accompAudioBtn.onclick=()=>accompAudioInput.click(); }
-if(accompAudioInput){ accompAudioInput.onchange=async e=>{ const f=e.target.files?.[0]; if(!f) return; if(accompAudioLabel){ accompAudioLabel.textContent=f.name; accompAudioLabel.title=f.name; } try{ const ab=await f.arrayBuffer(); const srcU8=new Uint8Array(ab); accompOrigBytes=new Uint8Array(srcU8.length); accompOrigBytes.set(srcU8); accompOrigName=f.name; accompOrigExt=(f.name.split('.').pop()||'bin').toLowerCase(); if(!audioCtx) ensureAudio(); accompBuffer=await new Promise((res,rej)=> audioCtx.decodeAudioData(ab, b=>res(b), e=>rej(e))); accompDuration=accompBuffer.duration||0; }catch(err){ alert('伴奏音声の読込に失敗: '+err); } }; }
+if(accompAudioInput){ accompAudioInput.onchange=async e=>{ const f=e.target.files?.[0]; if(!f) return; if(accompAudioLabel){ accompAudioLabel.textContent=f.name; accompAudioLabel.title=f.name; } try{ const ab=await f.arrayBuffer(); const srcU8=new Uint8Array(ab); accompOrigBytes=new Uint8Array(srcU8.length); accompOrigBytes.set(srcU8); accompOrigName=f.name; accompOrigExt=(f.name.split('.').pop()||'bin').toLowerCase(); if(!audioCtx) ensureAudio(); accompBuffer=await new Promise((res,rej)=> audioCtx.decodeAudioData(ab, b=>res(b), e=>rej(e))); accompDuration=accompBuffer.duration||0; }catch(err){ console.warn('伴奏音声の読込に失敗:', err); } }; }
 
 // ================= セッション保存/読込 =================
 function textEncodeUtf8(str){ try{ return new TextEncoder().encode(str); }catch(_){ // IE/旧ブラウザ想定なし
@@ -3544,7 +3959,7 @@ async function saveSessionZip(){
         }
         const blob=new Blob([zipU8], {type:'application/zip'});
         const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=suggestSessionFileName(); a.click(); setTimeout(()=>URL.revokeObjectURL(a.href), 10000);
-    }catch(err){ alert('セッション保存に失敗: '+err); console.warn(err); }
+    }catch(err){ console.warn('セッション保存に失敗:', err); }
 }
 
 async function loadSessionZipFromBytes(u8){
@@ -3615,6 +4030,8 @@ async function loadSessionZipFromBytes(u8){
         if(btLatencyToggle){ btLatencyToggle.checked = !!btLatencyEnabled; }
         if(btLatencySlider){ const ms=Math.round((btLatencySec||0)*1000); btLatencySlider.value=String(ms); if(btLatencyValue) btLatencyValue.textContent=`${ms} ms`; btLatencySlider.disabled = !btLatencyEnabled; }
     }catch(_){ }
+    // 読み込み直後はユーザー編集ではないため自動センタリングを許可
+    autoCenterFrozen = false;
     autoCenterMelodyTrack();
     drawChart();
 }
@@ -3634,8 +4051,8 @@ function findFileByNames(files, candidates){
 function detectExtFromName(name){ const m=name.match(/\.([a-z0-9]+)$/i); return m? m[1].toLowerCase(): 'bin'; }
 
 // ボタン結線
-if(sessionSaveBtn){ sessionSaveBtn.onclick=()=>{ if(!melodyOrigBytes && !accompOrigBytes){ if(!confirm('音声ファイルが未読込です。この状態でもノート/赤点のみを保存しますか?')) return; } saveSessionZip(); }; }
-if(sessionLoadBtn && sessionLoadInput){ sessionLoadBtn.onclick=()=> sessionLoadInput.click(); sessionLoadInput.onchange=async e=>{ const f=e.target.files?.[0]; if(!f) return; try{ const ab=await f.arrayBuffer(); await loadSessionZipFromBytes(new Uint8Array(ab)); }catch(err){ alert('セッション読込に失敗: '+err); console.warn(err); } }; }
+if(sessionSaveBtn){ sessionSaveBtn.onclick=()=>{ if(!melodyOrigBytes && !accompOrigBytes){ const ok = confirm('音声ファイルが未読込です。この状態でもノート/赤点のみを保存しますか?'); if(!ok) return; } saveSessionZip(); }; }
+if(sessionLoadBtn && sessionLoadInput){ sessionLoadBtn.onclick=()=> sessionLoadInput.click(); sessionLoadInput.onchange=async e=>{ const f=e.target.files?.[0]; if(!f) return; try{ const ab=await f.arrayBuffer(); await loadSessionZipFromBytes(new Uint8Array(ab)); }catch(err){ console.warn('セッション読込に失敗:', err); } }; }
 playBtn && (playBtn.onclick=()=>{ if(!isPlaying) startPlayback(); });
 if(pauseBtn){
     pauseBtn.onclick=null;
@@ -3666,8 +4083,17 @@ if(stopBtn){
             try{ console.warn('stop ignored (untrusted trigger: pointerup)'); }catch(_){ }
             return;
         }
-        if(isPlaying){ pausePlayback(); stopStage=1; }
-        else if(stopStage===1){ playbackPosition=0; playbackStartPos=0; stopStage=0; drawChart(); }
+        // キャリブレーション/アシスト中なら即座に中断
+        if(isCalibrating){ _calibAbort = true; }
+        if(isAssistActive()){ stopLatencyAssist(); }
+        if(isPlaying){
+            pausePlayback();
+            stopStage=1;
+        } else if(stopStage===1){
+            playbackPosition=0; playbackStartPos=0; stopStage=0;
+            scheduleAll(); // 先読みウィンドウを0位置へ矯正
+            drawChart();
+        }
     });
 }
 rw5 && (rw5.onclick=()=>seekRelative(-5)); rw10 && (rw10.onclick=()=>seekRelative(-10)); fw5 && (fw5.onclick=()=>seekRelative(5)); fw10 && (fw10.onclick=()=>seekRelative(10));
@@ -3683,7 +4109,49 @@ guideVol && (guideVol.oninput=()=>{ if(!melodyGain) return; const v=parseFloat(g
 accompVol && (accompVol.oninput=()=>{ if(!accompGain) return; const v=parseFloat(accompVol.value); accompGain.gain.value = (isFinite(v)? v: (accompGain.gain.value||0.8)); });
 guideLineWidthSlider && (guideLineWidthSlider.oninput=()=>{ guideLineWidth=parseInt(guideLineWidthSlider.value)||4; drawChart(); });
 // 既存のトラックUIイベントはすべて無効
-micBtn && (micBtn.onclick=async()=>{ await initMic(); if(!analysisTimer) analysisTimer=setInterval(analyzePitch,1000/analysisRate); if(!isPlaying) drawChart(); });
+
+// 可視化補正スライダ: 即時反映
+const _visTimeSnapMsEl = document.getElementById('visTimeSnapMs');
+const _visTimeSnapMsVal = document.getElementById('visTimeSnapMsVal');
+if(_visTimeSnapMsEl){
+    _visTimeSnapMsEl.oninput=()=>{ visTimeSnapMs = parseInt(_visTimeSnapMsEl.value)||180; if(_visTimeSnapMsVal) _visTimeSnapMsVal.textContent=String(visTimeSnapMs); drawChart(); };
+    if(_visTimeSnapMsVal) _visTimeSnapMsVal.textContent=String(visTimeSnapMs);
+}
+const _visBridgeGapMsEl = document.getElementById('visBridgeGapMs');
+const _visBridgeGapMsVal = document.getElementById('visBridgeGapMsVal');
+if(_visBridgeGapMsEl){
+    _visBridgeGapMsEl.oninput=()=>{ visBridgeGapMs = parseInt(_visBridgeGapMsEl.value)||150; if(_visBridgeGapMsVal) _visBridgeGapMsVal.textContent=String(visBridgeGapMs); drawChart(); };
+    if(_visBridgeGapMsVal) _visBridgeGapMsVal.textContent=String(visBridgeGapMs);
+}
+const _visBridgeGapInNoteMsEl = document.getElementById('visBridgeGapInNoteMs');
+const _visBridgeGapInNoteMsVal = document.getElementById('visBridgeGapInNoteMsVal');
+if(_visBridgeGapInNoteMsEl){
+    _visBridgeGapInNoteMsEl.oninput=()=>{ visBridgeGapInNoteMs = parseInt(_visBridgeGapInNoteMsEl.value)||300; if(_visBridgeGapInNoteMsVal) _visBridgeGapInNoteMsVal.textContent=String(visBridgeGapInNoteMs); drawChart(); };
+    if(_visBridgeGapInNoteMsVal) _visBridgeGapInNoteMsVal.textContent=String(visBridgeGapInNoteMs);
+}
+const _visChangeTolSemiEl = document.getElementById('visChangeTolSemi');
+const _visChangeTolSemiVal = document.getElementById('visChangeTolSemiVal');
+if(_visChangeTolSemiEl){
+    _visChangeTolSemiEl.oninput=()=>{ visChangeTolSemi = parseFloat(_visChangeTolSemiEl.value)||0.65; if(_visChangeTolSemiVal) _visChangeTolSemiVal.textContent=String(visChangeTolSemi); drawChart(); };
+    if(_visChangeTolSemiVal) _visChangeTolSemiVal.textContent=String(visChangeTolSemi);
+}
+const _visEdgePadMsEl = document.getElementById('visEdgePadMs');
+const _visEdgePadMsVal = document.getElementById('visEdgePadMsVal');
+if(_visEdgePadMsEl){
+    _visEdgePadMsEl.oninput=()=>{ visEdgePadMs = parseInt(_visEdgePadMsEl.value)||160; if(_visEdgePadMsVal) _visEdgePadMsVal.textContent=String(visEdgePadMs); drawChart(); };
+    if(_visEdgePadMsVal) _visEdgePadMsVal.textContent=String(visEdgePadMs);
+}
+
+micBtn && (micBtn.onclick=async()=>{
+    // ユーザー操作で AudioContext を確実に有効化/再開
+    _userExplicitMicInit=true;
+    try{ activateAudioOnce(); }catch(_){ }
+    try{ if(audioCtx && audioCtx.state==='suspended'){ await audioCtx.resume().catch(()=>{}); } }catch(_){ }
+    try{ setMicStatus('ON?'); }catch(_){ }
+    await initMic(true); // 明示操作なのでプロンプト許可
+    if(!analysisTimer) analysisTimer=setInterval(analyzePitch,1000/analysisRate);
+    if(!isPlaying) drawChart();
+});
 showNoteNamesToggle && (showNoteNamesToggle.onchange=()=>{ showNoteNames=showNoteNamesToggle.checked; drawChart(); });
 vOffsetSlider && (vOffsetSlider.oninput=()=>{ verticalOffset=parseInt(vOffsetSlider.value); drawChart(); });
 // 再生パレット右端のチェックボックスは廃止（後方互換のみ）
@@ -3691,11 +4159,11 @@ vOffsetSlider && (vOffsetSlider.oninput=()=>{ verticalOffset=parseInt(vOffsetSli
 // if(accompPlayToggle){ accompPlayToggle.onchange=()=>{ ... } }
 // BT補正UIイベント
 if(btLatencyToggle){ btLatencyToggle.onchange=()=>{ btLatencyEnabled=btLatencyToggle.checked; if(btLatencySlider) btLatencySlider.disabled = !btLatencyEnabled; }; }
-if(btLatencySlider){ btLatencySlider.oninput=()=>{ const ms=parseInt(btLatencySlider.value)||0; btLatencySec=Math.max(0, Math.min(500, ms))/1000; if(btLatencyValue) btLatencyValue.textContent=`${ms} ms`; }; }
+if(btLatencySlider){ btLatencySlider.oninput=()=>{ const ms=parseInt(btLatencySlider.value)||0; btLatencySec=Math.max(0, Math.min(500, ms))/1000; if(btLatencyValue) btLatencyValue.textContent=`${ms} ms`; drawChart(); }; }
 if(btLatencyCalibBtn){ btLatencyCalibBtn.onclick=()=>{
-    const ok = confirm('自動遅延補正を開始します。\n\n手順:\n1) 画面に8つの基準ノーツが表示されます\n2) 3→2→1 のカウント後、ノーツが動き出し音が鳴ります\n3) 各ノーツに短く声を合わせてください\n\n測定後、自動で補正値が設定されます。続行しますか？');
+    const ok = confirm('遅延補正アシストを開始します。\n\n手順:\n1) 3→2→1 のカウント後、一定間隔のノーツが流れ続けます（音は鳴りません）。\n2) ノーツに合わせて短く発声してください。音程は無視し、音を拾ったタイミングだけで棒線が出ます。\n3) 画面下の「遅延補正」スライダを動かすと即時に反映されます。棒線とノーツのタイミングが一致するように調整してください。\n4) 終了は停止ボタンを押してください。');
     if(!ok) return;
-    runLatencyCalibration();
+    runLatencyAssist();
 }; }
 // ペダル/共鳴はUI整理により非表示（内部値は固定）
 // マイク状態表示用
@@ -4634,6 +5102,7 @@ function fitMainAreaHeight(){
 }
 
 window.addEventListener('load',()=>{
+    warnIfInsecureContext();
     resizeCanvas();
     updateMicGateVisual();
     autoCenterMelodyTrack();
@@ -4642,26 +5111,22 @@ window.addEventListener('load',()=>{
     autoLoadSfzInstruments();
     // 初回にレイアウトを端末幅へフィット
     adjustResponsiveLayout();
-    // ページ読み込み時にマイク許可をリクエスト（許可済みならスキップ）
+    // ページ読み込み時は一切プロンプトしない。既に granted のときのみ静かに初期化する。
     (async()=>{
         try{
-            // Permissions API があれば参照（Chrome系のみ）
-            let state=null;
-            try{
-                if(navigator.permissions && navigator.permissions.query){
-                    const st = await navigator.permissions.query({name:'microphone'});
-                    state = st.state; // 'granted' | 'denied' | 'prompt'
-                }
-            }catch(_){ state=null; }
-            if(state==='granted'){
-                // 初期化のみ（UIは触らない）
-                if(!micAnalyser){ await initMic().catch(()=>{}); }
-            } else {
-                // まだ許可されていなければダイアログを出す
-                if(!micAnalyser){ await initMic().catch(()=>{}); }
-            }
-        }catch(_){ /* 許可拒否や未対応は黙ってスキップ */ }
+            const state = await getMicPermissionState();
+            if(state==='granted' && !micAnalyser){ await initMic(false).catch(()=>{}); }
+            // granted 以外は何もしない（フォールバックも装着しない）
+        }catch(_){ /* 何もしない */ }
     })();
+    // 入力デバイスが変わった際は自動で再初期化
+    try{
+        if(navigator.mediaDevices && navigator.mediaDevices.addEventListener){
+            navigator.mediaDevices.addEventListener('devicechange', async()=>{
+                try{ if(await canInitMicWithoutPrompt()){ await initMic(false).catch(()=>{}); } }catch(_){ }
+            });
+        }
+    }catch(_){ }
     // 『赤点削除』ボタンのイベント
     try{
         const btn=document.getElementById('clearDotsButton');
