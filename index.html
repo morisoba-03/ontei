@@ -109,7 +109,10 @@
       <button id="undoBtn" type="button" title="元に戻す (Ctrl+Z)">↶ Undo</button>
       <button id="redoBtn" type="button" title="やり直し (Ctrl+Y)">↷ Redo</button>
       <div style="width:1px;height:20px;background:#555;"> </div>
-      <label style="display:inline-flex;align-items:center;gap:6px;"><input id="rangeSelectToggle" type="checkbox" /> 範囲選択</label>
+  <button id="splitNoteBtn" type="button" title="再生線位置でノート分割">✂ 分割</button>
+  <button id="rangeStartBtn" type="button" title="範囲開始(起点は再生線上ノート)">[範囲開始]</button>
+  <button id="rangeEndBtn" type="button" title="範囲終了/確定" disabled>[範囲終了]</button>
+  <span id="rangeHint" style="font-size:11px;color:#ccc;"></span>
       <button id="clearSelectionBtn" type="button">選択解除</button>
   <button id="octDownBtn" type="button" title="選択に -12 (Shift: 以降)">-12</button>
   <button id="octUpBtn" type="button" title="選択に +12 (Shift: 以降)">+12</button>

@@ -103,6 +103,9 @@ canvas, #chartCanvas { display: block; }
 	min-height: 0;    /* 子のオーバーフローで縮められるように */
 	background: #23252b;
 	position: relative;
+	height: auto;
+	/* 画面に対して高く表示（PC/Tablet でタイムラインが80%程度を占める目安）*/
+	max-height: 80vh;
 }
 
 /* 横スクロールの根絶: flex 子要素が幅を押し広げないようにする */
@@ -148,6 +151,9 @@ canvas, #chartCanvas { display: block; }
 	flex-wrap: wrap;
 	align-items: flex-start;
 	color: #e0e0e0;
+	/* タイムライン領域を確保するため、デスクトップではコントロール領域の占有を圧縮 */
+	max-height: 20vh;
+	overflow: auto;
 }
 .control-group {
 	margin: 5px 15px 5px 0;
@@ -430,6 +436,22 @@ button:hover {
 	/* 編集ツールバーを下部に固定し、チャートに被らないよう余白確保 */
 	#editToolbar { position: fixed !important; left: 8px !important; right: 8px !important; bottom: 8px !important; top: auto !important; z-index: 1250 !important; }
 	#chartContainer { padding-bottom: 56px; }
+}
+
+/* スマホ縦横でタイムラインを常に約80%高さに確保（コントロールは20%まで） */
+@media (max-width: 600px) {
+	/* タイムライン領域を優先配分 */
+	#chartContainer {
+		flex: 0 0 80vh; /* 固定配分: 80% ビューポート高 */
+		max-height: 80vh;
+		height: 80vh;
+	}
+	#chartCanvas { height: 100% !important; }
+	/* コントロールは20%以内でスクロール */
+	#controls {
+		max-height: 20vh;
+		overflow: auto;
+	}
 }
 
 /* Smartphone Landscape priority: 横画面前提での最適化（高さベース） */
