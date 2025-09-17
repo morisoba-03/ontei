@@ -306,6 +306,10 @@
       <label><input id="followToggle" type="checkbox" checked /> 追従</label>
     </div>
   </div>
+  <!-- ドリフト計測オーバーレイ（モバイル同期調査用） -->
+  <div id="driftOverlay" style="position:fixed;right:8px;bottom:8px;font-size:11px;font-family:monospace;background:rgba(0,0,0,0.55);color:#9cf;padding:4px 8px;border:1px solid #345;border-radius:4px;z-index:1600;pointer-events:none;user-select:none;">
+    Drift(...)
+  </div>
   <script src="https://cdn.jsdelivr.net/npm/fflate@0.8.2/umd/index.min.js" onerror="(function(){var s=document.createElement('script');s.src='assets/libs/fflate.min.js';document.head.appendChild(s);})();"></script>
   <script src="app.js"></script>
 </body>

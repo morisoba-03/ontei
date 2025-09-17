@@ -104,8 +104,8 @@ canvas, #chartCanvas { display: block; }
 	background: #23252b;
 	position: relative;
 	height: auto;
-	/* 画面に対して高く表示（PC/Tablet でタイムラインが80%程度を占める目安）*/
-	max-height: 80vh;
+	/* 画面に対して高く表示（PC/Tablet でタイムラインが70%程度を占める固定要求）*/
+	max-height: 70vh;
 }
 
 /* 横スクロールの根絶: flex 子要素が幅を押し広げないようにする */
@@ -438,18 +438,18 @@ button:hover {
 	#chartContainer { padding-bottom: 56px; }
 }
 
-/* スマホ縦横でタイムラインを常に約80%高さに確保（コントロールは20%まで） */
+/* スマホ縦横でタイムラインを常に約70%高さに確保（コントロールは30%まで） */
 @media (max-width: 600px) {
 	/* タイムライン領域を優先配分 */
 	#chartContainer {
-		flex: 0 0 80vh; /* 固定配分: 80% ビューポート高 */
-		max-height: 80vh;
-		height: 80vh;
+		flex: 0 0 70vh; /* 固定配分: 70% ビューポート高 */
+		max-height: 70vh;
+		height: 70vh;
 	}
 	#chartCanvas { height: 100% !important; }
-	/* コントロールは20%以内でスクロール */
+	/* コントロールは残り ~30% 以内でスクロール */
 	#controls {
-		max-height: 20vh;
+		max-height: 30vh;
 		overflow: auto;
 	}
 }
