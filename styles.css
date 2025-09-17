@@ -127,10 +127,7 @@ canvas, #chartCanvas { display: block; }
 /* トップバーは通常フロー（stickyは無効化） */
 #top-bar { position: static; }
 /* トップバーの固定用余白は不要 */
-#leftVerticalPanel { width:38px; background:#1f2228; display:flex; flex-direction:column; align-items:center; justify-content:flex-start; padding:6px 4px; border-right:1px solid #444; }
-#leftVerticalPanel .v-offset-label { writing-mode: vertical-rl; font-size:10px; color:#bbb; margin-top:6px; }
-.vert-range { writing-mode: vertical-lr; direction: rtl; width:26px; height:240px; }
-#pianoArea { display:flex; flex-direction:row; align-items:stretch; }
+#pianoArea { display:flex; flex-direction:row; align-items:stretch; position:relative; }
 #verticalOffsetWrapper { display:flex; flex-direction:column; align-items:center; justify-content:center; padding:4px 2px; background:#1c1e24; }
 #keyboardCanvas {
 	flex: 0 0 60px;
@@ -143,6 +140,11 @@ canvas, #chartCanvas { display: block; }
 	cursor: grab;
 	max-width: 100%;
 }
+#timelineVScroll { position:absolute; top:0; right:0; width:14px; background:#15181d; border-left:1px solid #333; border-right:1px solid #333; display:flex; flex-direction:column; align-items:center; user-select:none; touch-action:none; height:100%; z-index:40; }
+#timelineVScroll:hover { background:#1b1f25; }
+#timelineVThumb { width:8px; background:linear-gradient(#666,#888); border-radius:6px; margin:4px 0; cursor:pointer; box-shadow:0 0 0 1px #222,0 2px 4px rgba(0,0,0,0.4); transition:background .15s; }
+#timelineVThumb:hover { background:linear-gradient(#7a8,#9aa); }
+#timelineVThumb:active { background:linear-gradient(#9bb,#bcc); }
 #chartCanvas:active { cursor: grabbing; }
 #controls {
 	padding: 10px;
@@ -151,9 +153,9 @@ canvas, #chartCanvas { display: block; }
 	flex-wrap: wrap;
 	align-items: flex-start;
 	color: #e0e0e0;
-	/* タイムライン領域を確保するため、デスクトップではコントロール領域の占有を圧縮 */
-	max-height: 20vh;
-	overflow: auto;
+	/* 高さ制限を撤廃し常時全内容表示 */
+	max-height: none;
+	overflow: visible;
 }
 .control-group {
 	margin: 5px 15px 5px 0;
@@ -399,6 +401,12 @@ button:hover {
 }
 	/* マーカーはflexで左詰め・最小gap（gridの1frによる大きな余白を排除） */
 	.markers-grid { display:flex; flex-wrap:wrap; gap:0; row-gap:2px; justify-content:flex-start; }
+
+/* === Overrides: ensure controls are fully expanded regardless of media queries === */
+#controls { max-height:none !important; overflow:visible !important; }
+/* === Timeline height: force ~70% viewport across all devices/orientations === */
+#chartContainer { height:70vh !important; max-height:70vh !important; min-height:70vh !important; }
+#chartCanvas { height:100% !important; }
 @media (max-width: 600px) and (orientation: portrait) {
 	/* 1カラム中心、タップ余白を確保 */
 	#controls { gap: 8px 10px; grid-template-columns: 1fr; }
