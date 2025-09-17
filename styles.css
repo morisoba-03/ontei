@@ -99,13 +99,16 @@ canvas, #chartCanvas { display: block; }
 #chartContainer {
 	display: flex;
 	width: 100%;
-	flex: 1 1 auto;   /* 残り高さを占有 */
-	min-height: 0;    /* 子のオーバーフローで縮められるように */
 	background: #23252b;
 	position: relative;
-	height: auto;
-	/* 画面に対して高く表示（PC/Tablet でタイムラインが70%程度を占める固定要求）*/
+	/* 常に 70% ビューポート高を確保 (ブラウザ差異: svh 優先, fallback vh) */
+	height: 70svh;
+	max-height: 70svh;
+	min-height: 70svh;
+	/* iOS Safari 等 svh 未対応時 fallback */
+	height: 70vh;
 	max-height: 70vh;
+	min-height: 70vh;
 }
 
 /* 横スクロールの根絶: flex 子要素が幅を押し広げないようにする */

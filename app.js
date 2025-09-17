@@ -210,6 +210,24 @@ const guideVol=$('guideVolumeSlider'),accompVol=$('accompVolumeSlider');
 const guideLineWidthSlider=$('guideLineWidthSlider');
 // タイムライン水平スクロール
 const timelineScroll = document.getElementById('timelineScroll');
+// --- タイムライン高さ 70% 強制 (他UI高さが増えても確保) ---
+function enforceTimelineHeight(){
+    try{
+        const cc=document.getElementById('chartContainer');
+        if(!cc) return;
+        const vh = window.innerHeight || document.documentElement.clientHeight || 0;
+        if(!vh) return;
+        const target=Math.round(vh*0.70);
+        // ズレが大きい場合のみ再設定
+        const curH = cc.getBoundingClientRect().height||0;
+        if(Math.abs(curH-target)>4){
+            cc.style.height=cc.style.maxHeight=cc.style.minHeight=target+'px';
+        }
+    }catch(_){ }
+}
+window.addEventListener('resize', ()=>enforceTimelineHeight());
+window.addEventListener('orientationchange', ()=>setTimeout(enforceTimelineHeight,180));
+setTimeout(enforceTimelineHeight,120);
 const guideToggle=$('guideToggle'),accompToggle=$('accompToggle');
 const pedalToggle=null; // ペダルUIは削除
 // 楽譜の複数トラックUIは無効化
@@ -229,7 +247,11 @@ const adviceBtn=$('adviceBtn');
 const practiceModeOn=$('practiceModeOn');
 const practiceModeOff=$('practiceModeOff');
 const practicePatternSelect=$('practicePatternSelect');
-const practiceStartBtn=$('practiceStartBtn');
+            try{
+                const ctxDt = Math.max(0,audioCtx.currentTime - playbackStartTime);
+                const perfDt = Math.max(0,performance.now()/1000 - playbackStartPerf);
+                console.debug('[resyncAfterSeek]', reason, 'pos=',playbackPosition.toFixed(3),'ctxDt=',ctxDt.toFixed(4),'perfDt=',perfDt.toFixed(4));
+            }catch(_){ console.debug('[resyncAfterSeek]', reason, 'pos=',playbackPosition.toFixed(3)); }
 const practicePauseBtn=$('practicePauseBtn');
 const practiceStopBtn=$('practiceStopBtn');
 const practiceRangeWrap=$('practiceRangeWrap');
@@ -2129,7 +2151,12 @@ function ensureAtLeastOneTestTone(){
     }catch(e){ console.warn('Fallback tone failed',e); }
 }
 function midiToFreq(m){ return A4Frequency*Math.pow(2,(m-69)/12); }
-function seekTo(sec){ sec=Math.max(0,Math.min(sec,getSongDuration())); playbackPosition=sec; playbackStartPos=sec; scheduleAll(); if(isPlaying){ pausePlayback(); startPlayback(); } else drawChart(); }
+function seekTo(sec){
+    sec=Math.max(0,Math.min(sec,getSongDuration()));
+    playbackPosition=sec; playbackStartPos=sec;
+    scheduleAll();
+    if(isPlaying){ resyncAfterSeek('seekTo'); } else { drawChart(); }
+}
 function seekRelative(d){ seekTo(playbackPosition+d); }
 function getSongDuration(){
     // NaN混入や未定義を無視して最終ノート時刻を堅牢に取得
@@ -2178,6 +2205,7 @@ timelineScroll && (timelineScroll.oninput = () => {
     const delta = newEff - (playbackPosition + timelineOffsetSec);
     timelineOffsetSec += delta;
     drawChart();
+    if(isPlaying) resyncAfterSeek('scrollbar');
 });
 // ---- Markers ----
 Object.keys(markerCfg).forEach(k=>{ const [s,p]=markerCfg[k]; const sb=$(s),pb=$(p); if(sb) sb.onclick=()=> markers[k]=playbackPosition; if(pb) pb.onclick=()=>{ if(markers[k]!=null) seekTo(markers[k]); }; });
@@ -3881,6 +3909,8 @@ function startPlayback(){
     playbackStartPerf=performance.now()/1000 + START_LAT + startLead;
     playbackStartPos=playbackPosition;
     stopAllSources();
+    // ドリフト統計初期化
+    try{ if(window.__driftStats){ window.__driftStats.samples=0; window.__driftStats.avg=0; window.__driftStats.max=0; window.__driftStats.last=0; const el=document.getElementById('driftOverlay'); if(el) el.textContent='Drift(start)'; } }catch(_){ }
     if(!practiceMode){
         if(melodyBuffer){ melodySource=createAndStartSource(melodyBuffer, playbackStartTime, playbackPosition, melodyGain||masterGain||audioCtx.destination); }
         if(accompBuffer){ accompSource=createAndStartSource(accompBuffer, playbackStartTime, playbackPosition, accompGain||masterGain||audioCtx.destination); }
