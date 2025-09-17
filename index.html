@@ -99,10 +99,11 @@
     </div>
   </div>
   <div id="chartContainer">
-    <canvas id="chartCanvas"></canvas>
-    <div id="timelineVScroll" aria-label="縦スクロール" title="音域スクロール (ドラッグ/ホイール)">
-      <div id="timelineVThumb"></div>
+    <div id="leftVerticalPanel">
+      <input class="vert-range" id="verticalOffsetSlider" type="range" min="0" max="100" value="0" />
+      <div class="v-offset-label">音域</div>
     </div>
+    <canvas id="chartCanvas"></canvas>
     <!-- 編集ツールバー（編集モード時のみ表示） -->
   <div id="editToolbar" class="hidden" style="position:absolute;top:8px;left:80px;z-index:1200;background:rgba(20,20,20,0.95);border:1px solid #555;border-radius:6px;padding:6px 8px;gap:8px;align-items:center;flex-wrap:wrap;display:none;">
       <button id="undoBtn" type="button" title="元に戻す (Ctrl+Z)">↶ Undo</button>
