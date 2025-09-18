@@ -1,8 +1,8 @@
 /* 共通: 横スクロール禁止（確実に遮断） */
 * { box-sizing: border-box; }
-html { overflow-x: hidden; max-width: 100dvw; }
+html { overflow-x: hidden; max-width: 100dvw; background:#0e0f12; color:#e6eaf2; }
 /* 全体を縦フレックス: 先頭のヘッダー等の実高を差し引いた残りをチャートに割当てる */
-body { overflow-x: hidden; margin: 0; padding: 0; width: 100%; max-width: 100dvw; display: flex; flex-direction: column; min-height: 100dvh; }
+body { overflow-x: hidden; margin: 0; padding: 0; width: 100%; max-width: 100dvw; display: flex; flex-direction: column; min-height: 100dvh; background:#0e0f12; color:#e6eaf2; }
 :root { overflow-x: clip; }
 :root { overflow-x: clip; }
 body { position: relative; }
@@ -60,7 +60,7 @@ body { position: relative; }
 
 button {
 	background: #23252b;
-	color: #e0e0e0;
+	color: #e6eaf2;
 	border: 1px solid #444;
 	border-radius: 4px;
 	padding: 4px 10px;
@@ -77,13 +77,34 @@ button {
     align-items: center;
     justify-content: center;
 }
+
+/* アイコンとテキストの分離: 小画面でテキストを隠して密度を上げる */
+.icon { display: inline-flex; margin-right: 4px; }
+.txt { display: inline; }
+.lbl { display: inline; }
+
+@media (max-width: 600px) {
+	/* 小画面でもボタンのテキストは表示。AutoFitで縮小して収める */
+	#top-bar button .txt, #mic-permission-bar .txt { display: inline; }
+	#top-bar button .icon { margin-right: 4px; }
+	/* 折返しで高さが増えないよう常に1行に固定（見切れはellipsisに） */
+	#top-bar button, #transportBar button, .marker-pair button { white-space: nowrap !important; overflow: hidden !important; text-overflow: ellipsis !important; }
+	/* ラベルは必要最小限だけ表示。範囲ラベル等は省略 */
+	#practiceRangeWrap .lbl { display: none; }
+}
+
+@media (max-width: 1024px) and (orientation: landscape) {
+	/* タブレット横向きでもボタンテキストは表示（縮小で対応） */
+	#top-bar button .txt { display: inline; }
+	#top-bar button .icon { margin-right: 4px; }
+}
 button:hover {
 	background: #444;
 }
 #trackTable {
 	border-collapse: collapse;
 	background: #23252b;
-	color: #e0e0e0;
+	color: #e6eaf2;
 }
 #trackTable th, #trackTable td {
 	border: 1px solid #444;
@@ -130,8 +151,8 @@ canvas, #chartCanvas { display: block; }
 /* トップバーは通常フロー（stickyは無効化） */
 #top-bar { position: static; }
 /* トップバーの固定用余白は不要 */
-#leftVerticalPanel { width:38px; background:#1f2228; display:flex; flex-direction:column; align-items:center; justify-content:flex-start; padding:6px 4px; border-right:1px solid #444; }
-#leftVerticalPanel .v-offset-label { writing-mode: vertical-rl; font-size:10px; color:#bbb; margin-top:6px; }
+#rightVerticalPanel { width:38px; background:#1f2228; display:flex; flex-direction:column; align-items:center; justify-content:flex-start; padding:6px 4px; border-left:1px solid #444; }
+#rightVerticalPanel .v-offset-label { writing-mode: vertical-rl; font-size:10px; color:#bbb; margin-top:6px; }
 .vert-range { writing-mode: vertical-lr; direction: rtl; width:26px; height:240px; }
 #pianoArea { display:flex; flex-direction:row; align-items:stretch; }
 #verticalOffsetWrapper { display:flex; flex-direction:column; align-items:center; justify-content:center; padding:4px 2px; background:#1c1e24; }
@@ -151,12 +172,23 @@ canvas, #chartCanvas { display: block; }
 	padding: 10px;
 	background: #23252b;
 	display: flex;
-	flex-wrap: wrap;
-	align-items: flex-start;
+	flex-direction: column;
+	gap: 12px;
+	align-items: stretch;
 	color: #e0e0e0;
-	/* タイムライン領域を確保するため、デスクトップではコントロール領域の占有を圧縮 */
-	max-height: 20vh;
-	overflow: auto;
+}
+.controls-section { border: 1px solid #363b47; background: #1f2228; border-radius: 8px; padding: 10px; }
+.controls-section > h3, .controls-section > summary { margin: 0 0 8px; font-size: 14px; color: #c9d1e0; }
+.controls-grid { display: grid; grid-template-columns: repeat(3, minmax(220px, 1fr)); gap: 10px 12px; align-items: start; }
+.controls-section details & summary { cursor: pointer; }
+/* ---- Tablet でも 70% 高さを強制確保 (横/縦) ---- */
+@media (max-width: 1180px) and (min-width: 601px) {
+  #chartContainer {
+    height: 70vh !important;
+    max-height: 70vh !important;
+    min-height: 70vh !important;
+  }
+	/* 独立スクロールを廃止: max-height 指定を撤回 */
 }
 .control-group {
 	margin: 5px 15px 5px 0;
@@ -164,6 +196,7 @@ canvas, #chartCanvas { display: block; }
 .control-group .help-text {
 	font-size: 0.8em;
 	color: #888;
+	display: none; /* ツールチップ化のため非表示（JSでiconに移す） */
 }
 .toggles label {
 	margin-right: 10px;
@@ -211,7 +244,7 @@ canvas, #chartCanvas { display: block; }
 
 input, select, textarea {
 	background: #23252b;
-	color: #e0e0e0;
+	color: #e6eaf2;
 	border: 1px solid #444;
 	border-radius: 4px;
 	padding: 2px 6px;
@@ -233,7 +266,7 @@ button:hover {
 }
 
 /* トランスポートバー */
-#transportBar { margin:4px 0 10px; display:flex; gap:6px; flex-wrap:wrap; align-items:center; background:#1f2228; padding:6px 8px; border:1px solid #444; border-radius:6px; }
+#transportBar { margin:4px 0 10px; display:flex; gap:6px; flex-wrap:wrap; align-items:center; background:#1f2228; padding:6px 8px; border:1px solid #444; border-radius:6px; color:#e6eaf2; }
 #transportBar button { margin: 0 4px 0 0; }
 #transportBar { justify-content: flex-start; }
 .transport-right { margin-left: 0 !important; justify-content: flex-start !important; }
@@ -262,6 +295,10 @@ button:hover {
 	#top-bar { gap: 8px; align-items: flex-start; flex-wrap: wrap; }
 	/* 左詰め重視: 各要素は自然幅を維持し、必要時のみ折返し */
 	#top-bar > * { flex: 0 1 auto; min-width: 0; max-width: 100%; }
+	/* PCのnowrap指定を上書きして折返しを許可 */
+	#top-bar { flex-wrap: wrap !important; overflow-x: hidden !important; }
+	/* 右端の許可/ヘルプ群は通常フローのまま折返し */
+	#mic-permission-bar { order: 99; flex: 0 1 auto; }
 	#top-bar span, #top-bar button { white-space: normal; overflow-wrap: anywhere; }
 	/* 固定の右上ボタンと重ならないよう、右側に余白を確保 */
 	/* #mic-permission-bar は position:fixed のまま */
@@ -296,7 +333,8 @@ button:hover {
 	}
 	.marker-pair button, #transportBar button { height: 26px; padding: 2px 6px; font-size: 12px; }
 	/* 設定項目の整列（2カラム） */
-	#controls { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 12px; align-items: start; }
+	#controls { display: flex; flex-direction: column; gap: 10px; }
+	.controls-grid { grid-template-columns: repeat(2, minmax(200px, 1fr)); }
 	#controls .control-group { margin: 0; }
 }
 	/* 長いファイル名ラベルの最小幅を縮小し、はみ出しを防止 */
@@ -360,11 +398,13 @@ button:hover {
 }
 
 /* Mobile 共通（自動） */
-
 @media (max-width: 600px) {
+	/* PCで設定したトップバーnowrap/横スクロールを上書きし、折返し前提に */
+	#top-bar { flex-wrap: wrap !important; overflow-x: hidden !important; gap: 6px !important; }
+	#top-bar > * { flex: 1 1 160px !important; }
 	/* トップバーは2段以上に折返して横溢れを防ぐ */
-	#top-bar { gap: 8px !important; align-items: flex-start; flex-wrap: wrap; max-width: 100% !important; }
-	#top-bar > * { flex: 1 1 180px; min-width: 0; max-width: 100%; }
+	#top-bar { gap: 8px !important; align-items: flex-start; max-width: 100% !important; }
+	#top-bar > * { min-width: 0; max-width: 100%; }
 	/* 文字は折返し優先で横溢れ回避 */
 	#top-bar span, #top-bar button { white-space: normal; overflow-wrap: anywhere; text-overflow: clip; }
 	/* タイムライン・スライダをラップ幅にフィット */
@@ -375,7 +415,7 @@ button:hover {
 	#transportBar .transport-right > div { flex: 1 1 180px; min-width: 0; }
 	#transportBar input[type="range"] { width: 100% !important; max-width: 100% !important; }
 	/* ラベルは縮める（編集モードボタン等の溢れ防止） */
-	#melodyAudioLabel, #accompAudioLabel { min-width: 140px !important; }
+	#melodyAudioLabel, #accompAudioLabel { min-width: 120px !important; }
 	input[type="range"] { width: 100%; }
 	.help-text { font-size: 12px; line-height: 1.3; }
 	/* 横スクロールを出さないため主要ブロックを全幅に */
@@ -392,12 +432,13 @@ button:hover {
 	#chartContainer { margin-top: 6px; }
 	#chartCanvas { width: 100% !important; height: 100% !important; }
 	/* ボタン文字の改行/はみ出し防止（より強め） */
-	#transportBar button, .marker-pair button { white-space: nowrap; overflow: hidden; text-overflow: clip; line-height: 1.1; }
-	#transportBar button { font-size: clamp(10px, 2.3vw, 11.5px); height: 26px; padding: 2px 6px; }
-	.marker-pair button { font-size: clamp(9.5px, 2.1vw, 11.5px); height: 26px; padding: 2px 6px; }
+	#transportBar button, .marker-pair button { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; line-height: 1.1; }
+	#transportBar button { font-size: clamp(10px, 2.2vw, 11.5px); height: 26px; padding: 2px 6px; min-width: 56px; }
+	.marker-pair button { font-size: clamp(9.5px, 2.0vw, 11.5px); height: 26px; padding: 2px 6px; min-width: 52px; }
 	#timelineScrollBar { margin: 4px 0 6px; padding: 0 4px; }
 	/* 設定はモバイル横向き2カラム、縦向きは後段で1カラム */
-	#controls { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 8px 10px; }
+	#controls { display: flex; flex-direction: column; gap: 8px; }
+	.controls-grid { grid-template-columns: 1fr; }
 	#controls .control-group { margin: 0; }
 }
 	/* マーカーはflexで左詰め・最小gap（gridの1frによる大きな余白を排除） */
@@ -411,7 +452,7 @@ button:hover {
 /* Mobile 横（ランドスケープ） */
 @media (max-width: 600px) and (orientation: landscape) {
 	/* 横向きでも横スクロールを避ける: 可能な限り折返し */
-	#top-bar { flex-direction: row; flex-wrap: wrap; max-width: 100%; }
+	#top-bar { flex-direction: row; flex-wrap: wrap !important; max-width: 100%; overflow-x: hidden !important; }
 	#top-bar > * { max-width: 100%; }
 	#timelineScrollBar { padding: 8px 10px; }
 	/* テキストは改行優先（横溢れ防止） */
@@ -423,9 +464,9 @@ button:hover {
 	#transportBar .transport-hint { display: none; }
 	#transportBar button { padding: 2px 6px; min-width: auto; }
 	/* 横向きでも1行優先。スペースが足りないときだけ2行に折返し */
-	.markers-grid { display:flex; flex-wrap:wrap; gap: 6px; align-items:stretch; }
-	.marker-pair { flex-direction: row; gap: 6px; flex: 0 1 auto; min-width: 136px; }
-	.marker-pair button { width: auto !important; min-width: 62px; height: 28px; padding: 3px 8px; }
+	.markers-grid { display:flex; flex-wrap:wrap; gap: 4px; align-items:stretch; }
+	.marker-pair { flex-direction: row; gap: 4px; flex: 0 1 auto; min-width: 120px; }
+	.marker-pair button { width: auto !important; min-width: 58px; height: 28px; padding: 2px 6px; }
 	/* 横向きでもフレックスで残り高さを自動割当（特別な上書き無し） */
 	/* 念のため各主要ブロックで横方向は clip */
 	#top-bar, #transportBar, #markers, #controls, #timelineScrollBar, #chartContainer { overflow-x: clip; }
@@ -450,11 +491,7 @@ button:hover {
 		height: 70vh;
 	}
 	#chartCanvas { height: 100% !important; }
-	/* コントロールは残り ~30% 以内でスクロール */
-	#controls {
-		max-height: 30vh;
-		overflow: auto;
-	}
+	/* 独立スクロールは廃止。ページ全体のスクロールに統合 */
 }
 
 /* Smartphone Landscape priority: 横画面前提での最適化（高さベース） */
@@ -477,4 +514,34 @@ button:hover {
 	#chartCanvas { width:100% !important; height:100% !important; }
 	/* 編集ツールバーは下部固定 */
 	#editToolbar { position: fixed !important; left:8px !important; right:8px !important; bottom:8px !important; top:auto !important; z-index:1250 !important; }
+}
+
+/* ==== Tooltip (説明「i」アイコン) ==== */
+button.info-tip {
+	min-width: 16px !important; width: 16px; height: 16px; min-height: 16px !important;
+	padding: 0; margin-left: 6px; line-height: 1; font-size: 11px; font-weight: 700;
+	border-radius: 50%; border: 1px solid #3a4a6a; background: #1b1f27; color: #9ab;
+	display: inline-flex; align-items: center; justify-content: center; cursor: help;
+}
+button.info-tip:hover { background: #263045; }
+.tooltip-bubble {
+	position: absolute; max-width: 280px; background: rgba(0,0,0,0.92); color: #e6eaf2;
+	border: 1px solid #2b3244; border-radius: 8px; padding: 8px 10px; font-size: 12px;
+	z-index: 3000; pointer-events: none; opacity: 0; transform: translateY(-4px);
+	transition: opacity 0.12s ease, transform 0.12s ease;
+}
+.tooltip-bubble.show { opacity: 1; transform: translateY(0); }
+
+/* ===== Practice mode primary controls ===== */
+#practiceStartBtn, #practicePauseBtn, #practiceStopBtn {
+	min-height: 36px;
+	height: 36px;
+	padding: 6px 14px;
+	font-weight: 700;
+	border-width: 2px;
+}
+@media (max-width: 600px) {
+	#practiceStartBtn, #practicePauseBtn, #practiceStopBtn {
+		min-height: 42px; height: 42px; padding: 8px 16px; font-size: 14px;
+	}
 }
