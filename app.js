@@ -77,7 +77,7 @@ if(/Android|iPhone|iPad|iPod|Mobile|Tablet/i.test(navigator.userAgent||'')){
 let verticalZoom=3,verticalOffset=0,pxPerSec=100,timelineOffsetSec=0,isPanning=false,panStartX=0,panStartOffset=0;
 let autoCenterFrozen=false; // ノーツ編集以降は自動センタリングを凍結
 let pitchHistory=[],markers={A:null,B:null,C:null,D:null,E:null,F:null,G:null},stopStage=0;
-let micRenderMode='line'; // 'line' | 'dot' | 'graph'
+let micRenderMode='graph'; // 'line' | 'dot' | 'graph'
 // 可視化補正パラメータ（UIで変更可）
 let visTimeSnapMs = 180;           // ガイド時間スナップ許容（ms）
 let visBridgeGapMs = 150;          // 一般ギャップ連結（ms）
@@ -3384,20 +3384,54 @@ function drawChart(){
                 }
                 ctx.restore();
             } else if(micRenderMode==='graph'){
-                // グラフモード: 連続ポリラインで滑らかに描画
+                // グラフモード: 無音ギャップで分割し、許容内は前面緑、許容外は背面赤
+                // 近接判定のための閾値
+                const CHANGE_TOL_SEMI = 0.5;      // 半音差分の分割しきい値
+                const bridgeGap = Math.max(0.001, (1/Math.max(1,(analysisRate||20))) * 1.5);
+                // まず連続セグメントに分割
+                const segs=[]; // {pts:[{x,y,t,midi,inTol,conf}]}
+                let cur=null; let last=null;
+                for(const p of pts){
+                    const x = playX + ((p.t - eff) * pxPerSec / tempoFactor);
+                    const y = h - (p.midi - vmin + 1) * pxSemi;
+                    const inTol = (p.dCents!=null)? (Math.abs(p.dCents) <= (toleranceCents||0)) : false;
+                    if(x<0 || x>w){ last=p; continue; }
+                    const voiced = (p.conf==null? true: p.conf>=0.3);
+                    if(!voiced){ last=p; continue; }
+                    const isCont = last? ((p.t - last.t) <= bridgeGap && Math.abs(p.midi - last.midi) <= CHANGE_TOL_SEMI) : false;
+                    if(!cur || !isCont){
+                        if(cur && cur.pts.length>=2) segs.push(cur);
+                        cur = { pts:[{x,y,t:p.t,midi:p.midi,inTol,conf:p.conf}] };
+                    } else {
+                        cur.pts.push({x,y,t:p.t,midi:p.midi,inTol,conf:p.conf});
+                    }
+                    last=p;
+                }
+                if(cur && cur.pts.length>=2) segs.push(cur);
+                // 背面（赤）→ 前面（緑）の順に描画
                 ctx.save();
                 ctx.lineWidth = 2.0;
-                ctx.strokeStyle = 'rgba(255,120,120,0.95)';
-                let started=false;
-                ctx.beginPath();
-                for(const p of pts){
-                    const y = h - (p.midi - vmin + 1) * pxSemi;
-                    const x = playX + ((p.t - eff) * pxPerSec / tempoFactor);
-                    if(x<0 || x>w) continue;
-                    if(!started){ ctx.moveTo(x,y); started=true; }
-                    else { ctx.lineTo(x,y); }
+                // 赤: 許容外連続部分のみポリライン
+                ctx.strokeStyle = 'rgba(255,120,120,0.9)';
+                for(const s of segs){
+                    // サブセグメント: inTol=false をつないで描く
+                    let started=false; ctx.beginPath();
+                    for(const pt of s.pts){
+                        if(!pt.inTol){ if(!started){ ctx.moveTo(pt.x, pt.y); started=true; } else { ctx.lineTo(pt.x, pt.y);} }
+                        else { if(started){ ctx.stroke(); started=false; ctx.beginPath(); } }
+                    }
+                    if(started){ ctx.stroke(); }
                 }
-                ctx.stroke();
+                // 緑: 許容内を前面で
+                ctx.strokeStyle = 'rgba(24,200,70,0.98)';
+                for(const s of segs){
+                    let started=false; ctx.beginPath();
+                    for(const pt of s.pts){
+                        if(pt.inTol){ if(!started){ ctx.moveTo(pt.x, pt.y); started=true; } else { ctx.lineTo(pt.x, pt.y);} }
+                        else { if(started){ ctx.stroke(); started=false; ctx.beginPath(); } }
+                    }
+                    if(started){ ctx.stroke(); }
+                }
                 ctx.restore();
             } else {
                 // 棒線（既存）: 連続トーンに分割して太さ/色分け
@@ -6158,6 +6192,8 @@ window.addEventListener('load',()=>{
     // マイク描画モードセレクトのイベント
     try{
         if(micRenderModeSel){
+            // 既定モードをUIにも反映
+            try{ micRenderModeSel.value = 'graph'; }catch(_){ }
             micRenderModeSel.addEventListener('change', ()=>{
                 const v = micRenderModeSel.value;
                 micRenderMode = (v==='dot'||v==='graph')? v : 'line';
