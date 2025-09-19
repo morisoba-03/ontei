@@ -434,8 +434,10 @@ button:hover {
 	/* トップバーは2段以上に折返して横溢れを防ぐ */
 	#top-bar { gap: 8px !important; align-items: flex-start; max-width: 100% !important; }
 	#top-bar > * { min-width: 0; max-width: 100%; }
-	/* 文字は折返し優先で横溢れ回避 */
-	#top-bar span, #top-bar button { white-space: normal; overflow-wrap: anywhere; text-overflow: clip; }
+	/* ラベル系は折返し可。ボタンは常に1行（オートフィットで縮小） */
+	#top-bar span { white-space: normal; overflow-wrap: anywhere; text-overflow: clip; }
+	#top-bar button { white-space: nowrap !important; overflow: hidden !important; text-overflow: ellipsis; min-width: 64px; }
+	#editToolbar button, #practiceToolbar button { white-space: nowrap !important; overflow: hidden !important; min-width: 60px; }
 	/* ボタン以外のラベル/見出しは 1 行優先（フォント縮小はJSで行う） */
 	#controls .controls-section > summary,
 	#controls .control-group > label,
@@ -489,8 +491,9 @@ button:hover {
 	#top-bar { flex-direction: row; flex-wrap: wrap !important; max-width: 100%; overflow-x: hidden !important; }
 	#top-bar > * { max-width: 100%; }
 	#timelineScrollBar { padding: 8px 10px; }
-	/* テキストは改行優先（横溢れ防止） */
-	#top-bar span, #top-bar button, #transportBar button { white-space: normal; overflow-wrap: anywhere; text-overflow: clip; }
+	/* ラベルは改行可／ボタンは1行固定（自動縮小） */
+	#top-bar span { white-space: normal; overflow-wrap: anywhere; text-overflow: clip; }
+	#top-bar button, #transportBar button, #editToolbar button, #practiceToolbar button { white-space: nowrap !important; overflow: hidden !important; text-overflow: ellipsis; }
 	#transportBar input[type="range"] { width: 100%; max-width: 100%; }
 	#transportBar .transport-left,
 	#transportBar .transport-right { flex-wrap: wrap; gap: 6px; }
@@ -598,3 +601,7 @@ button.info-tip:hover { background: #263045; }
 	#practiceToolbar select { max-width: 60vw; }
 	#practiceToolbar button { font-size: 12px; }
 }
+
+/* --- 最終ガード: どのブレークポイントでもボタンは必ず横書き1行 --- */
+button { white-space: nowrap !important; overflow: hidden; text-overflow: ellipsis; display: inline-flex; align-items: center; justify-content: center; }
+
