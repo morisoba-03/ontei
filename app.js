@@ -685,6 +685,110 @@ let practiceMutedUntil=0; // audio time until which call gain is held at 0 (for 
     }
 })();
 
+// =============================
+// UI: ボタン以外のラベル/見出しの自動フィット
+// - 小画面で summary や label 文言が縦に割れないよう 1 行に収める
+// =============================
+(function initAutoFitText(){
+    try{
+        // 対象: トップバー内のラベル文字、トランスポート右側のラベル、設定セクション見出し/ラベル
+        const FIT_TEXT_SELECTOR = [
+            '#top-bar label .txt',
+            '#transportBar .transport-right > div > span',
+            '#controls .controls-section > summary',
+            '#controls .control-group > label'
+        ].join(',');
+
+        const MIN_PX_BASE = 9; // これ以下は可読性低下
+        const vw = Math.max(320, Math.min(1200, (window.innerWidth||360)));
+        const MIN_PX = vw <= 360 ? 8 : MIN_PX_BASE;
+        const MAX_ITER = 9;
+        const els = Array.from(document.querySelectorAll(FIT_TEXT_SELECTOR));
+
+        // 初期スタイル（1行固定＆親幅に収める）
+        for(const el of els){
+            const cs = getComputedStyle(el);
+            if(cs.whiteSpace !== 'nowrap') el.style.whiteSpace = 'nowrap';
+            if(cs.overflow !== 'hidden') el.style.overflow = 'hidden';
+            if(cs.textOverflow !== 'ellipsis') el.style.textOverflow = 'clip';
+            // 親幅を測れるようにインライン要素はインラインブロック化
+            if(cs.display === 'inline') el.style.display = 'inline-block';
+            // 100% までの幅に制限（過剰拡張防止）
+            if(!el.style.maxWidth) el.style.maxWidth = '100%';
+        }
+
+        function fits(el){
+            // 1px 余白で判定のブレを抑制
+            const EPS = 0.5;
+            return (el.scrollWidth <= el.clientWidth + EPS);
+        }
+
+        function fitOne(el){
+            const cs = getComputedStyle(el);
+            // 非表示や無寸法はスキップ
+            if(cs.display === 'none' || el.clientWidth === 0){ return; }
+            const basePx = parseFloat(cs.fontSize) || 13;
+            let low = MIN_PX, high = Math.max(MIN_PX, Math.min(64, basePx));
+            // まず上限に戻す
+            el.style.fontSize = high + 'px';
+            if(fits(el)) return;
+            let best = MIN_PX;
+            for(let i=0;i<MAX_ITER;i++){
+                const mid = Math.floor((low + high)/2);
+                el.style.fontSize = mid + 'px';
+                if(fits(el)){ best = mid; low = mid + 1; }
+                else { high = mid - 1; }
+            }
+            el.style.fontSize = Math.max(MIN_PX, Math.min(best, high)) + 'px';
+        }
+
+        function fitAll(){ els.forEach(fitOne); }
+        fitAll();
+
+        // リサイズで再フィット
+        let resizeId=0; window.addEventListener('resize',()=>{
+            if(resizeId) cancelAnimationFrame(resizeId);
+            resizeId = requestAnimationFrame(()=>{ fitAll(); resizeId=0; });
+        }, {passive:true});
+
+        // 親や自身のサイズ変化を監視
+        const ro = new ResizeObserver(()=>{ requestAnimationFrame(fitAll); });
+        els.forEach(el=>{ ro.observe(el); if(el.parentElement) ro.observe(el.parentElement); });
+
+        // 文字変更にも追従
+        const mo = new MutationObserver(()=>{ requestAnimationFrame(fitAll); });
+        els.forEach(el=> mo.observe(el, {characterData:true, childList:true, subtree:true}));
+
+        // 後から追加される対象にも適用
+        const addMo = new MutationObserver(muts=>{
+            let added=[];
+            for(const m of muts){
+                m.addedNodes && m.addedNodes.forEach(node=>{
+                    if(node.nodeType!==1) return;
+                    const q = node.matches && node.matches(FIT_TEXT_SELECTOR) ? [node] : [];
+                    const found = node.querySelectorAll ? node.querySelectorAll(FIT_TEXT_SELECTOR) : [];
+                    if(q.length) added.push(...q);
+                    if(found && found.length) added.push(...found);
+                });
+            }
+            if(added.length){
+                for(const el of added){
+                    const cs = getComputedStyle(el);
+                    if(cs.whiteSpace !== 'nowrap') el.style.whiteSpace = 'nowrap';
+                    if(cs.overflow !== 'hidden') el.style.overflow = 'hidden';
+                    if(cs.textOverflow !== 'ellipsis') el.style.textOverflow = 'clip';
+                    if(cs.display === 'inline') el.style.display = 'inline-block';
+                    if(!el.style.maxWidth) el.style.maxWidth = '100%';
+                    ro.observe(el); if(el.parentElement) ro.observe(el.parentElement);
+                    mo.observe(el, {characterData:true, childList:true, subtree:true});
+                    fitOne(el);
+                }
+            }
+        });
+        addMo.observe(document.body, {childList:true, subtree:true});
+    }catch(e){ console.warn('AutoFitText init error', e); }
+})();
+
 function parseNoteNameToMidi(s){
     try{
         if(typeof s==='number') return Math.max(0,Math.min(127, s|0));

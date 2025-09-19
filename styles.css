@@ -436,6 +436,11 @@ button:hover {
 	#top-bar > * { min-width: 0; max-width: 100%; }
 	/* 文字は折返し優先で横溢れ回避 */
 	#top-bar span, #top-bar button { white-space: normal; overflow-wrap: anywhere; text-overflow: clip; }
+	/* ボタン以外のラベル/見出しは 1 行優先（フォント縮小はJSで行う） */
+	#controls .controls-section > summary,
+	#controls .control-group > label,
+	#transportBar .transport-right > div > span,
+	#top-bar label .txt { white-space: nowrap; overflow: hidden; text-overflow: clip; }
 	/* タイムライン・スライダをラップ幅にフィット */
 	#timelineScrollBar { width: 100%; padding: 0 8px; box-sizing: border-box; }
 	#timelineScrollBar input[type="range"] { width: 100% !important; max-width: 100% !important; }
