@@ -146,11 +146,20 @@
   <!-- 右上バーはトップバー内の末尾に常設（通常フロー配置） -->
   <div id="top-bar" style="display:flex;gap:8px;align-items:center;flex-wrap:nowrap;overflow-x:auto;scrollbar-width:thin;">
     <div style="display:inline-flex;align-items:center;gap:6px;">
+      <label style="display:inline-flex;align-items:center;gap:4px;">
+        <span class="txt">Part</span>
+        <select id="melodyPartSelect" title="編集・読込対象のメロディパート">
+          <option value="0">1</option>
+          <option value="1">2</option>
+          <option value="2">3</option>
+          <option value="3">4</option>
+        </select>
+      </label>
       <button id="melodyAudioSelectBtn" type="button" title="メロディ音声ファイルを読み込む"><span class="icon">🎵</span><span class="txt">メロディ音声を選択</span></button>
   <span id="melodyAudioLabel" style="display:inline-block;" title="未選択">未選択</span>
       <input id="melodyAudioInput" type="file" accept="audio/wav,audio/mpeg,audio/mp3,audio/mp4,audio/aac,.wav,.mp3,.m4a" style="display:none;" />
     </div>
-    <div style="display:inline-flex;align-items:center;gap:6px;">
+  <div style="display:inline-flex;align-items:center;gap:6px;">
       <button id="accompAudioSelectBtn" type="button" title="伴奏音声ファイルを読み込む"><span class="icon">🎶</span><span class="txt">伴奏音声を選択</span></button>
   <span id="accompAudioLabel" style="display:inline-block;" title="未選択">未選択</span>
       <input id="accompAudioInput" type="file" accept="audio/wav,audio/mpeg,audio/mp3,audio/mp4,audio/aac,.wav,.mp3,.m4a" style="display:none;" />
@@ -160,8 +169,14 @@
       <button id="sessionLoadBtn" type="button" title="保存したzipを読み込み">📂 <span class="txt">読込</span></button>
       <input id="sessionLoadInput" type="file" accept=".zip" style="display:none;" />
     </div>
-    <div style="display:inline-flex;align-items:center;gap:6px;flex:0 0 auto;min-width:auto;">
+    <div style="display:inline-flex;align-items:center;gap:8px;flex:0 0 auto;min-width:auto;">
       <button id="editModeToggle" type="button" title="ノートの編集を行う">✏️ <span class="txt">編集モード</span></button>
+      <label style="display:inline-flex;align-items:center;gap:4px;">
+        <input id="partNotesToggle" type="checkbox" checked /> <span class="txt">ノーツ</span>
+      </label>
+      <label style="display:inline-flex;align-items:center;gap:4px;">
+        <input id="partPlaybackToggle" type="checkbox" checked /> <span class="txt">再生</span>
+      </label>
     </div>
     <div style="display:inline-flex;align-items:center;gap:6px;">
       <button id="practiceModeOn" type="button" title="基礎練習モードに切替">🎯 <span class="txt">基礎練習モード</span></button>
@@ -219,6 +234,7 @@
     <div id="mic-permission-bar">
       <button id="adviceBtn" title="採点フィードバックを表示">🧠 <span class="txt">アドバイス</span></button>
       <button id="micPermissionBtn" title="マイク入力の許可をリクエスト">🎤 <span class="txt">マイク許可</span></button>
+  <button id="micDisconnectBtn" title="マイク入力を停止">🔌 <span class="txt">マイク停止</span></button>
       <button id="globalHelpBtn" title="このアプリの使い方">❓ <span class="txt">ヘルプ</span></button>
     </div>
   </div>
@@ -262,6 +278,10 @@
   <button id="midiAlignFitEnds" type="button" title="頭と最後のノーツを合わせて倍率を自動調整">両端合わせ</button>
         <span id="midiAlignInfo" style="font-size:12px;color:#bbb;"></span>
       </div>
+    </div>
+    <!-- 練習ツールバー（練習モード時のみ表示） -->
+    <div id="practiceToolbar" class="hidden" style="position:absolute;top:8px;left:80px;z-index:1190;background:rgba(20,20,20,0.95);border:1px solid #555;border-radius:6px;padding:6px 8px;gap:8px;align-items:center;flex-wrap:wrap;display:none;max-width:min(96vw,1100px);">
+      <!-- ここに既存の練習UI要素（#practicePatternSelect, #practiceRangeWrap, #practiceStartBtn, #practicePauseBtn, #practiceStopBtn, #practiceVolWrap）を動的に移設します -->
     </div>
   </div>
   <!-- 解析中オーバーレイ -->
@@ -317,9 +337,9 @@
         <div class="control-group">
           <label for="micRenderModeSelect">マイクの描画モード</label><br />
           <select id="micRenderModeSelect">
-            <option value="line" selected>棒線</option>
+            <option value="line">棒線</option>
             <option value="dot">赤い点</option>
-            <option value="graph">グラフ</option>
+            <option value="graph" selected>グラフ</option>
           </select>
           <div class="help-text">リアルタイム音程の表示方法を切り替えます。</div>
         </div>

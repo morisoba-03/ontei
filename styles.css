@@ -154,6 +154,9 @@ canvas, #chartCanvas { display: block; }
 #rightVerticalPanel { width:38px; background:#1f2228; display:flex; flex-direction:column; align-items:center; justify-content:flex-start; padding:6px 4px; border-left:1px solid #444; }
 #rightVerticalPanel .v-offset-label { writing-mode: vertical-rl; font-size:10px; color:#bbb; margin-top:6px; }
 .vert-range { writing-mode: vertical-lr; direction: rtl; width:26px; height:240px; }
+#chartCanvas { touch-action: none; overscroll-behavior: contain; }
+#rightVerticalPanel { touch-action: none; overscroll-behavior: contain; }
+.vert-range { touch-action: none; }
 #pianoArea { display:flex; flex-direction:row; align-items:stretch; }
 #verticalOffsetWrapper { display:flex; flex-direction:column; align-items:center; justify-content:center; padding:4px 2px; background:#1c1e24; }
 #keyboardCanvas {
@@ -340,6 +343,32 @@ button:hover {
 	/* 長いファイル名ラベルの最小幅を縮小し、はみ出しを防止 */
 	#melodyAudioLabel, #accompAudioLabel { min-width: 140px !important; }
 
+/* タッチデバイス向け: スライダーやチェックボックスのタップ領域を拡大 */
+@media (pointer: coarse) {
+	/* 右側の縦スライダーを太く、大きいサムネイルに */
+	#rightVerticalPanel { width: 48px; padding: 8px 6px; }
+	.vert-range { width: 34px; height: 260px; }
+	/* WebKit */
+	.vert-range::-webkit-slider-runnable-track { width: 12px; background:#2a2d34; border-radius: 6px; }
+	.vert-range::-webkit-slider-thumb { -webkit-appearance:none; width: 28px; height: 28px; border-radius: 50%; background:#4e8cff; border:1px solid #2b3245; margin: 0; }
+	/* Firefox */
+	.vert-range::-moz-range-track { width: 12px; background:#2a2d34; border-radius: 6px; }
+	.vert-range::-moz-range-thumb { width: 28px; height: 28px; border-radius: 50%; background:#4e8cff; border:1px solid #2b3245; }
+	/* つまみ操作中の誤スクロールを抑止 */
+	.vert-range { touch-action: none; -ms-touch-action: none; }
+
+	/* トップバーのチェックボックスを押しやすく */
+	#top-bar input[type="checkbox"] { transform: scale(1.25); transform-origin: left center; }
+	#top-bar label { gap: 8px !important; }
+	#melodyPartSelect { min-height: 34px; }
+}
+
+/* スマホでも横スライダーのつまみを少し大きく */
+@media (max-width: 600px) {
+	input[type="range"]::-webkit-slider-thumb { -webkit-appearance:none; width: 20px; height: 20px; border-radius:50%; }
+	input[type="range"]::-moz-range-thumb { width: 20px; height: 20px; border-radius:50%; }
+}
+
 /* Tablet 縦（ポートレート） */
 @media (max-width: 1024px) and (orientation: portrait) {
 	#top-bar { 
@@ -478,7 +507,7 @@ button:hover {
 	#advicePanel { box-sizing: border-box !important; width: min(520px, calc(100vw - 16px)) !important; max-width: calc(100vw - 16px) !important; right: 8px !important; }
 
 	/* 編集ツールバーを下部に固定し、チャートに被らないよう余白確保 */
-	#editToolbar { position: fixed !important; left: 8px !important; right: 8px !important; bottom: 8px !important; top: auto !important; z-index: 1250 !important; }
+	#editToolbar, #practiceToolbar { position: fixed !important; left: 8px !important; right: 8px !important; bottom: 8px !important; top: auto !important; z-index: 1250 !important; }
 	#chartContainer { padding-bottom: 56px; }
 }
 
@@ -513,7 +542,7 @@ button:hover {
 	#chartContainer { margin-top:8px; padding-bottom:56px; }
 	#chartCanvas { width:100% !important; height:100% !important; }
 	/* 編集ツールバーは下部固定 */
-	#editToolbar { position: fixed !important; left:8px !important; right:8px !important; bottom:8px !important; top:auto !important; z-index:1250 !important; }
+	#editToolbar, #practiceToolbar { position: fixed !important; left:8px !important; right:8px !important; bottom:8px !important; top:auto !important; z-index:1250 !important; }
 }
 
 /* ==== Tooltip (説明「i」アイコン) ==== */
@@ -544,4 +573,23 @@ button.info-tip:hover { background: #263045; }
 	#practiceStartBtn, #practicePauseBtn, #practiceStopBtn {
 		min-height: 42px; height: 42px; padding: 8px 16px; font-size: 14px;
 	}
+}
+
+/* Practice overlay toolbar responsive adjustments */
+#practiceToolbar {
+	gap: 8px;
+	row-gap: 6px;
+	flex-wrap: wrap;
+	align-items: center;
+}
+@media (max-width: 768px) {
+	#practiceToolbar { left: 8px !important; right: 8px; max-width: 96vw; padding: 6px 8px; }
+	#practiceToolbar select { max-width: 44vw; }
+	#practiceToolbar .lbl { font-size: 12px; }
+	#practiceToolbar button { padding: 6px 10px; }
+}
+@media (max-width: 420px) {
+	#practiceToolbar { left: 6px !important; right: 6px; gap: 6px; row-gap: 4px; }
+	#practiceToolbar select { max-width: 60vw; }
+	#practiceToolbar button { font-size: 12px; }
 }
