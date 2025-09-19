@@ -558,6 +558,7 @@ let practiceMutedUntil=0; // audio time until which call gain is held at 0 (for 
                 // 既存CSSで inline-flex 指定済みの箇所が多いが、未指定時のフォールバック
                 btn.style.display = 'inline-flex';
             }
+            ensureInnerWrapper(btn);
         }
 
         function fits(btn){
@@ -567,12 +568,34 @@ let practiceMutedUntil=0; // audio time until which call gain is held at 0 (for 
             return (btn.scrollWidth <= btn.clientWidth + EPS) && (btn.scrollHeight <= btn.clientHeight + EPS);
         }
 
+        function ensureInnerWrapper(btn){
+            // ボタン内容をスケール制御用の内側ラッパーに包む（既存CSSとの互換維持）
+            if(btn.__afInner) return btn.__afInner;
+            const inner = document.createElement('span');
+            inner.className = '__af-inner';
+            inner.style.display = 'inline-flex';
+            inner.style.alignItems = 'center';
+            inner.style.justifyContent = 'center';
+            inner.style.whiteSpace = 'inherit';
+            inner.style.transformOrigin = 'center center';
+            inner.style.willChange = 'transform';
+            inner.style.width = '100%';
+            inner.style.maxWidth = '100%';
+            inner.style.overflow = 'visible';
+            // 既存の子ノードをすべて移動
+            while(btn.firstChild){ inner.appendChild(btn.firstChild); }
+            btn.appendChild(inner);
+            btn.__afInner = inner;
+            return inner;
+        }
+
         function fitOne(btn){
             // 非表示（display:none 等）だと測れないためスキップ
             const cs = getComputedStyle(btn);
             if(cs.display === 'none' || btn.clientWidth === 0 || btn.clientHeight === 0){
                 return; // 次回のResizeで再試行
             }
+            const inner = ensureInnerWrapper(btn);
             // 元のフォントサイズ（上限）を取得
             const basePx = parseFloat(cs.fontSize) || 12;
             const maxPx = basePx; // デザインの既定値を上限に
@@ -580,6 +603,7 @@ let practiceMutedUntil=0; // audio time until which call gain is held at 0 (for 
 
             // 一旦上限へリセット
             btn.style.fontSize = high + 'px';
+            inner.style.transform = 'scale(1)'; // スケールもリセット
             // すでに収まる場合は終了（できるだけ大きく）
             if(fits(btn)) return;
 
@@ -596,6 +620,19 @@ let practiceMutedUntil=0; // audio time until which call gain is held at 0 (for 
                 }
             }
             btn.style.fontSize = Math.max(MIN_PX, Math.min(best, maxPx)) + 'px';
+
+            // それでも幅/高さが僅かに溢れる場合は、内側ラッパーを等比スケール
+            // パディング/ボーダーを考慮して内寸を見積もり
+            const padX = parseFloat(cs.paddingLeft||0) + parseFloat(cs.paddingRight||0) + parseFloat(cs.borderLeftWidth||0) + parseFloat(cs.borderRightWidth||0);
+            const padY = parseFloat(cs.paddingTop||0) + parseFloat(cs.paddingBottom||0) + parseFloat(cs.borderTopWidth||0) + parseFloat(cs.borderBottomWidth||0);
+            // 一旦最大化して実寸を測る
+            inner.style.transform = 'scale(1)';
+            const availW = Math.max(1, btn.clientWidth - padX);
+            const availH = Math.max(1, btn.clientHeight - padY);
+            const needW = inner.scrollWidth;
+            const needH = inner.scrollHeight;
+            const scale = Math.min(1, availW / needW, availH / needH);
+            inner.style.transform = `scale(${scale})`;
         }
 
         // 初回フィット
@@ -631,7 +668,7 @@ let practiceMutedUntil=0; // audio time until which call gain is held at 0 (for 
                 });
             }
         });
-        for(const btn of buttons){ ro.observe(btn); }
+    for(const btn of buttons){ ro.observe(btn); }
 
         // 4. ボタン配下のテキストや子DOMの変更を監視して再フィット
         const mo = new MutationObserver(mutations => {
@@ -662,7 +699,7 @@ let practiceMutedUntil=0; // audio time until which call gain is held at 0 (for 
                     }
                 });
             }
-            if(added.length){
+        if(added.length){
                 for(const btn of added){
                     // 初期スタイル
                     btn.style.overflow = btn.style.overflow || 'hidden';
@@ -670,7 +707,8 @@ let practiceMutedUntil=0; // audio time until which call gain is held at 0 (for 
                     if(!btn.style.textOverflow) btn.style.textOverflow = 'ellipsis';
                     if(!btn.style.alignItems) btn.style.alignItems = 'center';
                     if(!btn.style.justifyContent) btn.style.justifyContent = 'center';
-                    if(!btn.style.display) btn.style.display = 'inline-flex';
+            if(!btn.style.display) btn.style.display = 'inline-flex';
+            ensureInnerWrapper(btn);
                     // 監視とフィット
                     ro.observe(btn);
                     mo.observe(btn, { subtree: true, characterData: true, childList: true });
