@@ -94,11 +94,7 @@ function warnIfInsecureContext(){
 let micHPF=null, micLPF=null; // マイク前段フィルタ（高域/低域ノイズを除去）
 let playbackStartTime=0,playbackStartPos=0,playbackPosition=0,isPlaying=false,tempoFactor=1.0;
 let schedTimer=null; // RAFに加えた冗長スケジューラ
-let toleranceCents=20,gateThreshold=-40,analysisRate=45,A4Frequency=442,octaveAlign=true,labelNotation='CDE';
-// モバイル負荷軽減: 初期解析レートを上限30へクランプ
-if(/Android|iPhone|iPad|iPod|Mobile|Tablet/i.test(navigator.userAgent||'')){
-    if(analysisRate>30) analysisRate=30;
-}
+let toleranceCents=20,gateThreshold=-40,analysisRate=120,A4Frequency=442,octaveAlign=true,labelNotation='CDE';
 let verticalZoom=2.5,verticalOffset=0,pxPerSec=150,timelineOffsetSec=0,isPanning=false,panStartX=0,panStartOffset=0;
 let isAdjustingVOffset=false; // 右側スライダ操作中のガード
 let autoCenterFrozen=false; // ノーツ編集以降は自動センタリングを凍結
@@ -2918,98 +2914,13 @@ function analyzePitch(){
             if(freqY>0){
                 const sm = _pitchSmootherMod? _pitchSmootherMod.push(freqY, confY): freqY;
                 lastMicFreq = sm;
-                let liveMidi = 69 + 12*Math.log2(Math.max(1e-9,lastMicFreq)/A4Frequency);
-                lastMicMidi = liveMidi;
-                // 保存用 dispMidi と dCents を計算し、pitchHistory に記録
-                let dispMidi = liveMidi;
-                let dCentsForDot = null; // ガイドに対するセント偏差（±600c折畳み）
-                let pcForDot = null;     // ピッチクラス 0..11（C=0）
-                try{
-                    // ガイドノート取得（メロディトラック優先）
-                    let nn=null;
-                    const tr=currentTracks[melodyTrackIndex];
-                    const t = playbackPosition - getPitchVisOffsetSec();
-                    const T_TOL = 0.12; // 120ms 許容
-                    if(tr && tr.notes && tr.notes.length){
-                        nn = tr.notes.find(n=> t>=n.time && t<=n.time+n.duration);
-                        if(!nn){
-                            let prev=null, next=null;
-                            for(const n of tr.notes){ if(n.time<=t) prev=n; if(n.time>t){ next=n; break; } }
-                            let best=null, bd=1e9;
-                            if(prev){ const d=Math.min(Math.abs(t-prev.time), Math.abs((prev.time+prev.duration)-t)); if(d<bd){ bd=d; best=prev; } }
-                            if(next){ const d=Math.min(Math.abs(t-next.time), Math.abs((next.time+next.duration)-t)); if(d<bd){ bd=d; best=next; } }
-                            if(best && bd<=T_TOL) nn=best;
-                            if(!nn) nn = next || tr.notes[tr.notes.length-1];
-                        }
-                    }
-                    if(!nn && Array.isArray(midiGhostNotes) && midiGhostNotes.length){
-                        let best=null, bd=1e9;
-                        for(const g of midiGhostNotes){
-                            const dCenter = Math.abs(t - (g.time + (g.duration||0)/2));
-                            const score = dCenter / Math.max(0.001, g.duration||0.4);
-                            if(score < bd){ bd=score; best=g; }
-                        }
-                        if(best){
-                            const dEdge = Math.min(Math.abs(t-best.time), Math.abs((best.time+(best.duration||0))-t));
-                            if(dEdge<=T_TOL || (t>=best.time && t<=best.time+(best.duration||0))) nn = { midi: best.midi, time: best.time, duration: best.duration };
-                        }
-                    }
-                    if(!nn && isPracticing && Array.isArray(practiceExpectedNotes) && practiceExpectedNotes.length){
-                        let best=null, bd=1e9;
-                        for(const g of practiceExpectedNotes){
-                            const mid = g.time + (g.duration||0)/2;
-                            const d = Math.abs(t - mid);
-                            if(d<bd){ bd=d; best=g; }
-                        }
-                        if(best){
-                            const dEdge = Math.min(Math.abs(t-best.time), Math.abs((best.time+(best.duration||0))-t));
-                            if(dEdge<=T_TOL || (t>=best.time && t<=best.time+(best.duration||0))) nn = { midi: best.midi, time: best.time, duration: best.duration };
-                        }
-                    }
-                    if(nn){
-                        let best=nn.midi, bestD=1e9;
-                        for(let k=-2;k<=2;k++){
-                            const cand=nn.midi + 12*k;
-                            const d=Math.abs(cand - liveMidi);
-                            if(d<bestD){ bestD=d; best=cand; }
-                        }
-                        const fTar = midiToFreq(best);
-                        let centErr = 1200*Math.log2(Math.max(1e-9,lastMicFreq)/Math.max(1e-9,fTar));
-                        centErr = wrapToPm600(centErr);
-                        dCentsForDot = centErr;
-                        dispMidi = nn.midi + (centErr/100);
-                        pcForDot = ((nn.midi%12)+12)%12;
-                        try{
-                            if((isPlaying || isPracticing) && scoreStats && Number.isFinite(centErr)){
-                                const bin = scoreStats.bins[pcForDot];
-                                bin.count++;
-                                scoreStats.total++;
-                                bin.sum += centErr;
-                                bin.sumAbs += Math.abs(centErr);
-                                const tol = toleranceCents||0;
-                                if(Math.abs(centErr) <= tol) bin.inTol++; else bin.outTol++;
-                                const bias = 5;
-                                if(centErr >= bias) bin.sharp++;
-                                else if(centErr <= -bias) bin.flat++;
-                            }
-                        }catch(_){ }
-                    }
-                }catch(_){ }
-                try{
-                    if((isPlaying || isPracticing) && dCentsForDot!=null && pcForDot!=null){
-                        const tol = toleranceCents||0; const ok = Math.abs(dCentsForDot) <= tol;
-                        const mForOct = (typeof dispMidi==='number') ? dispMidi : (69 + 12*Math.log2(Math.max(1e-9,lastMicFreq)/A4Frequency));
-                        const oct = Math.floor(mForOct/12) - 1; const key = String(oct);
-                        if(!scoreDetailByOct[key]) scoreDetailByOct[key] = {};
-                        const cell = (scoreDetailByOct[key][pcForDot] ||= {in:0,out:0,count:0});
-                        cell.count++; if(ok) cell.in++; else cell.out++;
-                    }
-                }catch(_){ }
+                lastMicMidi = 69 + 12*Math.log2(Math.max(1e-9,lastMicFreq)/A4Frequency);
+                // 純粋な検出結果のみ記録（ガイド吸着や統計は無効化）
                 if(!isCalibrating){
                     const vOff = getPitchVisOffsetSec();
                     const recTime = playbackPosition - vOff;
                     const conf = Math.max(0, Math.min(1, confY));
-                    pitchHistory.push({ time: recTime, visOff: vOff, freq: lastMicFreq, conf, dispMidi, dCents: dCentsForDot, pc: pcForDot, sid: scoreSessionId });
+                    pitchHistory.push({ time: recTime, visOff: vOff, freq: lastMicFreq, conf, dispMidi: lastMicMidi, dCents: null, pc: null, sid: scoreSessionId });
                     if(pitchHistory.length>2000) pitchHistory.shift();
                 }
                 if(!isPlaying) drawChart();
@@ -5513,7 +5424,7 @@ if(stopBtn){
 rw5 && (rw5.onclick=()=>seekRelative(-5)); rw10 && (rw10.onclick=()=>seekRelative(-10)); fw5 && (fw5.onclick=()=>seekRelative(5)); fw10 && (fw10.onclick=()=>seekRelative(10));
 tolSlider && (tolSlider.oninput=()=>{ toleranceCents=parseInt(tolSlider.value); tolVal.textContent=toleranceCents; drawChart(); }); tolVal && (tolVal.textContent=toleranceCents);
 gateSlider && (gateSlider.oninput=()=>{ gateThreshold=parseInt(gateSlider.value); gateVal.textContent=gateThreshold; updateMicGateVisual(); }); gateVal && (gateVal.textContent=gateThreshold);
-rateSlider && (rateSlider.oninput=()=>{ analysisRate=parseInt(rateSlider.value); if(IS_MOBILE && analysisRate>30) analysisRate=30; rateVal.textContent=analysisRate; if(analysisTimer){ clearInterval(analysisTimer); analysisTimer=setInterval(analyzePitch,1000/analysisRate);} }); rateVal && (rateVal.textContent=analysisRate);
+rateSlider && (rateSlider.oninput=()=>{ analysisRate=parseInt(rateSlider.value); rateVal.textContent=analysisRate; if(analysisTimer){ clearInterval(analysisTimer); analysisTimer=setInterval(analyzePitch,1000/analysisRate);} }); rateVal && (rateVal.textContent=analysisRate);
 A4Sel && (A4Sel.onchange=()=>{ A4Frequency=parseFloat(A4Sel.value); });
 octToggle && (octToggle.onchange=()=>{ octaveAlign=octToggle.checked; });
 labelSel && (labelSel.onchange=()=>{ labelNotation=labelSel.value; });

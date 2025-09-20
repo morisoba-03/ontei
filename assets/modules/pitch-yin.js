@@ -2,7 +2,7 @@
 // ESM module, no external deps. Designed for reuse and low-GC.
 
 export class YinPitchTracker {
-  constructor({ sampleRate, frameSize = 2048, fmin = 65, fmax = 2000, threshold = 0.1 } = {}) {
+  constructor({ sampleRate, frameSize = 2048, fmin = 65, fmax = 2000, threshold = 0.15 } = {}) {
     this.sampleRate = sampleRate || 44100;
     this.frameSize = frameSize | 0;
     this.fmin = fmin;
@@ -76,12 +76,18 @@ export class YinPitchTracker {
     const tauMax = Math.min(N - 3, Math.floor(this.sampleRate / Math.max(1, this.fmin)));
     let tau = -1;
     let minV = Infinity, minIdx = -1;
+    let localMinIdx = -1, localMinVal = Infinity;
     for (let t = tauMin; t <= tauMax; t++) {
       const v = cmnd[t];
       if (v < minV) { minV = v; minIdx = t; }
+      // 局所最小の検出（近傍比較）
+      if (t > tauMin && t + 1 < N) {
+        const v0 = cmnd[t - 1], v1 = cmnd[t], v2 = cmnd[t + 1];
+        if (v1 <= v0 && v1 <= v2 && v1 < localMinVal) { localMinVal = v1; localMinIdx = t; }
+      }
       if (v < this.threshold && (t + 1 < N)) { tau = t; break; }
     }
-    if (tau < 0) tau = minIdx; // fallback to global minimum
+    if (tau < 0) tau = (localMinIdx > 0 ? localMinIdx : minIdx); // 局所最小優先
     if (!(tau > 0)) return { freq: 0, tau: -1, conf: 0 };
 
     // Parabolic interpolation around tau
