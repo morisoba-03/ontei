@@ -383,29 +383,9 @@
       <div class="controls-grid" style="margin-top:8px;">
         <div class="control-group">
           <label for="rateSlider">解析レート (Hz)</label><br />
-          <input id="rateSlider" type="range" min="5" max="60" value="20" />
-          <span id="rateValue">20</span>
+          <input id="rateSlider" type="range" min="10" max="120" value="120" step="5" />
+          <span id="rateValue">120</span>
           <div class="help-text">音程解析の頻度。高いほど滑らか。</div>
-        </div>
-        <div class="control-group">
-          <label for="A4Select">基準ピッチ A4 (Hz)</label><br />
-          <select id="A4Select">
-            <option value="438">438 Hz</option>
-            <option value="440">440 Hz</option>
-            <option value="442" selected>442 Hz</option>
-            <option value="444">444 Hz</option>
-          </select>
-          <div class="help-text">A4(ラ)のピッチ。442Hzが標準。</div>
-        </div>
-        <div class="control-group">
-          <label for="octaveAlignToggle">オクターブ合わせ</label>
-          <input id="octaveAlignToggle" type="checkbox" checked />
-          <div class="help-text">検出ピッチを正しいオクターブに補正。</div>
-        </div>
-        <div class="control-group">
-          <label for="strictOctaveToggle">厳密オクターブ補正（試験）</label><br />
-          <input id="strictOctaveToggle" type="checkbox" />
-          <div class="help-text">ノート列全体でオクターブ選択を最適化。オクターブずれの連鎖を抑えます（β）。</div>
         </div>
       </div>
   </details>

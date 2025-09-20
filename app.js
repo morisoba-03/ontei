@@ -212,7 +212,7 @@ const rw5=$('rewind5'),rw10=$('rewind10'),fw5=$('forward5'),fw10=$('forward10');
 const tolSlider=$('toleranceSlider'),tolVal=$('toleranceValue');
 const gateSlider=$('gateSlider'),gateVal=$('gateValue');
 const rateSlider=$('rateSlider'),rateVal=$('rateValue');
-const A4Sel=$('A4Select'),octToggle=$('octaveAlignToggle'),labelSel=$('labelNotationSelect');
+const labelSel=$('labelNotationSelect');
 // 新規: マイク描画モードセレクト
 const micRenderModeSel=document.getElementById('micRenderModeSelect');
 const vZoom=$('verticalZoomSlider'),timeScale=$('timeScaleSlider'),timeScaleVal=$('timeScaleValue');
@@ -1354,7 +1354,7 @@ const noteSnapRestoreBtn=document.getElementById('noteSnapRestoreBtn');
 let _noteSnapshot=null;
 // 厳密オクターブ補正（試験）フラグ（UIトグルで更新）
 let strictOctaveMode=false;
-const strictOctaveToggle=$('strictOctaveToggle');
+const strictOctaveToggle=null; // UI削除
 const midiRefInput=document.getElementById('midiRefInput');
 const midiTrackSelect=document.getElementById('midiTrackSelect');
 const midiApplyBtn=document.getElementById('midiApplyBtn');
@@ -1412,16 +1412,7 @@ window.setSimpleSfzMode=function(on=true){ SIMPLE_SFZ_MODE=!!on; console.warn('S
 // ==============================
 (function wireDevToggles(){
     try{
-        if(strictOctaveToggle){
-            strictOctaveToggle.addEventListener('change', ()=>{
-                strictOctaveMode = !!strictOctaveToggle.checked;
-                // トーストで案内
-                try{
-                    const el = document.getElementById('buildToast');
-                    if(el){ el.textContent = strictOctaveMode? '厳密オクターブ: ON' : '厳密オクターブ: OFF'; el.style.display='block'; el.style.opacity='1'; setTimeout(()=>{ el.style.opacity='0'; el.addEventListener('transitionend', ()=>{ el.style.display='none'; }, { once:true }); }, 900); }
-                }catch(_){ }
-            });
-        }
+        // strictOctaveToggle は UI削除のため未配線
         if(noteSnapSaveBtn){
             noteSnapSaveBtn.addEventListener('click', ()=>{
                 try{ _noteSnapshot = snapshotNotes(); if(noteSnapRestoreBtn) noteSnapRestoreBtn.disabled = !_noteSnapshot; }catch(_){ _noteSnapshot=null; }
@@ -2915,7 +2906,6 @@ function analyzePitch(){
                 const sm = _pitchSmootherMod? _pitchSmootherMod.push(freqY, confY): freqY;
                 lastMicFreq = sm;
                 lastMicMidi = 69 + 12*Math.log2(Math.max(1e-9,lastMicFreq)/A4Frequency);
-                // 純粋な検出結果のみ記録（ガイド吸着や統計は無効化）
                 if(!isCalibrating){
                     const vOff = getPitchVisOffsetSec();
                     const recTime = playbackPosition - vOff;
@@ -2923,11 +2913,13 @@ function analyzePitch(){
                     pitchHistory.push({ time: recTime, visOff: vOff, freq: lastMicFreq, conf, dispMidi: lastMicMidi, dCents: null, pc: null, sid: scoreSessionId });
                     if(pitchHistory.length>2000) pitchHistory.shift();
                 }
-                if(!isPlaying) drawChart();
-                return; // YINパスで完了
+            } else {
+                // 無声音: 記録は追加しない（旧処理へは落とさない）
             }
+            if(!isPlaying) drawChart();
+            return; // YINパスで完了（旧処理へは行かない）
         }
-    }catch(_){ /* fallback to legacy path */ }
+    }catch(_){ /* fallback blocked intentionally to keep pipeline clean */ }
 
     const srLive = audioCtx? audioCtx.sampleRate: 44100;
     const W = micAnalyser.fftSize; // 2048 程度
@@ -4282,8 +4274,7 @@ window.addEventListener('keydown',(e)=>{ if(e.key==='ArrowUp' || e.key==='ArrowD
 window.addEventListener('keydown',(e)=>{ if(e.key==='ArrowUp' || e.key==='ArrowDown'){ const delta=(e.key==='ArrowUp')? +12 : -12; if(window._selection.type==='single' && window._selection.index!=null && e.shiftKey){ const prev=applyForwardToggle? applyForwardToggle.checked: false; if(applyForwardToggle) applyForwardToggle.checked=true; applyOctaveShift(delta); if(applyForwardToggle) applyForwardToggle.checked=prev; } else { applyOctaveShift(delta); } e.preventDefault(); } else if(e.key==='[' || e.key===']'){ const d=(e.key===']')? +1 : -1; applySemitoneShift(d); e.preventDefault(); } });
 // 採点オーバーレイのON/OFF: O キーで切り替え
 window.addEventListener('keydown',(e)=>{ if(e.key==='o' || e.key==='O'){ scorePitchClassOverlay = !scorePitchClassOverlay; drawChart(); } });
-// ガイドスナップのON/OFF: S キーで切り替え
-window.addEventListener('keydown',(e)=>{ if(e.key==='s' || e.key==='S'){ snapToGuideNotes = !snapToGuideNotes; } });
+// ガイドスナップ切替は当面無効化
 // ボタン
 if(clearSelectionBtn){ clearSelectionBtn.onclick=()=> clearSelection(); }
 if(octDownBtn){ octDownBtn.onclick=()=> applyOctaveShift(-12); }
@@ -5340,7 +5331,7 @@ async function loadSessionZipFromBytes(u8){
     if(accompAudioLabel){ accompAudioLabel.textContent=accompOrigName||'(zip内の伴奏)'; accompAudioLabel.title=accompAudioLabel.textContent; }
     // スライダ等も反映
     try{
-        if(A4Sel) A4Sel.value=String(A4Frequency);
+    // A4 UIなし
         if(tolSlider&&tolVal){ tolSlider.value=String(toleranceCents); tolVal.textContent=String(toleranceCents); }
         if(vZoom) vZoom.value=String(verticalZoom);
         if(timeScale&&timeScaleVal){ timeScale.value=String(pxPerSec); timeScaleVal.textContent=String(pxPerSec); }
@@ -5425,8 +5416,7 @@ rw5 && (rw5.onclick=()=>seekRelative(-5)); rw10 && (rw10.onclick=()=>seekRelativ
 tolSlider && (tolSlider.oninput=()=>{ toleranceCents=parseInt(tolSlider.value); tolVal.textContent=toleranceCents; drawChart(); }); tolVal && (tolVal.textContent=toleranceCents);
 gateSlider && (gateSlider.oninput=()=>{ gateThreshold=parseInt(gateSlider.value); gateVal.textContent=gateThreshold; updateMicGateVisual(); }); gateVal && (gateVal.textContent=gateThreshold);
 rateSlider && (rateSlider.oninput=()=>{ analysisRate=parseInt(rateSlider.value); rateVal.textContent=analysisRate; if(analysisTimer){ clearInterval(analysisTimer); analysisTimer=setInterval(analyzePitch,1000/analysisRate);} }); rateVal && (rateVal.textContent=analysisRate);
-A4Sel && (A4Sel.onchange=()=>{ A4Frequency=parseFloat(A4Sel.value); });
-octToggle && (octToggle.onchange=()=>{ octaveAlign=octToggle.checked; });
+// A4/オクターブ合わせUIは削除済み
 labelSel && (labelSel.onchange=()=>{ labelNotation=labelSel.value; });
 vZoom && (vZoom.oninput=()=>{ verticalZoom=parseFloat(vZoom.value); drawChart(); });
 timeScale && (timeScale.oninput=()=>{ pxPerSec=parseInt(timeScale.value); if(timeScaleVal) timeScaleVal.textContent=pxPerSec; drawChart(); });
