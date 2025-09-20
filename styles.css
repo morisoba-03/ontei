@@ -80,7 +80,7 @@ button {
 
 /* アイコンとテキストの分離: 小画面でテキストを隠して密度を上げる */
 .icon { display: inline-flex; margin-right: 4px; }
-.txt { display: inline; }
+.txt { display: inline-block; white-space: nowrap; overflow: visible; }
 .lbl { display: inline; }
 
 @media (max-width: 600px) {
@@ -147,6 +147,9 @@ canvas, #chartCanvas { display: block; }
 	overflow-x: hidden; /* 確実に隠す */
 	box-sizing: border-box; /* padding/border を含めて 100% に収める */
 }
+
+/* デバッグ用オーバーレイは本番では非表示 */
+#driftOverlay { display: none !important; }
 
 /* トップバーは通常フロー（stickyは無効化） */
 #top-bar { position: static; }
@@ -340,6 +343,14 @@ button:hover {
 	.controls-grid { grid-template-columns: repeat(2, minmax(200px, 1fr)); }
 	#controls .control-group { margin: 0; }
 }
+
+/* スマホ縦向きはテキスト優先でアイコンを非表示（横向きは表示） */
+@media (max-width: 600px) and (orientation: portrait) {
+	#top-bar button .icon { display: none !important; }
+	#mic-permission-bar button .icon { display: none !important; }
+	/* メロディ/伴奏ボタンはさらに最小幅を確保 */
+	#melodyAudioSelectBtn, #accompAudioSelectBtn { min-width: 160px !important; }
+}
 	/* 長いファイル名ラベルの最小幅を縮小し、はみ出しを防止 */
 	#melodyAudioLabel, #accompAudioLabel { min-width: 140px !important; }
 
@@ -437,6 +448,10 @@ button:hover {
 	/* ラベル系は折返し可。ボタンは常に1行（オートフィットで縮小） */
 	#top-bar span { white-space: normal; overflow-wrap: anywhere; text-overflow: clip; }
 	#top-bar button { white-space: nowrap !important; overflow: hidden !important; text-overflow: ellipsis; min-width: 64px; }
+	#top-bar button { font-size: clamp(10px, 2.2vw, 12px); height: 30px; }
+	/* メロディ/伴奏選択は最低幅を広めに確保して可読性を維持 */
+	#melodyAudioSelectBtn, #accompAudioSelectBtn { min-width: 128px !important; }
+	#melodyAudioSelectBtn .txt, #accompAudioSelectBtn .txt { font-size: clamp(11px, 2.6vw, 13px); }
 	#editToolbar button, #practiceToolbar button { white-space: nowrap !important; overflow: hidden !important; min-width: 60px; }
 	/* ボタン以外のラベル/見出しは 1 行優先（フォント縮小はJSで行う） */
 	#controls .controls-section > summary,
@@ -483,6 +498,45 @@ button:hover {
 	/* 1カラム中心、タップ余白を確保 */
 	#controls { gap: 8px 10px; grid-template-columns: 1fr; }
 	.control-group { margin: 6px 8px 6px 0; }
+
+	/* トップバーは原則1カラム（100%幅）にして確実に行数を増やす */
+	/* レイアウトをGridに切替（4行固定） */
+	#top-bar { display: grid !important; grid-template-columns: 1fr 1fr !important; column-gap: 6px !important; row-gap: 6px !important; align-items: center !important; overflow-x: hidden !important; }
+	#top-bar > * { min-width: 0 !important; }
+	#top-bar > div { display: flex !important; flex-wrap: wrap; align-items: center; gap: 6px; }
+	/* 横並びでOKな小ブロックだけ2カラム化（行数増を阻害しない範囲） */
+	#top-bar > div:has(#sessionSaveBtn),
+	#top-bar > div:has(#sessionLoadBtn),
+	/* 以降で4行の固定構成を作る（Gridで配置） */
+	#top-bar > #mic-permission-bar { grid-row: 4 !important; grid-column: 1 / 3 !important; }
+	/* メロディ/伴奏グループは内部でボタンとラベルを縦に分割（各行フル幅） */
+	#melodyAudioSelectBtn, #melodyAudioLabel,
+	#accompAudioSelectBtn, #accompAudioLabel { flex: 1 1 100%; max-width: 100%; }
+	/* ボタンは縦画面で少し背を高く＆読みやすいサイズ */
+	#top-bar button { height: 32px; font-size: clamp(11px, 2.6vw, 13px); }
+	/* 長いファイル名ラベルは1行省略だが行幅は全幅確保 */
+	#melodyAudioLabel, #accompAudioLabel { white-space: nowrap !important; overflow: hidden !important; text-overflow: ellipsis !important; max-width: 100% !important; }
+
+	/* ===== 行別の厳密配置（指定レイアウト） ===== */
+	/* 1行目: 編集モード + ノーツ/再生 チェック群 | 基礎練習モード */
+	/* 行1: 左=編集/ノーツ/再生 | 右=基礎練習モード */
+	#top-bar > div:has(#editModeToggle) { grid-row: 1 !important; grid-column: 1 !important; }
+	#top-bar > div:has(#practiceModeOn) { grid-row: 1 !important; grid-column: 2 !important; }
+	/* 2行目: Partドロップダウン + メロディ音声を選択（同一グループ内） */
+	/* 行2: Part + メロディ選択（フル幅） */
+	#top-bar > div:has(#melodyAudioSelectBtn) { grid-row: 2 !important; grid-column: 1 / 3 !important; }
+	/* 3行目: 伴奏音声を選択 | 記録/読込 */
+	/* 行3: 左=伴奏選択 | 右=記録/読込 */
+	#top-bar > div:has(#accompAudioSelectBtn) { grid-row: 3 !important; grid-column: 1 !important; }
+	#top-bar > div:has(#sessionSaveBtn) { grid-row: 3 !important; grid-column: 2 !important; }
+	/* 4行目: アドバイス | マイク許可 | マイク停止 | ヘルプ */
+	/* 4行目は上で指定済み */
+
+	/* ラベルは表示（省略せず）。長い場合は省略記号 */
+	#melodyAudioLabel, #accompAudioLabel { display: inline-block !important; white-space: nowrap !important; overflow: hidden !important; text-overflow: ellipsis !important; }
+
+	/* 縦向きでは未選択ラベルは非表示（テキストを優先表示） */
+	#melodyAudioLabel, #accompAudioLabel { display: none !important; }
 }
 
 /* Mobile 横（ランドスケープ） */
@@ -603,5 +657,41 @@ button.info-tip:hover { background: #263045; }
 }
 
 /* --- 最終ガード: どのブレークポイントでもボタンは必ず横書き1行 --- */
-button { white-space: nowrap !important; overflow: hidden; text-overflow: ellipsis; display: inline-flex; align-items: center; justify-content: center; }
+button {
+	white-space: nowrap !important;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	/* 縦書き継承の遮断（Android等での誤継承対策） */
+	writing-mode: horizontal-tb !important;
+	text-orientation: mixed !important;
+	direction: ltr !important;
+}
+button *,
+#top-bar button *,
+#transportBar button *,
+.marker-pair button * {
+	writing-mode: horizontal-tb !important;
+	text-orientation: mixed !important;
+	direction: ltr !important;
+}
+/* ボタン内のテキストは常に1行（上位メディアクエリの span ルールを打ち消す） */
+#top-bar button span, #transportBar button span, .marker-pair button span,
+#editToolbar button span, #practiceToolbar button span,
+button span {
+	white-space: nowrap !important;
+	overflow-wrap: normal !important;
+	word-break: keep-all !important;
+	display: inline-block;
+}
+
+/* ボタン以外も含め、主要UIは横書きを明示（縦スライダのラベルは除外） */
+#top-bar, #transportBar, #markers, #editToolbar, #practiceToolbar,
+#top-bar *, #transportBar * , #markers * , #editToolbar * , #practiceToolbar * {
+	writing-mode: horizontal-tb !important;
+	text-orientation: mixed !important;
+	direction: ltr !important;
+}
 

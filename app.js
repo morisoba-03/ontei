@@ -244,6 +244,13 @@ const melodyPlayToggle=document.getElementById('melodyPlayToggle'); // 互換: H
 // ========================
 (function(){
     async function getLastModifiedFrom(url){
+        // file:// や未知スキームでは CORS/ポリシーで失敗するため fetch を行わない
+        try{
+            const proto = (location && location.protocol || '').toLowerCase();
+            if(proto !== 'http:' && proto !== 'https:'){
+                return null; // サーバ配信時のみ取得にトライ
+            }
+        }catch(_){ /* location未定義等は無視 */ }
         try{
             // 1) HEAD で Last-Modified を取得（対応サーバ向け）
             const headRes = await fetch(url, { method:'HEAD', cache:'no-store' });
@@ -561,11 +568,21 @@ let practiceMutedUntil=0; // audio time until which call gain is held at 0 (for 
             ensureInnerWrapper(btn);
         }
 
-        function fits(btn){
-            // scrollWidth/Height が client を超えていなければ収まっている
-            // わずかな誤差バッファを設ける（サブピクセル繰り返しを避ける）
+        function fits(btn, inner){
+            // 内側ラッパーの「自然幅(max-content)」とボタン内寸を比較
             const EPS = 0.5;
-            return (btn.scrollWidth <= btn.clientWidth + EPS) && (btn.scrollHeight <= btn.clientHeight + EPS);
+            const cs = getComputedStyle(btn);
+            const padX = parseFloat(cs.paddingLeft||0) + parseFloat(cs.paddingRight||0) + parseFloat(cs.borderLeftWidth||0) + parseFloat(cs.borderRightWidth||0);
+            const padY = parseFloat(cs.paddingTop||0) + parseFloat(cs.paddingBottom||0) + parseFloat(cs.borderTopWidth||0) + parseFloat(cs.borderBottomWidth||0);
+            const availW = Math.max(1, btn.clientWidth - padX);
+            const availH = Math.max(1, btn.clientHeight - padY);
+            // max-content で自然幅を得る
+            const prevWidth = inner.style.width;
+            inner.style.width = 'max-content';
+            const needW = inner.scrollWidth;
+            const needH = inner.scrollHeight;
+            inner.style.width = prevWidth || '';
+            return (needW <= availW + EPS) && (needH <= availH + EPS);
         }
 
         function ensureInnerWrapper(btn){
@@ -575,8 +592,9 @@ let practiceMutedUntil=0; // audio time until which call gain is held at 0 (for 
             inner.className = '__af-inner';
             inner.style.display = 'inline-flex';
             inner.style.alignItems = 'center';
-            inner.style.justifyContent = 'center';
-            inner.style.whiteSpace = 'inherit';
+            inner.style.gap = '6px';
+            inner.style.whiteSpace = 'nowrap';
+            inner.style.lineHeight = 'inherit';
             inner.style.transformOrigin = 'center center';
             inner.style.willChange = 'transform';
             inner.style.width = '100%';
@@ -598,21 +616,22 @@ let practiceMutedUntil=0; // audio time until which call gain is held at 0 (for 
             const inner = ensureInnerWrapper(btn);
             // 元のフォントサイズ（上限）を取得
             const basePx = parseFloat(cs.fontSize) || 12;
-            const maxPx = basePx; // デザインの既定値を上限に
+            // 端末により初期フォントが過大な場合があるため、現実的な上限をクランプ
+            const maxPx = Math.min(basePx, 14);
             let low = MIN_PX, high = Math.max(MIN_PX, Math.min(64, maxPx));
 
             // 一旦上限へリセット
             btn.style.fontSize = high + 'px';
             inner.style.transform = 'scale(1)'; // スケールもリセット
             // すでに収まる場合は終了（できるだけ大きく）
-            if(fits(btn)) return;
+            if(fits(btn, inner)) return;
 
             // 二分探索で最大で収まるサイズを探す
             let best = MIN_PX;
             for(let i=0;i<MAX_ITER;i++){
                 const mid = Math.floor((low + high) / 2);
                 btn.style.fontSize = mid + 'px';
-                if(fits(btn)){
+                if(fits(btn, inner)){
                     best = mid;
                     low = mid + 1; // さらに大きくできるか探る
                 } else {
@@ -621,18 +640,29 @@ let practiceMutedUntil=0; // audio time until which call gain is held at 0 (for 
             }
             btn.style.fontSize = Math.max(MIN_PX, Math.min(best, maxPx)) + 'px';
 
-            // それでも幅/高さが僅かに溢れる場合は、内側ラッパーを等比スケール
+            // それでも幅/高さが僅かに溢れる場合
             // パディング/ボーダーを考慮して内寸を見積もり
             const padX = parseFloat(cs.paddingLeft||0) + parseFloat(cs.paddingRight||0) + parseFloat(cs.borderLeftWidth||0) + parseFloat(cs.borderRightWidth||0);
             const padY = parseFloat(cs.paddingTop||0) + parseFloat(cs.paddingBottom||0) + parseFloat(cs.borderTopWidth||0) + parseFloat(cs.borderBottomWidth||0);
             // 一旦最大化して実寸を測る
             inner.style.transform = 'scale(1)';
+            inner.style.width = 'max-content';
             const availW = Math.max(1, btn.clientWidth - padX);
             const availH = Math.max(1, btn.clientHeight - padY);
             const needW = inner.scrollWidth;
             const needH = inner.scrollHeight;
             const scale = Math.min(1, availW / needW, availH / needH);
-            inner.style.transform = `scale(${scale})`;
+            // トップバー内の主要ボタンは可読性優先: scale は使わずフォント縮小の範囲で止める
+            const inTopBar = btn.closest('#top-bar') != null;
+            if(!inTopBar && scale < 1){
+                // 左起点で縮小し、右側のテキストが見切れないように
+                inner.style.width = '100%';
+                inner.style.transformOrigin = 'left center';
+                inner.style.transform = `scale(${Math.max(0.6, scale)})`;
+            } else {
+                inner.style.width = '100%';
+                inner.style.transform = 'scale(1)';
+            }
         }
 
         // 初回フィット
