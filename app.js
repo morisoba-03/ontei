@@ -494,6 +494,7 @@ const practiceCallVolEl=$('practiceCallVol');
 const practiceChordOptsWrap=$('practiceChordOptsWrap');
 const practiceSixthChk=$('practiceSixth');
 const practiceToolbar=document.getElementById('practiceToolbar');
+const practiceCloseBtn=document.getElementById('practiceCloseBtn');
 // 元の配置先（トップバー内のグループ）を保持しておく
 const practiceTopGroup = practiceModeOn ? practiceModeOn.parentElement : null;
 // --- マルチパート UI 初期化 ---
@@ -6495,6 +6496,33 @@ window.addEventListener('load',()=>{
                         practiceToolbar.appendChild(frg);
                         practiceToolbar.classList.remove('hidden');
                         practiceToolbar.style.display='flex';
+                        if(practiceCloseBtn){ practiceCloseBtn.style.display=''; }
+                        // ボタン配線（重複防止のため毎回最新ハンドラに張り替え）
+                        if(practiceCloseBtn){
+                            practiceCloseBtn.onclick = ()=>{
+                                // 通常モードへ戻すのと同等の処理を呼ぶ
+                                if(practiceModeOff && typeof practiceModeOff.onclick==='function'){
+                                    practiceModeOff.onclick();
+                                } else {
+                                    // フォールバック: 直接最低限の復帰
+                                    if(isPracticing) stopBasicPractice(true);
+                                    if(practiceToolbar){ practiceToolbar.classList.add('hidden'); practiceToolbar.style.display='none'; }
+                                    if(practiceTopGroup){
+                                        if(practicePatternSelect){ practicePatternSelect.style.display='none'; practiceTopGroup.appendChild(practicePatternSelect); }
+                                        if(practiceRangeWrap){ practiceRangeWrap.style.display='none'; practiceTopGroup.appendChild(practiceRangeWrap); }
+                                        if(practiceStartBtn){ practiceStartBtn.style.display='none'; practiceTopGroup.appendChild(practiceStartBtn); }
+                                        if(practicePauseBtn){ practicePauseBtn.style.display='none'; practiceTopGroup.appendChild(practicePauseBtn); }
+                                        if(practiceStopBtn){ practiceStopBtn.style.display='none'; practiceTopGroup.appendChild(practiceStopBtn); }
+                                        if(practiceVolWrap){ practiceVolWrap.style.display='none'; practiceTopGroup.appendChild(practiceVolWrap); }
+                                    }
+                                    practiceMode='off';
+                                    try{
+                                        if(melodyAudioBtn){ melodyAudioBtn.disabled = false; melodyAudioBtn.title = 'メロディ音声を選択'; }
+                                        if(accompAudioBtn){ accompAudioBtn.disabled = false; accompAudioBtn.title = '伴奏音声を選択'; }
+                                    }catch(_){ }
+                                }
+                            };
+                        }
                     }
                     practiceModeOff && (practiceModeOff.style.display='');
                     practiceModeOn && (practiceModeOn.style.display='none');
@@ -6531,6 +6559,7 @@ window.addEventListener('load',()=>{
                 }
                 practiceModeOff && (practiceModeOff.style.display='none');
                 practiceModeOn && (practiceModeOn.style.display='');
+                if(practiceCloseBtn){ practiceCloseBtn.style.display='none'; }
                 practiceMode='off';
                 // 無効化解除
                 try{

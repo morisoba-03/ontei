@@ -279,9 +279,10 @@
         <span id="midiAlignInfo" style="font-size:12px;color:#bbb;"></span>
       </div>
     </div>
-    <!-- 練習ツールバー（練習モード時のみ表示） -->
-    <div id="practiceToolbar" class="hidden" style="position:absolute;top:8px;left:80px;z-index:1190;background:rgba(20,20,20,0.95);border:1px solid #555;border-radius:6px;padding:6px 8px;gap:8px;align-items:center;flex-wrap:wrap;display:none;max-width:min(96vw,1100px);">
+    <!-- 練習ツールバー（練習モード時のみ表示）: トップバーに重なる固定配置 -->
+    <div id="practiceToolbar" class="hidden" style="position:fixed;top:6px;left:8px;z-index:1300;background:rgba(20,20,20,0.95);border:1px solid #555;border-radius:6px;padding:6px 8px;gap:8px;align-items:center;flex-wrap:wrap;display:none;max-width:min(96vw,1100px);">
       <!-- ここに既存の練習UI要素（#practicePatternSelect, #practiceRangeWrap, #practiceStartBtn, #practicePauseBtn, #practiceStopBtn, #practiceVolWrap）を動的に移設します -->
+      <button id="practiceCloseBtn" type="button" title="通常モードに戻る" style="display:none; margin-left:auto;">✖ <span class="txt">閉じる</span></button>
     </div>
   </div>
   <!-- 解析中オーバーレイ -->
