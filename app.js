@@ -2910,7 +2910,8 @@ function analyzePitch(){
                     const vOff = getPitchVisOffsetSec();
                     const recTime = playbackPosition - vOff;
                     const conf = Math.max(0, Math.min(1, confY));
-                    pitchHistory.push({ time: recTime, visOff: vOff, freq: lastMicFreq, conf, dispMidi: lastMicMidi, dCents: null, pc: null, sid: scoreSessionId });
+                    // dispMidiは保存せず、描画時にガイド基準で再計算する（赤●との不一致回避）
+                    pitchHistory.push({ time: recTime, visOff: vOff, freq: lastMicFreq, conf, dispMidi: null, dCents: null, pc: null, sid: scoreSessionId });
                     if(pitchHistory.length>2000) pitchHistory.shift();
                 }
             } else {
@@ -3543,17 +3544,17 @@ function drawChart(){
         }catch(_){ }
         return false;
     }
-    // 再生線上のガイドMIDIは、以降の処理ではオーバーレイ制御にのみ使用
+    // 再生線上のガイドMIDI（描画タイミングは可視遅延補正を加味した tRef で判定）
     let guideMidiAtPlayhead = null;
     try{
         const tr=currentTracks[melodyTrackIndex];
+        const tRef = playbackPosition - getPitchVisOffsetSec();
         if(tr&&tr.notes&&tr.notes.length){
-            const t=playbackPosition;
-            const nn=tr.notes.find(n=> t>=n.time && t<=n.time+n.duration) || tr.notes.find(n=> n.time>t) || tr.notes[tr.notes.length-1];
+            const nn=tr.notes.find(n=> tRef>=n.time && tRef<=n.time+n.duration) || tr.notes.find(n=> n.time>tRef) || tr.notes[tr.notes.length-1];
             if(nn) guideMidiAtPlayhead = nn.midi|0;
         } else {
             // トラックが無い場合はゴーストから
-            const gM = ghostMidiAt(playbackPosition);
+            const gM = ghostMidiAt(tRef);
             if(gM!=null) guideMidiAtPlayhead = gM;
         }
     }catch(_){ }
