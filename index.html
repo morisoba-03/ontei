@@ -5,7 +5,7 @@
   <title>音程練習アプリ</title>
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <meta http-equiv="Cache-Control" content="no-store" />
-  <link rel="stylesheet" href="styles.css?v=20250919-4" />
+  <link rel="stylesheet" href="styles.css?v=20250920-1" />
 </head>
 <body>
   
@@ -235,11 +235,17 @@
       <button id="adviceBtn" title="採点フィードバックを表示">🧠 <span class="txt">アドバイス</span></button>
       <button id="micPermissionBtn" title="マイク入力の許可をリクエスト">🎤 <span class="txt">マイク許可</span></button>
   <button id="micDisconnectBtn" title="マイク入力を停止">🔌 <span class="txt">マイク停止</span></button>
+      <button id="pitchOnlyModeBtn" title="音源を使わず、マイクの音程だけを記録・表示します（再生は無音）">📈 <span class="txt">音程モード</span></button>
       <button id="globalHelpBtn" title="このアプリの使い方">❓ <span class="txt">ヘルプ</span></button>
     </div>
   </div>
   <div id="chartContainer">
     <canvas id="chartCanvas"></canvas>
+    <!-- 左端オクターブ移動ボタン -->
+    <div id="leftOctavePanel" style="position:absolute;left:8px;top:50%;transform:translateY(-50%);display:flex;flex-direction:column;gap:6px;z-index:1200;">
+      <button id="globalOctUpBtn" type="button" title="メロディ全体を +12">＋</button>
+      <button id="globalOctDownBtn" type="button" title="メロディ全体を -12">－</button>
+    </div>
     <div id="rightVerticalPanel">
       <input class="vert-range" id="verticalOffsetSliderRight" type="range" min="0" max="100" value="0" />
       <div class="v-offset-label">音域</div>

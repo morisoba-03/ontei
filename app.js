@@ -20,6 +20,11 @@ let _keepAliveHiOsc=null,_keepAliveHiGain=null; // destination直結の微小信
 let _keepAliveConst=null,_keepAliveConstGain=null; // チェーン内の微小DC
 let audioActivated=false; // ユーザー操作でAudioContextを有効化したか
 let micStream=null,micSource=null,micAnalyser=null,micData=null,analysisTimer=null;
+// 音程モード（音源を鳴らさず、マイクのピッチのみ記録/表示）
+let isPitchOnlyMode=false;
+// マイク選択: 選択済みの deviceId と一覧キャッシュ
+let selectedMicDeviceId = null;
+let _micDevicesCache = [];
 // ---- Modular YIN tracker integration ----
 let USE_YIN_TRACKER = true; // set false to fallback to legacy pipeline
 let _yinTracker = null;     // instance of window.__PitchModules.YinPitchTracker
@@ -94,7 +99,7 @@ function warnIfInsecureContext(){
 let micHPF=null, micLPF=null; // マイク前段フィルタ（高域/低域ノイズを除去）
 let playbackStartTime=0,playbackStartPos=0,playbackPosition=0,isPlaying=false,tempoFactor=1.0;
 let schedTimer=null; // RAFに加えた冗長スケジューラ
-let toleranceCents=20,gateThreshold=-40,analysisRate=120,A4Frequency=440,octaveAlign=true,labelNotation='CDE';
+let toleranceCents=20,gateThreshold=-40,analysisRate=120,A4Frequency=440,labelNotation='CDE';
 // 可視化/記録に用いるピッチ信頼度の下限（0..1）
 const PITCH_CONF_MIN = 0.45;
 let verticalZoom=2.5,verticalOffset=0,pxPerSec=150,timelineOffsetSec=0,isPanning=false,panStartX=0,panStartOffset=0;
@@ -126,8 +131,6 @@ function getPitchVisOffsetSec(){
 let _forceGlobalSearch=0;
 // 追加状態
 let showNoteNames=true;
-// ガイドノートへの吸着（再生中のみ）を任意に切り替え（既定OFF）
-let snapToGuideNotes=false;
 // 採点表示: 同一音種（C,D,...）をオクターブにまたがって赤点で重ね描きするオーバーレイ
 let scorePitchClassOverlay=true; // 要望により既定ON（検出ロジックは変更しない）
 // 採点用状態
@@ -469,6 +472,7 @@ const melodySel=null,accompSel=null,trackApply=null;
 const trackInstrumentGrid=null;
 const micBtn=$('micPermissionBtn');
 const micDisconnectBtn=$('micDisconnectBtn');
+const pitchOnlyModeBtn=$('pitchOnlyModeBtn');
 const markerCfg={A:['markerA_set','markerA_play'],B:['markerB_set','markerB_play'],C:['markerC_set','markerC_play'],D:['markerD_set','markerD_play'],E:['markerE_set','markerE_play'],F:['markerF_set','markerF_play'],G:['markerG_set','markerG_play']};
 // 追加
 const showNoteNamesToggle=$('showNoteNamesToggle');
@@ -523,6 +527,49 @@ try{
         });
         // 初期反映
         (function(){ const v=practicePatternSelect.value; const show=(v==='chordPractice' || v==='chordPracticeRandOrder'); if(practiceChordOptsWrap) practiceChordOptsWrap.style.display = show? 'inline-flex':'none'; })();
+    }
+}catch(_){ }
+
+// マイク許可/停止ボタンの結線
+try{
+    if(micBtn){
+        micBtn.addEventListener('click', async ()=>{
+            try{ activateAudioOnce(); }catch(_){ }
+            if(IS_MOBILE){
+                try{ _micDevicesCache = await enumerateMicInputs(); }catch(_){ }
+                openMicPicker();
+            } else {
+                // PCではそのまま初期化（デバイス選択は不要）
+                _userExplicitMicInit=true;
+                await initMic(true);
+            }
+        });
+    }
+    if(micDisconnectBtn){ micDisconnectBtn.addEventListener('click', ()=>{ try{ stopMic(); }catch(_){ } }); }
+    if(pitchOnlyModeBtn){
+        pitchOnlyModeBtn.addEventListener('click', async ()=>{
+            try{ activateAudioOnce(); }catch(_){ }
+            // トグル: ON→OFF→ON ...
+            isPitchOnlyMode = !isPitchOnlyMode;
+            // UI反映
+            try{
+                pitchOnlyModeBtn.classList.toggle('active', isPitchOnlyMode);
+                pitchOnlyModeBtn.title = isPitchOnlyMode? '音程モード中（クリックで終了）' : '音源を使わず、マイクの音程だけを記録・表示します（再生は無音）';
+            }catch(_){ }
+            // 編集ツールバーは排他のため隠す
+            try{ if(editToolbar){ editToolbar.classList.add('hidden'); editToolbar.style.display='none'; } }catch(_){ }
+            // 音程モードON時はゴーストや練習UIは消さない（共存可）
+            // 再生状態を合わせる: ONなら自動で再生スタート、OFFなら停止
+            if(isPitchOnlyMode){
+                // マイクが未初期化ならプロンプトなしで試行（許可済みのときのみ）
+                try{ if(!micAnalyser || !micData){ const ok=await canInitMicWithoutPrompt(); if(ok){ await initMic(false).catch(()=>{}); } } }catch(_){ }
+                if(!isPlaying){ startPlayback(); }
+            } else {
+                // 通常モードへ戻す（自動では音声は鳴らさない）
+                if(isPlaying){ pausePlayback(); }
+                drawChart();
+            }
+        });
     }
 }catch(_){ }
 let practiceMode='off'; // 'off' | 'basic'
@@ -1645,9 +1692,15 @@ async function initMic(allowPrompt=false){
                 { googAudioMirroring: false }
             ]
         };
+        // deviceId指定を付与（選択がある場合）
+        const withDevice = Object.assign({}, rawAudio);
+        if(selectedMicDeviceId){
+            try{ withDevice.deviceId = { exact: selectedMicDeviceId }; }catch(_){ }
+        }
         let stream = null;
         try{
-            stream = await navigator.mediaDevices.getUserMedia({ audio: rawAudio, video:false });
+            // まずは選択デバイスで試行
+            stream = await navigator.mediaDevices.getUserMedia({ audio: withDevice, video:false });
         }catch(e1){
             // 互換性フォールバック（単純指定）
             try{ stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation:false, noiseSuppression:false, autoGainControl:false }, video:false }); }
@@ -1657,6 +1710,12 @@ async function initMic(allowPrompt=false){
             }
         }
         micStream = stream;
+        // 実際に使用されたデバイスIDを保存（許される環境のみ）
+        try{
+            const tr = (stream.getAudioTracks && stream.getAudioTracks()[0]) || null;
+            const st = tr && tr.getSettings ? tr.getSettings() : null;
+            if(st && st.deviceId){ selectedMicDeviceId = st.deviceId; }
+        }catch(_){ }
         micSource = audioCtx.createMediaStreamSource(stream);
         // 前段フィルタ
         micHPF = audioCtx.createBiquadFilter(); micHPF.type='highpass'; micHPF.frequency.setValueAtTime(70, audioCtx.currentTime);
@@ -1694,6 +1753,14 @@ async function initMic(allowPrompt=false){
         if(!analysisTimer){ analysisTimer = setInterval(analyzePitch, 1000/analysisRate); }
         // MIC ステータス表示
         try{ setMicStatus('ON'); }catch(_){ }
+        // 許可後は一覧のラベルが取得できるため更新
+        try{
+            if(navigator.mediaDevices && navigator.mediaDevices.enumerateDevices){
+                const devs = await navigator.mediaDevices.enumerateDevices();
+                _micDevicesCache = devs.filter(d=>d.kind==='audioinput');
+                refreshMicPickerList();
+            }
+        }catch(_){ }
         try{
             const tracks = (micStream.getAudioTracks? micStream.getAudioTracks(): micStream.getTracks());
             tracks.forEach(async t=>{
@@ -1717,6 +1784,70 @@ async function initMic(allowPrompt=false){
     }catch(e){ console.warn('initMic failed', e); try{ setMicStatus('OFF'); }catch(_){ } return false; }
     finally{ _initMicInFlight = false; window.__micInitInFlight=false; }
 }
+
+// マイク一覧の取得
+async function enumerateMicInputs(){
+    try{
+        if(!(navigator.mediaDevices && navigator.mediaDevices.enumerateDevices)) return [];
+        const list = await navigator.mediaDevices.enumerateDevices();
+        return list.filter(d=>d.kind==='audioinput');
+    }catch(_){ return []; }
+}
+
+// マイク選択UI
+function openMicPicker(){
+    try{
+        let ov = document.getElementById('micPickerOverlay');
+        if(!ov){
+            ov = document.createElement('div'); ov.id='micPickerOverlay';
+            ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,0.45);display:flex;align-items:center;justify-content:center;z-index:5000;';
+            const card = document.createElement('div'); card.id='micPickerCard';
+            card.style.cssText='min-width:260px;max-width:92vw;background:#222;color:#eee;border:1px solid #4e8cff;border-radius:8px;padding:14px;font-family:sans-serif;box-shadow:0 8px 28px rgba(0,0,0,0.4);';
+            card.innerHTML = `
+                <div style="font-size:16px;font-weight:600;margin-bottom:8px;">マイクの選択</div>
+                <div id="micPickerInfo" style="font-size:12px;opacity:0.85;margin-bottom:8px;">許可後に一覧が表示されます。まずは「権限を許可」を押してください。</div>
+                <select id="micDeviceSelect" style="width:100%;margin-bottom:10px;padding:6px;border-radius:4px;border:1px solid #555;background:#111;color:#eee"></select>
+                <div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end">
+                    <button id="micPickerPermBtn" style="padding:6px 10px;border:1px solid #777;background:#333;color:#eee;border-radius:4px">権限を許可</button>
+                    <button id="micPickerStartBtn" style="padding:6px 10px;border:1px solid #4e8cff;background:#2a4d8f;color:#fff;border-radius:4px">このマイクで開始</button>
+                    <button id="micPickerCancelBtn" style="padding:6px 10px;border:1px solid #777;background:#444;color:#eee;border-radius:4px">キャンセル</button>
+                </div>`;
+            ov.appendChild(card); document.body.appendChild(ov);
+            // events
+            card.querySelector('#micPickerCancelBtn').onclick = ()=> closeMicPicker();
+            card.querySelector('#micPickerPermBtn').onclick = async()=>{
+                _userExplicitMicInit=true; await initMic(true);
+                const list = await enumerateMicInputs(); _micDevicesCache = list; refreshMicPickerList();
+            };
+            card.querySelector('#micPickerStartBtn').onclick = async()=>{
+                const sel = card.querySelector('#micDeviceSelect'); const val = sel && sel.value;
+                selectedMicDeviceId = (val && val!=='default') ? val : null;
+                _userExplicitMicInit=true; await initMic(true); closeMicPicker();
+            };
+        }
+        refreshMicPickerList(); ov.style.display='flex';
+    }catch(e){ console.warn('openMicPicker failed',e); }
+}
+function refreshMicPickerList(){
+    const ov = document.getElementById('micPickerOverlay');
+    const sel = ov && ov.querySelector('#micDeviceSelect');
+    const info = ov && ov.querySelector('#micPickerInfo');
+    const startBtn = ov && ov.querySelector('#micPickerStartBtn');
+    if(!sel || !info || !startBtn) return;
+    sel.innerHTML='';
+    const list = _micDevicesCache||[]; const hasList = Array.isArray(list) && list.length>0;
+    if(!hasList){
+        const opt=document.createElement('option'); opt.value='default'; opt.textContent='(一覧は権限許可後に表示)'; sel.appendChild(opt);
+        info.textContent='「権限を許可」を押すとマイク一覧が表示されます。'; startBtn.disabled=false; return;
+    }
+    const mk=(id,label)=>{ const o=document.createElement('option'); o.value=id||'default'; o.textContent=label||id||'default'; return o; };
+    sel.appendChild(mk('default','(デフォルト)'));
+    list.forEach((d,i)=>{ sel.appendChild(mk(d.deviceId, (d.label&&d.label.trim())?d.label:(`マイク${i+1}`))); });
+    sel.value = selectedMicDeviceId || 'default';
+    info.textContent='使用するマイクを選んで「このマイクで開始」を押してください。'; startBtn.disabled=false;
+}
+function closeMicPicker(){ const ov=document.getElementById('micPickerOverlay'); if(ov) ov.style.display='none'; }
+
 
 // 出力レイテンシ推定（端末依存）
 function estimateOutputLatency(){
@@ -2094,33 +2225,31 @@ async function extractMelodyNotesFromBuffer(buf){
     const SEMI_NARROW = Math.pow(2, 2/12); // 約±2半音
     let prevFreq = 0; let prevTau = 0;
 
-    // YIN (CMND) による候補推定
+    // YIN (CMND) による候補推定: リアルタイムと同一エンジンに統一
+    // ここでは frameArr を YinPitchTracker に投入し、tau と conf を返す
+    const yinTrackerOffline = (function(){
+        try{
+            const M = (window && window.__PitchModules) ? window.__PitchModules : null;
+            if(M && M.YinPitchTracker){
+                const yt = new M.YinPitchTracker({ sampleRate: srd, frameSize: W, fmin, fmax, threshold: 0.15 });
+                return yt;
+            }
+        }catch(_){ }
+        return null;
+    })();
     function yinBestTauCMND(frameArr){
-        const N=W;
-        const d=new Float32Array(tauMax+1);
-        for(let tau=tauMin; tau<=tauMax; tau++){
-            let sum=0; const M=N-tau;
-            for(let n=0;n<M;n++){ const diff=frameArr[n]-frameArr[n+tau]; sum += diff*diff; }
-            d[tau]=sum;
-        }
-        const cmnd=new Float32Array(tauMax+1);
-        let acc=0;
-        cmnd[0]=1; for(let tau=1; tau<=tauMax; tau++){ acc += d[tau]; const mean=acc/tau; cmnd[tau] = mean>1e-12? (d[tau]/mean) : 1; }
-        let bestTau=-1; let bestVal=1e9;
-        const thresh=0.18;
-        for(let tau=tauMin; tau<=tauMax; tau++){
-            const v=cmnd[tau];
-            if(v<thresh){ bestTau=tau; bestVal=v; break; }
-            if(v<bestVal){ bestVal=v; bestTau=tau; }
-        }
-        // 近傍で補間（パラボリック）
-        if(bestTau>tauMin && bestTau<tauMax){
-            const ym1=cmnd[bestTau-1], y0=cmnd[bestTau], yp1=cmnd[bestTau+1];
-            const denom = (ym1 - 2*y0 + yp1);
-            if(Math.abs(denom)>1e-9){ const delta = 0.5*(ym1 - yp1)/denom; if(Math.abs(delta)<=1) bestTau = bestTau + delta; }
-        }
-        const conf = Math.max(0, Math.min(1, 1 - (isFinite(bestVal)? bestVal: 1)));
-        return {tau: bestTau, conf};
+        try{
+            if(yinTrackerOffline){
+                const r = yinTrackerOffline.process(frameArr);
+                // process は {freq, tau, conf}
+                if(r && r.tau && isFinite(r.tau)){
+                    return { tau: r.tau, conf: Math.max(0, Math.min(1, r.conf||0)) };
+                }
+                return { tau: -1, conf: 0 };
+            }
+        }catch(_){ }
+        // フォールバック: 失敗時は無効値
+        return { tau: -1, conf: 0 };
     }
 
     // Goertzel: 任意周波数のパワーを高速算出（FFT不要）
@@ -3174,20 +3303,7 @@ function analyzePitch(){
         // ライブ値の更新とオプションのガイド吸着（±6半音）
         lastMicFreq = smoothed;
         let liveMidi = 69 + 12*Math.log2(Math.max(1e-9,lastMicFreq)/A4Frequency);
-        if(snapToGuideNotes && isPlaying){
-            try{
-                const tr=currentTracks[melodyTrackIndex];
-                if(tr && tr.notes && tr.notes.length){
-                    const t=playbackPosition;
-                    const nn=tr.notes.find(n=> t>=n.time && t<=n.time+n.duration) || tr.notes.find(n=> n.time>t) || tr.notes[tr.notes.length-1];
-                    if(nn){
-                        let mTar = nn.midi|0;
-                        while(liveMidi - mTar > 6) liveMidi -= 12;
-                        while(mTar - liveMidi > 6) liveMidi += 12;
-                    }
-                }
-            }catch(_){ }
-        }
+        // ガイド吸着（メロディノートへ近接させる補正）は撤廃
         lastMicMidi = liveMidi;
     // 表示用・統計用のセント誤差とピッチクラス
     let dCentsForDot = null; // ガイドに対するセント偏差（±600c折畳み）
@@ -3433,7 +3549,7 @@ function drawChart(){
 
     // 他パートのノーツを控えめに下層へ描画（現在パート以外で showNotes=true）
     try{
-        if(Array.isArray(melodyParts)){
+        if(Array.isArray(melodyParts) && !isPitchOnlyMode){
             for(let i=0;i<melodyParts.length;i++){
                 if(i===currentMelodyPart) continue;
                 const p = melodyParts[i];
@@ -3461,7 +3577,7 @@ function drawChart(){
 
     // メロディノート（ラインのみ、枠無し） + 選択ハイライト（選択パートを前面で描画）
     // キャリブレーション中はメロディ表示を抑止（ゴーストのみ表示）
-    if(!isCalibrating && currentTracks[melodyTrackIndex]){
+    if(!isCalibrating && currentTracks[melodyTrackIndex] && !isPitchOnlyMode){
         ctx.lineWidth=guideLineWidth; ctx.strokeStyle='#4e8cff';
         const notes=currentTracks[melodyTrackIndex].notes;
     
@@ -3551,20 +3667,22 @@ function drawChart(){
         }catch(_){ }
         return false;
     }
-    // 再生線上のガイドMIDI（描画タイミングは可視遅延補正を加味した tRef で判定）
+    // 再生線上のガイドMIDI（音程モードでは無効化）
     let guideMidiAtPlayhead = null;
-    try{
-        const tr=currentTracks[melodyTrackIndex];
-        const tRef = playbackPosition - getPitchVisOffsetSec();
-        if(tr&&tr.notes&&tr.notes.length){
-            const nn=tr.notes.find(n=> tRef>=n.time && tRef<=n.time+n.duration) || tr.notes.find(n=> n.time>tRef) || tr.notes[tr.notes.length-1];
-            if(nn) guideMidiAtPlayhead = nn.midi|0;
-        } else {
-            // トラックが無い場合はゴーストから
-            const gM = ghostMidiAt(tRef);
-            if(gM!=null) guideMidiAtPlayhead = gM;
-        }
-    }catch(_){ }
+    if(!isPitchOnlyMode){
+        try{
+            const tr=currentTracks[melodyTrackIndex];
+            const tRef = playbackPosition - getPitchVisOffsetSec();
+            if(tr&&tr.notes&&tr.notes.length){
+                const nn=tr.notes.find(n=> tRef>=n.time && tRef<=n.time+n.duration) || tr.notes.find(n=> n.time>tRef) || tr.notes[tr.notes.length-1];
+                if(nn) guideMidiAtPlayhead = nn.midi|0;
+            } else {
+                // トラックが無い場合はゴーストから
+                const gM = ghostMidiAt(tRef);
+                if(gM!=null) guideMidiAtPlayhead = gM;
+            }
+        }catch(_){ }
+    }
     // アシスト中の見やすい棒線（後段で重ね描きするため、ここではセグメントを算出）
     let _assistSegments = null;
     if(isAssistActive()){
@@ -3602,7 +3720,8 @@ function drawChart(){
     }
 
     // キャリブレーション中は非表示
-    if(!isCalibrating && pitchHistory.length && !isAssistActive()){
+    // 追加仕様: タイムラインが動いていない（!isPlaying）かつ音程モードではない場合はピッチ履歴グラフを描画しない
+    if(!isCalibrating && pitchHistory.length && !isAssistActive() && (isPitchOnlyMode || isPlaying)){
     const LAG_MS = Math.round((getPitchVisOffsetSec())*1000); // 測定遅延も反映
         // 補正なし: サンプル間の自然な連続のみ（解析レートから最小連結幅を算出）
         const CHANGE_TOL_SEMI = 0.5;      // 基本の分割しきい値（半音）
@@ -3614,7 +3733,7 @@ function drawChart(){
         // 遅延を加味した描画対象時間の上限
         const drawUntil = (playbackPosition - lag);
 
-        // 1) 範囲内の点を抽出し、時間順に並べ、表示用MIDIとdCentsを整形
+    // 1) 範囲内の点を抽出し、時間順に並べ、表示用MIDIとdCentsを整形
         const pts = [];
         // 補正なし: アウトライヤ除去は行わない（信頼度の下限のみ適用）
         const WIN = 0;
@@ -3626,33 +3745,10 @@ function drawChart(){
             if(t > drawUntil) continue;   // 遅延より後はまだ描かない
             if(typeof p.conf==='number' && p.conf < PITCH_CONF_MIN) continue; // 低信頼は無視
             if(isCallAt(t)) continue;     // コール中は非表示
-            // 表示用MIDI（ガイド優先: トラック→ゴースト→生）
+            // 表示用MIDI: ガイドへの吸着は廃止。常に生周波数から算出。
             let midi;
             let dCents = (p.dCents!=null && Number.isFinite(p.dCents))? p.dCents : null;
-            (function(){
-                try{
-                    const tr=currentTracks[melodyTrackIndex];
-                    if(tr&&tr.notes&&tr.notes.length){
-                        // 補正なし: ノート時間内にある場合のみガイド参照（近傍スナップなし）
-                        let nn=tr.notes.find(n=> t>=n.time && t<=n.time+n.duration);
-                        if(nn){
-                            const liveBase = (p.freq>0) ? (69+12*Math.log2(p.freq/A4Frequency)) : nn.midi;
-                            let best=nn.midi, bestD=1e9;
-                            for(let k=-2;k<=2;k++){
-                                const cand=nn.midi + 12*k; const d=Math.abs(cand - liveBase);
-                                if(d<bestD){ bestD=d; best=cand; }
-                            }
-                            const fTar = midiToFreq(best);
-                            let centErr = 1200*Math.log2(Math.max(1e-9,(p.freq||midiToFreq(best)))/Math.max(1e-9,fTar));
-                            centErr = wrapToPm600(centErr);
-                            midi = nn.midi + (centErr/100);
-                            if(dCents==null) dCents = centErr;
-                            return;
-                        }
-                    }
-                }catch(_){ }
-                midi = (69+12*Math.log2(Math.max(1e-9,p.freq)/A4Frequency));
-            })();
+            midi = (69+12*Math.log2(Math.max(1e-9,p.freq)/A4Frequency));
             if(!(midi>=vmin && midi<=vmax)) continue;
             pts.push({t, midi, dCents, conf:(typeof p.conf==='number'? p.conf: 0.7)});
         }
@@ -3842,7 +3938,7 @@ function drawChart(){
     }
     // 仮ノーツ（MIDIアライン/練習ゴーストのプレビュー）
     // 通常: 赤の破線。基礎練習モード中はメロディと同じ青の実線で表示。
-    if(Array.isArray(midiGhostNotes) && midiGhostNotes.length){
+    if(Array.isArray(midiGhostNotes) && midiGhostNotes.length && !isPitchOnlyMode){
     const visStart=eff - (playX/pxPerSec)*tempoFactor - 1; const visEnd=eff + ((w-playX)/pxPerSec)*tempoFactor + 1;
         ctx.save();
         ctx.lineWidth = Math.max(2, guideLineWidth);
@@ -3897,8 +3993,8 @@ function drawChart(){
         }
         ctx.restore();
     }
-    // アシスト中の棒線はゴーストの上に重ねて描く（白縁＋緑で視認性UP）
-    if(_assistSegments && _assistSegments.length){
+    // アシスト中の棒線はゴーストの上に重ねて描く（白縁＋緑で視認性UP）。音程モードでは非表示。
+    if(_assistSegments && _assistSegments.length && !isPitchOnlyMode){
         ctx.save();
         for(const s of _assistSegments){
             // 外側の白縁
@@ -3918,10 +4014,7 @@ function drawChart(){
         // 表示用に、ガイド（トラック or ゴースト）がある場合は最も近いオクターブに寄せる
         // 基準は必ず生周波数由来のMIDI（lastMicFreq）
         let midi = 69 + 12*Math.log2(lastMicFreq/A4Frequency);
-        if(guideMidiAtPlayhead!=null){
-            while(midi - guideMidiAtPlayhead > 6) midi -= 12;
-            while(guideMidiAtPlayhead - midi > 6) midi += 12;
-        }
+        // ガイドMIDIに合わせるオクターブ補正は撤廃（生MIDIそのまま表示）
         // 低信頼フレームでは赤丸を描かない（履歴同様の基準に合わせる）
         const canShowLive = (function(){
             try{
@@ -3941,8 +4034,9 @@ function drawChart(){
             const tx=playX+12; const ty=y;
             ctx.fillStyle='rgba(0,0,0,0.6)'; const pad=4; const tw=ctx.measureText(label).width; ctx.fillRect(tx-2,ty-10,tw+pad+2,16);
             ctx.fillStyle='#ffe'; ctx.fillText(label,tx,ty);
-            // カラオケ風: 目標ノートに対するセント偏差を表示
+            // カラオケ風: 目標ノートに対するセント偏差を表示（音程モードでは非表示）
             try{
+                if(!isPitchOnlyMode){
                 const tr=currentTracks[melodyTrackIndex];
                 if(tr && tr.notes && tr.notes.length){
                     const t=playbackPosition; const nn=tr.notes.find(n=> t>=n.time && t<=n.time+n.duration) || tr.notes.find(n=> n.time>t) || tr.notes[tr.notes.length-1];
@@ -3962,6 +4056,7 @@ function drawChart(){
                         ctx.fillStyle = within? '#aef0ae' : '#ffd6a6';
                         ctx.fillText(centsTxt, cx+2, cy);
                     }
+                }
                 }
             }catch(_){ }
         }
@@ -4100,6 +4195,33 @@ function drawChart(){
         }
         ctx.restore();
     }catch(_){ }
+    // 音程モードの右上オーバーレイ
+    try{
+        if(isPitchOnlyMode){
+            const pad = 10;
+            const label = '音程モード';
+            ctx.save();
+            ctx.font = 'bold 13px sans-serif';
+            ctx.textAlign = 'right';
+            ctx.textBaseline = 'top';
+            const tw = ctx.measureText(label).width;
+            const boxW = Math.ceil(tw + 12);
+            const boxH = 22;
+            const x = (chartCanvas?.width||0) - pad - boxW;
+            const y = pad;
+            // 背景（半透明・角丸）
+            ctx.fillStyle = 'rgba(0,0,0,0.55)';
+            const r = 8; ctx.beginPath();
+            ctx.moveTo(x+r, y); ctx.lineTo(x+boxW-r, y); ctx.quadraticCurveTo(x+boxW, y, x+boxW, y+r);
+            ctx.lineTo(x+boxW, y+boxH-r); ctx.quadraticCurveTo(x+boxW, y+boxH, x+boxW-r, y+boxH);
+            ctx.lineTo(x+r, y+boxH); ctx.quadraticCurveTo(x, y+boxH, x, y+boxH-r);
+            ctx.lineTo(x, y+r); ctx.quadraticCurveTo(x, y, x+r, y); ctx.closePath(); ctx.fill();
+            // 文字
+            ctx.fillStyle = '#fff';
+            ctx.fillText(label, x + boxW - 6, y + Math.floor((boxH-13)/2));
+            ctx.restore();
+        }
+    }catch(_){ }
     // 再生ヘッド（より白く）
     ctx.strokeStyle='#ffffff'; ctx.beginPath(); ctx.moveTo(playX+0.5,0); ctx.lineTo(playX+0.5,h); ctx.stroke();
     // 最後にスクロールバー範囲を更新
@@ -4115,10 +4237,19 @@ function setSelectionByPlayhead(){
         // 範囲選択中は自動切替しない
         if(sel.type==='range') return;
         const t = playbackPosition; // 曲上の現在秒
-        // 既に index 選択中でそのノートがまだ再生線下なら何もしない
-        // 常に再生線下ノートを選択
+        // 常に再生線下ノートを優先、無ければ最近傍のノート（開始/終了の端からの距離が最小）を選択
         let idx=-1;
         for(let i=0;i<tr.notes.length;i++){ const n=tr.notes[i]; if(t>=n.time && t<=n.time+n.duration){ idx=i; break; } }
+        if(idx<0){
+            // 最近傍検索
+            let bestIdx=-1, bestDist=1e9;
+            for(let i=0;i<tr.notes.length;i++){
+                const n=tr.notes[i];
+                const d = (t < n.time)? (n.time - t) : (t - (n.time+n.duration));
+                if(d < bestDist){ bestDist=d; bestIdx=i; }
+            }
+            idx = bestIdx;
+        }
         if(idx>=0){ setSingleSelection(idx,{audition:false}); }
     }catch(_){ }
 }
@@ -4292,6 +4423,26 @@ window.addEventListener('keydown',(e)=>{ if(e.key==='o' || e.key==='O'){ scorePi
 if(clearSelectionBtn){ clearSelectionBtn.onclick=()=> clearSelection(); }
 if(octDownBtn){ octDownBtn.onclick=()=> applyOctaveShift(-12); }
 if(octUpBtn){ octUpBtn.onclick=()=> applyOctaveShift(+12); }
+
+// 左端の全体オクターブボタン（＋/－）: メロディトラック全体を±12移動
+const globalOctUpBtn = document.getElementById('globalOctUpBtn');
+const globalOctDownBtn = document.getElementById('globalOctDownBtn');
+function shiftAllMelodyNotes(delta){
+    try{
+        const tr = currentTracks[melodyTrackIndex];
+        if(!tr || !Array.isArray(tr.notes) || !tr.notes.length) return;
+        const clamp = (m)=> Math.max(36, Math.min(127, m));
+        for(let i=0;i<tr.notes.length;i++){
+            tr.notes[i].midi = clamp((tr.notes[i].midi|0) + delta);
+        }
+        // 自動センタリングは以降停止（ユーザ意図を優先）
+        autoCenterFrozen = true;
+        // スケジュール更新と再描画
+        scheduleAll(); if(isPlaying){ pausePlayback(); startPlayback(); } else { drawChart(); }
+    }catch(_){ }
+}
+if(globalOctUpBtn){ globalOctUpBtn.onclick = ()=> shiftAllMelodyNotes(+12); }
+if(globalOctDownBtn){ globalOctDownBtn.onclick = ()=> shiftAllMelodyNotes(-12); }
 // 半音ボタン
 const semiDownBtn=document.getElementById('semiDownBtn');
 const semiUpBtn=document.getElementById('semiUpBtn');
@@ -4884,10 +5035,12 @@ async function loadFflateDynamic(){
 function startPlayback(){
     if(isPlaying) return;
     ensureAudio(); tuneCompressor();
-    // 音源未ロード時は「練習モード」: マイク解析のみで赤点を記録
+    // 音源未ロード時 or 音程モードでは「無音再生」: マイク解析のみで赤点を記録
     const practiceMode = (function(){
         let hasAny=false;
         try{ if(melodyBuffer) hasAny=true; if(accompBuffer) hasAny=true; if(Array.isArray(melodyParts)){ for(const p of melodyParts){ if(p&&p.buffer){ hasAny=true; break; } } } }catch(_){ }
+        // isPitchOnlyMode が true の場合は、音源があっても強制的に無音側へ
+        if(isPitchOnlyMode) return true;
         return !hasAny;
     })();
     try{ if(audioCtx.state!=='running'){ audioCtx.resume().catch(()=>{}); } }catch(_){ }
@@ -5116,32 +5269,9 @@ function scheduleMore(){
 }
 function autoCenterMelodyTrack(){
     if(autoCenterFrozen) return; // 凍結中は自動センタリングしない
-    // 選択トラックのノート群を見て、縦方向（verticalOffset）を“曲全体が収まるよう”に自動調整
-    const tr=currentTracks[melodyTrackIndex]; if(!tr||!tr.notes||!tr.notes.length) return;
-    const notes=tr.notes; let minM=Infinity, maxM=-Infinity;
-    for(const n of notes){ if(n.midi<minM) minM=n.midi; if(n.midi>maxM) maxM=n.midi; }
-    if(!isFinite(minM) || !isFinite(maxM)) return;
-    // 曲全体で存在しないオクターブは隠す: 上下に±1半音のマージンを取り、必要最小限のズームへ自動調整
-    const margin=1; // 半音
-    const desiredLow = Math.max(36, Math.min(132, Math.floor(minM - margin)));
-    const desiredHigh= Math.max(36, Math.min(132, Math.ceil(maxM + margin)));
-    let desiredSpan = Math.max(1, desiredHigh - desiredLow + 1); // 半音幅
-    // 現在の縦ズームより狭くできるなら縮小（最低1オクターブ）
-    const minZoomOct = 1; const maxZoomOct = 8; // 安全範囲
-    const targetZoomOct = Math.max(minZoomOct, Math.min(maxZoomOct, Math.ceil(desiredSpan/12)));
-    if(verticalZoom !== targetZoomOct){
-        verticalZoom = targetZoomOct;
-        if(vZoom){ try{ vZoom.value = String(verticalZoom); }catch(_){ } }
-    }
-    // ズームが決まったら、その範囲が中央に来るよう verticalOffset を調整
-    const total=verticalZoom*12; // 表示半音数
-    const min=36; const max=132; const allowRange=(max-min-total);
-    const desiredCenter = (desiredLow + desiredHigh)/2;
-    const clampedCenter = Math.max(min + total/2, Math.min(max - total/2, desiredCenter));
-    const desiredVmin = Math.round(clampedCenter - total/2);
-    const rel = Math.max(0, Math.min(allowRange, desiredVmin - min));
-    verticalOffset = Math.round((rel / Math.max(1,allowRange)) * 100);
-    try{ if(typeof syncVerticalOffsetSliders==='function') syncVerticalOffsetSliders(); }catch(_){ }
+    // 2.5オクターブ固定: 自動ズーム・自動オフセットは行わない
+    // 必要であれば手動スライダやボタン操作で調整する
+    return;
 }
 // 指定したMIDI範囲 [low, high] が見えるように縦オフセットを調整
 function setVerticalOffsetToRange(low, high){

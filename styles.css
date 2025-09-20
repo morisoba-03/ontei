@@ -398,6 +398,35 @@ button:hover {
 	#top-bar > * { flex: 0 1 auto !important; min-width: 0; gap: 4px !important; flex-wrap: nowrap !important; align-items: center !important; }
 	#mic-permission-bar { flex-wrap: nowrap !important; gap: 4px !important; }
 	#top-bar button { min-width: auto !important; margin: 0 2px !important; }
+
+	/* 左側オクターブボタン（＋/－）: 正方形＆文字大きめ */
+	#leftOctavePanel #globalOctUpBtn,
+	#leftOctavePanel #globalOctDownBtn {
+		width: 42px !important;
+		height: 42px !important;
+		min-width: 42px !important;
+		min-height: 42px !important;
+		padding: 0 !important;
+		line-height: 1 !important;
+		font-size: 24px !important; /* 文字を大きめに */
+		font-weight: 700 !important;
+		display: inline-flex !important;
+		align-items: center !important;
+		justify-content: center !important;
+		aspect-ratio: 1 / 1;
+	}
+
+	/* タッチデバイスではさらに大きく */
+	@media (pointer: coarse) {
+		#leftOctavePanel #globalOctUpBtn,
+		#leftOctavePanel #globalOctDownBtn {
+				width: 48px !important;
+				height: 48px !important;
+				min-width: 48px !important;
+				min-height: 48px !important;
+				font-size: 28px !important;
+		}
+	}
 	#melodyAudioLabel, #accompAudioLabel { white-space: nowrap !important; overflow: hidden !important; text-overflow: ellipsis !important; min-width: 0 !important; max-width: 28vw; }
 	#top-bar button, #top-bar select, #top-bar input[type="number"], #top-bar input[type="file"] + label {
 		min-height: 24px; height: 24px; padding: 1px 6px; font-size: 12px; line-height: 1;
