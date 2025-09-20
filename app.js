@@ -94,7 +94,9 @@ function warnIfInsecureContext(){
 let micHPF=null, micLPF=null; // マイク前段フィルタ（高域/低域ノイズを除去）
 let playbackStartTime=0,playbackStartPos=0,playbackPosition=0,isPlaying=false,tempoFactor=1.0;
 let schedTimer=null; // RAFに加えた冗長スケジューラ
-let toleranceCents=20,gateThreshold=-40,analysisRate=120,A4Frequency=442,octaveAlign=true,labelNotation='CDE';
+let toleranceCents=20,gateThreshold=-40,analysisRate=120,A4Frequency=440,octaveAlign=true,labelNotation='CDE';
+// 可視化/記録に用いるピッチ信頼度の下限（0..1）
+const PITCH_CONF_MIN = 0.45;
 let verticalZoom=2.5,verticalOffset=0,pxPerSec=150,timelineOffsetSec=0,isPanning=false,panStartX=0,panStartOffset=0;
 let isAdjustingVOffset=false; // 右側スライダ操作中のガード
 let autoCenterFrozen=false; // ノーツ編集以降は自動センタリングを凍結
@@ -1677,8 +1679,15 @@ async function initMic(allowPrompt=false){
         try{
             const M = window.__PitchModules;
             if(M){
-                _yinTracker = new M.YinPitchTracker({ sampleRate: audioCtx.sampleRate, frameSize: micAnalyser.fftSize, fmin: 65, fmax: 5000, threshold: 0.1 });
-                _pitchSmootherMod = new M.PitchSmoother({ windowSize: 5, deadbandCents: 6, riseCents: 35, fallCents: 45 });
+                _yinTracker = new M.YinPitchTracker({ sampleRate: audioCtx.sampleRate, frameSize: micAnalyser.fftSize, fmin: 65, fmax: 1000, threshold: 0.15 });
+                // hop = frame/2 に近い解析レートへ（目安）。UIの値より低すぎる場合に引き上げ。
+                try{
+                    const sr = audioCtx.sampleRate || 48000;
+                    const hop = Math.max(1, Math.floor(micAnalyser.fftSize/2));
+                    const hopRate = Math.max(10, Math.min(120, Math.round(sr / hop)));
+                    analysisRate = Math.max(analysisRate||0, hopRate);
+                }catch(_){ }
+                _pitchSmootherMod = new M.PitchSmoother({ windowSize: 7, deadbandCents: 8, riseCents: 35, fallCents: 45 });
             }
         }catch(_){ /* ignore */ }
         // 解析タイマー
@@ -2902,21 +2911,22 @@ function analyzePitch(){
     try{
         if(USE_YIN_TRACKER && _yinTracker && micData){
             const r = _yinTracker.process(micData);
-            let freqY = (r && r.freq)||0; let confY = (r && r.conf)||0;
-            if(freqY>0){
-                const sm = _pitchSmootherMod? _pitchSmootherMod.push(freqY, confY): freqY;
-                lastMicFreq = sm;
-                lastMicMidi = 69 + 12*Math.log2(Math.max(1e-9,lastMicFreq)/A4Frequency);
-                if(!isCalibrating){
+            const rawFreq = (r && r.freq) || 0;
+            const rawConf = (r && r.conf) || 0;
+            if(rawFreq>0){
+                // 低信頼はスムージング/赤丸更新をスキップ（前回値を保持して見た目を安定化）
+                if(rawConf >= PITCH_CONF_MIN){
+                    const sm = _pitchSmootherMod? _pitchSmootherMod.push(rawFreq, rawConf): rawFreq;
+                    lastMicFreq = sm;
+                    lastMicMidi = 69 + 12*Math.log2(Math.max(1e-9,lastMicFreq)/A4Frequency);
+                }
+                if(!isCalibrating && rawConf >= PITCH_CONF_MIN){
                     const vOff = getPitchVisOffsetSec();
                     const recTime = playbackPosition - vOff;
-                    const conf = Math.max(0, Math.min(1, confY));
-                    // dispMidiは保存せず、描画時にガイド基準で再計算する（赤●との不一致回避）
-                    pitchHistory.push({ time: recTime, visOff: vOff, freq: lastMicFreq, conf, dispMidi: null, dCents: null, pc: null, sid: scoreSessionId });
+                    // 履歴にはスムージング前の生周波数を保存（描画側で一貫して再計算）
+                    pitchHistory.push({ time: recTime, visOff: vOff, freq: rawFreq, conf: rawConf, sid: scoreSessionId });
                     if(pitchHistory.length>2000) pitchHistory.shift();
                 }
-            } else {
-                // 無声音: 記録は追加しない（旧処理へは落とさない）
             }
             if(!isPlaying) drawChart();
             return; // YINパスで完了（旧処理へは行かない）
@@ -3179,12 +3189,9 @@ function analyzePitch(){
             }catch(_){ }
         }
         lastMicMidi = liveMidi;
-        // 保存用 dispMidi を決定:
-        //  - ガイドがあれば、その時刻のノート(nn)の“最も近いオクターブ”を基準にセント誤差で nn.midi に対して上下へ配置
-        //  - ガイドが無ければ、生の liveMidi を保存
-        let dispMidi = liveMidi;
-        let dCentsForDot = null; // ガイドに対するセント偏差（±600c折畳み）
-        let pcForDot = null;     // ピッチクラス 0..11（C=0）
+    // 表示用・統計用のセント誤差とピッチクラス
+    let dCentsForDot = null; // ガイドに対するセント偏差（±600c折畳み）
+    let pcForDot = null;     // ピッチクラス 0..11（C=0）
         try{
             // ガイドノートの取得: 1) メロディトラック 2) 練習モードのゴーストノート
             let nn=null;
@@ -3244,7 +3251,6 @@ function analyzePitch(){
                     let centErr = 1200*Math.log2(Math.max(1e-9,lastMicFreq)/Math.max(1e-9,fTar));
                     centErr = wrapToPm600(centErr);
                     dCentsForDot = centErr;
-                    dispMidi = nn.midi + (centErr/100);
                     pcForDot = ((nn.midi%12)+12)%12;
                     // 統計を更新（採点中のみ）
                     try{
@@ -3267,7 +3273,7 @@ function analyzePitch(){
         try{
             if((isPlaying || isPracticing) && dCentsForDot!=null && pcForDot!=null){
                 const tol = toleranceCents||0; const ok = Math.abs(dCentsForDot) <= tol;
-                const mForOct = (typeof dispMidi==='number') ? dispMidi : (69 + 12*Math.log2(Math.max(1e-9,lastMicFreq)/A4Frequency));
+                const mForOct = (69 + 12*Math.log2(Math.max(1e-9,lastMicFreq)/A4Frequency));
                 const oct = Math.floor(mForOct/12) - 1; const key = String(oct);
                 if(!scoreDetailByOct[key]) scoreDetailByOct[key] = {};
                 const cell = (scoreDetailByOct[key][pcForDot] ||= {in:0,out:0,count:0});
@@ -3279,7 +3285,7 @@ function analyzePitch(){
         if(!isCalibrating){
             const vOff = getPitchVisOffsetSec();
             const recTime = ((typeof __vitTimeOverride==='number')? __vitTimeOverride: playbackPosition) - vOff;
-            pitchHistory.push({ time: recTime, visOff: vOff, freq: lastMicFreq, conf, dispMidi, dCents: dCentsForDot, pc: pcForDot, sid: scoreSessionId });
+            pitchHistory.push({ time: recTime, visOff: vOff, freq: lastMicFreq, conf, sid: scoreSessionId });
             if(pitchHistory.length>2000) pitchHistory.shift();
         }
     }
@@ -3562,7 +3568,7 @@ function drawChart(){
     // アシスト中の見やすい棒線（後段で重ね描きするため、ここではセグメントを算出）
     let _assistSegments = null;
     if(isAssistActive()){
-        const LAG_MS = Math.round((getPitchVisOffsetSec())*1000);
+    const LAG_MS = Math.round((getPitchVisOffsetSec())*1000);
         const lag = LAG_MS/1000;
         const effStart = eff - (playX/pxPerSec)*tempoFactor - 1;
         const effEnd   = eff + ((w-playX)/pxPerSec)*tempoFactor + 1;
@@ -3571,7 +3577,7 @@ function drawChart(){
         for(const p of pitchHistory){
             const t = p.time + ((p.visOff!=null)? (p.visOff - curOff) : 0);
             if(!(t>=effStart && t<=effEnd)) continue; if(t>drawUntil) continue;
-            if(typeof p.conf==='number' && p.conf < 0.3) continue;
+            if(typeof p.conf==='number' && p.conf < PITCH_CONF_MIN) continue;
             if(isCallAt(t)) continue;
             pts.push({t});
         }
@@ -3618,7 +3624,7 @@ function drawChart(){
             const t = p.time + ((p.visOff!=null)? (p.visOff - curOff) : 0);
             if(!(t>=visStart && t<=visEnd)) continue;
             if(t > drawUntil) continue;   // 遅延より後はまだ描かない
-            if(typeof p.conf==='number' && p.conf < 0.3) continue; // 低信頼は無視
+            if(typeof p.conf==='number' && p.conf < PITCH_CONF_MIN) continue; // 低信頼は無視
             if(isCallAt(t)) continue;     // コール中は非表示
             // 表示用MIDI（ガイド優先: トラック→ゴースト→生）
             let midi;
@@ -3630,26 +3636,22 @@ function drawChart(){
                         // 補正なし: ノート時間内にある場合のみガイド参照（近傍スナップなし）
                         let nn=tr.notes.find(n=> t>=n.time && t<=n.time+n.duration);
                         if(nn){
-                            if(typeof p.dispMidi === 'number'){
-                                midi = p.dispMidi;
-                            } else {
-                                const liveBase = (p.freq>0) ? (69+12*Math.log2(p.freq/A4Frequency)) : nn.midi;
-                                let best=nn.midi, bestD=1e9;
-                                for(let k=-2;k<=2;k++){
-                                    const cand=nn.midi + 12*k; const d=Math.abs(cand - liveBase);
-                                    if(d<bestD){ bestD=d; best=cand; }
-                                }
-                                const fTar = midiToFreq(best);
-                                let centErr = 1200*Math.log2(Math.max(1e-9,(p.freq||midiToFreq(best)))/Math.max(1e-9,fTar));
-                                centErr = wrapToPm600(centErr);
-                                midi = nn.midi + (centErr/100);
-                                if(dCents==null) dCents = centErr;
+                            const liveBase = (p.freq>0) ? (69+12*Math.log2(p.freq/A4Frequency)) : nn.midi;
+                            let best=nn.midi, bestD=1e9;
+                            for(let k=-2;k<=2;k++){
+                                const cand=nn.midi + 12*k; const d=Math.abs(cand - liveBase);
+                                if(d<bestD){ bestD=d; best=cand; }
                             }
+                            const fTar = midiToFreq(best);
+                            let centErr = 1200*Math.log2(Math.max(1e-9,(p.freq||midiToFreq(best)))/Math.max(1e-9,fTar));
+                            centErr = wrapToPm600(centErr);
+                            midi = nn.midi + (centErr/100);
+                            if(dCents==null) dCents = centErr;
                             return;
                         }
                     }
                 }catch(_){ }
-                midi = (typeof p.dispMidi === 'number') ? p.dispMidi : (69+12*Math.log2(Math.max(1e-9,p.freq)/A4Frequency));
+                midi = (69+12*Math.log2(Math.max(1e-9,p.freq)/A4Frequency));
             })();
             if(!(midi>=vmin && midi<=vmax)) continue;
             pts.push({t, midi, dCents, conf:(typeof p.conf==='number'? p.conf: 0.7)});
@@ -3920,7 +3922,16 @@ function drawChart(){
             while(midi - guideMidiAtPlayhead > 6) midi -= 12;
             while(guideMidiAtPlayhead - midi > 6) midi += 12;
         }
-        if(midi>=vmin && midi<=vmax){
+        // 低信頼フレームでは赤丸を描かない（履歴同様の基準に合わせる）
+        const canShowLive = (function(){
+            try{
+                // 直近履歴の信頼度で判定（同一時刻帯の点があればそれに合わせる）
+                const tRef = playbackPosition - getPitchVisOffsetSec();
+                for(let i=pitchHistory.length-1;i>=0;i--){ const p=pitchHistory[i]; if((tRef - p.time) > 0.25) break; if(Math.abs(p.time - tRef) <= 0.12){ return (p.conf==null) || (p.conf >= PITCH_CONF_MIN); } }
+            }catch(_){ }
+            return true; // 情報がなければ表示
+        })();
+        if(canShowLive && midi>=vmin && midi<=vmax){
             const y=h-(midi-vmin+1)*pxSemi;
             // 外枠白→内部赤円
             ctx.beginPath(); ctx.arc(playX,y,8,0,Math.PI*2); ctx.fillStyle='rgba(255,80,80,0.9)'; ctx.strokeStyle='#fff'; ctx.lineWidth=2; ctx.fill(); ctx.stroke();
@@ -5197,7 +5208,7 @@ function textDecodeUtf8(u8){ try{ return new TextDecoder().decode(u8); }catch(_)
 function buildSessionJson(){
     const tr=currentTracks[melodyTrackIndex];
     const notes=(tr&&tr.notes)? tr.notes.map(n=>({midi:n.midi,time:n.time,duration:n.duration})) : [];
-    const dots=pitchHistory.map(p=>({time:p.time,freq:p.freq,conf:p.conf,dispMidi:p.dispMidi}));
+    const dots=pitchHistory.map(p=>({time:p.time,freq:p.freq,conf:p.conf}));
     const meta={
         app:"pitch-trainer",
         ver:"1",
@@ -5299,7 +5310,7 @@ async function loadSessionZipFromBytes(u8){
     // 復元: ノート
     currentTracks=[{name:'Melody', notes: (sess.notes||[]).map(n=>({midi:n.midi,time:n.time,duration:n.duration}))}]; melodyTrackIndex=0; melodyNotesExtracted=true;
     // 復元: 赤点
-    pitchHistory=(sess.dots||[]).map(d=>({time:d.time,freq:d.freq,conf:d.conf,dispMidi:d.dispMidi}));
+    pitchHistory=(sess.dots||[]).map(d=>({time:d.time,freq:d.freq,conf:d.conf}));
     // 復元: 音声（存在すれば）
     melodyBuffer=null; accompBuffer=null; melodyDuration=0; accompDuration=0;
     melodyOrigBytes=null; accompOrigBytes=null; melodyOrigName=null; accompOrigName=null; melodyOrigExt=null; accompOrigExt=null;
@@ -5417,7 +5428,18 @@ if(stopBtn){
 rw5 && (rw5.onclick=()=>seekRelative(-5)); rw10 && (rw10.onclick=()=>seekRelative(-10)); fw5 && (fw5.onclick=()=>seekRelative(5)); fw10 && (fw10.onclick=()=>seekRelative(10));
 tolSlider && (tolSlider.oninput=()=>{ toleranceCents=parseInt(tolSlider.value); tolVal.textContent=toleranceCents; drawChart(); }); tolVal && (tolVal.textContent=toleranceCents);
 gateSlider && (gateSlider.oninput=()=>{ gateThreshold=parseInt(gateSlider.value); gateVal.textContent=gateThreshold; updateMicGateVisual(); }); gateVal && (gateVal.textContent=gateThreshold);
-rateSlider && (rateSlider.oninput=()=>{ analysisRate=parseInt(rateSlider.value); rateVal.textContent=analysisRate; if(analysisTimer){ clearInterval(analysisTimer); analysisTimer=setInterval(analyzePitch,1000/analysisRate);} }); rateVal && (rateVal.textContent=analysisRate);
+rateSlider && (rateSlider.oninput=()=>{
+    let v=parseInt(rateSlider.value);
+    // hop=frame/2 の下限を守る（YINの安定化）
+    try{
+        const sr = (audioCtx && audioCtx.sampleRate) ? audioCtx.sampleRate : 48000;
+        const W = (micAnalyser && micAnalyser.fftSize) ? micAnalyser.fftSize : 2048;
+        const hopRate = Math.max(10, Math.min(120, Math.round(sr / Math.max(1, Math.floor(W/2)))));
+        v = Math.max(v, hopRate);
+    }catch(_){ }
+    analysisRate=v; rateVal.textContent=analysisRate;
+    if(analysisTimer){ clearInterval(analysisTimer); analysisTimer=setInterval(analyzePitch,1000/analysisRate);} 
+}); rateVal && (rateVal.textContent=analysisRate);
 // A4/オクターブ合わせUIは削除済み
 labelSel && (labelSel.onchange=()=>{ labelNotation=labelSel.value; });
 vZoom && (vZoom.oninput=()=>{ verticalZoom=parseFloat(vZoom.value); drawChart(); });
@@ -6496,7 +6518,7 @@ window.addEventListener('load',()=>{
                         practiceToolbar.appendChild(frg);
                         practiceToolbar.classList.remove('hidden');
                         practiceToolbar.style.display='flex';
-                        if(practiceCloseBtn){ practiceCloseBtn.style.display=''; }
+                        if(practiceCloseBtn){ practiceCloseBtn.style.display='none'; }
                         // ボタン配線（重複防止のため毎回最新ハンドラに張り替え）
                         if(practiceCloseBtn){
                             practiceCloseBtn.onclick = ()=>{
@@ -6570,7 +6592,45 @@ window.addEventListener('load',()=>{
         }
     if(practiceStartBtn){ practiceStartBtn.onclick=()=>{ activateAudioOnce(); if(practiceMode==='basic'){ if(practicePaused){ resumeBasicPractice(); } else { startBasicPractice(); } } } }
     if(practicePauseBtn){ practicePauseBtn.onclick=()=>{ activateAudioOnce(); if(isPracticing){ pauseBasicPractice(); } } }
-    if(practiceStopBtn){ practiceStopBtn.onclick=()=>{ activateAudioOnce(); if(isPracticing) stopBasicPractice(true); } }
+    if(practiceStopBtn){
+        let _prStopClick=0, _prStopTimer=null;
+        practiceStopBtn.onclick=()=>{
+            activateAudioOnce();
+            _prStopClick++;
+            if(_prStopClick===1){
+                // 1回目: 練習の停止のみ
+                if(isPracticing) stopBasicPractice(true);
+                // 2回目待ちのヒントを短時間表示（ボタンタイトルを変更）
+                try{ practiceStopBtn.title = 'もう一度押すと通常モードへ戻ります'; }catch(_){ }
+                _prStopTimer = setTimeout(()=>{ _prStopClick=0; try{ practiceStopBtn.title=''; }catch(_){ } }, 900);
+            } else if(_prStopClick>=2){
+                if(_prStopTimer){ clearTimeout(_prStopTimer); _prStopTimer=null; }
+                _prStopClick=0;
+                // 通常モードへ戻る
+                try{
+                    if(practiceModeOff && typeof practiceModeOff.onclick==='function'){
+                        practiceModeOff.onclick();
+                    } else {
+                        if(isPracticing) stopBasicPractice(true);
+                        if(practiceToolbar){ practiceToolbar.classList.add('hidden'); practiceToolbar.style.display='none'; }
+                        if(practiceTopGroup){
+                            if(practicePatternSelect){ practicePatternSelect.style.display='none'; practiceTopGroup.appendChild(practicePatternSelect); }
+                            if(practiceRangeWrap){ practiceRangeWrap.style.display='none'; practiceTopGroup.appendChild(practiceRangeWrap); }
+                            if(practiceStartBtn){ practiceStartBtn.style.display='none'; practiceTopGroup.appendChild(practiceStartBtn); }
+                            if(practicePauseBtn){ practicePauseBtn.style.display='none'; practiceTopGroup.appendChild(practicePauseBtn); }
+                            if(practiceStopBtn){ practiceStopBtn.style.display='none'; practiceTopGroup.appendChild(practiceStopBtn); }
+                            if(practiceVolWrap){ practiceVolWrap.style.display='none'; practiceTopGroup.appendChild(practiceVolWrap); }
+                        }
+                        practiceMode='off';
+                        try{
+                            if(melodyAudioBtn){ melodyAudioBtn.disabled = false; melodyAudioBtn.title = 'メロディ音声を選択'; }
+                            if(accompAudioBtn){ accompAudioBtn.disabled = false; accompAudioBtn.title = '伴奏音声を選択'; }
+                        }catch(_){ }
+                    }
+                }catch(_){ }
+            }
+        };
+    }
         if(practiceCallVolEl){ practiceCallVolEl.oninput=()=>{ try{ ensureAudio(); if(practiceCallGain){ const v=Math.max(0, Math.min(1, parseFloat(practiceCallVolEl.value)||0.85)); practiceCallGain.gain.setValueAtTime(v, audioCtx.currentTime); } }catch(_){ } }; }
     }catch(_){ }
 
