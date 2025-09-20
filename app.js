@@ -95,7 +95,7 @@ let toleranceCents=20,gateThreshold=-40,analysisRate=45,A4Frequency=442,octaveAl
 if(/Android|iPhone|iPad|iPod|Mobile|Tablet/i.test(navigator.userAgent||'')){
     if(analysisRate>30) analysisRate=30;
 }
-let verticalZoom=3,verticalOffset=0,pxPerSec=100,timelineOffsetSec=0,isPanning=false,panStartX=0,panStartOffset=0;
+let verticalZoom=2.5,verticalOffset=0,pxPerSec=150,timelineOffsetSec=0,isPanning=false,panStartX=0,panStartOffset=0;
 let isAdjustingVOffset=false; // 右側スライダ操作中のガード
 let autoCenterFrozen=false; // ノーツ編集以降は自動センタリングを凍結
 let pitchHistory=[],markers={A:null,B:null,C:null,D:null,E:null,F:null,G:null},stopStage=0;
@@ -218,18 +218,20 @@ const micRenderModeSel=document.getElementById('micRenderModeSelect');
 const vZoom=$('verticalZoomSlider'),timeScale=$('timeScaleSlider'),timeScaleVal=$('timeScaleValue');
 const vOffsetSliderRight=$('verticalOffsetSliderRight');
     if(vOffsetSliderRight){
-        // ポインタ操作: スライダー操作中はキャンバスパンを完全ブロック
-        vOffsetSliderRight.addEventListener('pointerdown',(e)=>{ isAdjustingVOffset=true; e.stopPropagation(); try{ e.preventDefault(); }catch(_){} }, {capture:true});
-        vOffsetSliderRight.addEventListener('pointermove',(e)=>{ if(!isAdjustingVOffset) return; e.stopPropagation(); try{ e.preventDefault(); }catch(_){} }, {capture:true});
-        vOffsetSliderRight.addEventListener('pointerup',(e)=>{ isAdjustingVOffset=false; e.stopPropagation(); try{ e.preventDefault(); }catch(_){} }, {capture:true});
-        vOffsetSliderRight.addEventListener('pointercancel',(e)=>{ isAdjustingVOffset=false; e.stopPropagation(); try{ e.preventDefault(); }catch(_){} }, {capture:true});
-        // タッチ操作: passive:false でスクロール抑止
-        vOffsetSliderRight.addEventListener('touchstart',(e)=>{ isAdjustingVOffset=true; e.stopPropagation(); try{ e.preventDefault(); }catch(_){} }, {capture:true, passive:false});
-        vOffsetSliderRight.addEventListener('touchmove',(e)=>{ if(!isAdjustingVOffset) return; e.stopPropagation(); try{ e.preventDefault(); }catch(_){} }, {capture:true, passive:false});
-        vOffsetSliderRight.addEventListener('touchend',(e)=>{ isAdjustingVOffset=false; e.stopPropagation(); try{ e.preventDefault(); }catch(_){} }, {capture:true});
-        vOffsetSliderRight.addEventListener('touchcancel',(e)=>{ isAdjustingVOffset=false; e.stopPropagation(); try{ e.preventDefault(); }catch(_){} }, {capture:true});
+        // ポインタ操作: スライダー操作中はキャンバスパンを完全ブロック（既定のドラッグは阻害しない）
+        vOffsetSliderRight.addEventListener('pointerdown',(e)=>{ isAdjustingVOffset=true; e.stopPropagation(); }, {capture:true});
+        vOffsetSliderRight.addEventListener('pointermove',(e)=>{ if(!isAdjustingVOffset) return; e.stopPropagation(); }, {capture:true});
+        vOffsetSliderRight.addEventListener('pointerup',(e)=>{ isAdjustingVOffset=false; e.stopPropagation(); }, {capture:true});
+        vOffsetSliderRight.addEventListener('pointercancel',(e)=>{ isAdjustingVOffset=false; e.stopPropagation(); }, {capture:true});
+        // タッチ操作: スクロール抑止は CSS の touch-action に任せる（既定のスライダ動作は維持）
+        vOffsetSliderRight.addEventListener('touchstart',(e)=>{ isAdjustingVOffset=true; e.stopPropagation(); }, {capture:true, passive:false});
+        vOffsetSliderRight.addEventListener('touchmove',(e)=>{ if(!isAdjustingVOffset) return; e.stopPropagation(); }, {capture:true, passive:false});
+        vOffsetSliderRight.addEventListener('touchend',(e)=>{ isAdjustingVOffset=false; e.stopPropagation(); }, {capture:true});
+        vOffsetSliderRight.addEventListener('touchcancel',(e)=>{ isAdjustingVOffset=false; e.stopPropagation(); }, {capture:true});
         // 値変更
-        vOffsetSliderRight.addEventListener('input',()=>{ verticalOffset=parseInt(vOffsetSliderRight.value); syncVerticalOffsetSliders(); drawChart(); });
+        const applyVOffset = ()=>{ verticalOffset=parseInt(vOffsetSliderRight.value); syncVerticalOffsetSliders(); drawChart(); };
+        vOffsetSliderRight.addEventListener('input', applyVOffset);
+        vOffsetSliderRight.addEventListener('change', applyVOffset);
     }
 const editToolbar=document.getElementById('editToolbar');
 // セッション保存/読込 UI
@@ -3927,6 +3929,30 @@ function drawChart(){
                 }
             }catch(_){ }
         }
+
+        // 追加: タイムライン左側に現在の音名をオーバーレイ表示（PC/スマホ/タブレット共通）
+        try{
+            // noteLabel() は labelNotation 設定に従って CDE/ドレミ を切り替える
+            const liveRoundMidi = Math.round(midi);
+            const liveLabel = noteLabel(liveRoundMidi);
+            // 端末サイズに合わせた適度なフォントサイズ（縦の4.5%を上限18pxで抑制）
+            const fontPx = Math.max(12, Math.min(18, Math.floor(h*0.045)));
+            ctx.save();
+            ctx.font = `bold ${fontPx}px sans-serif`;
+            ctx.textAlign = 'left'; ctx.textBaseline = 'top';
+            const padX = 10, padY = 6;
+            const x0 = 8, y0 = 8; // 左上に固定
+            const tw = ctx.measureText(liveLabel).width;
+            const boxW = Math.floor(tw + padX*2);
+            const boxH = Math.floor(fontPx + padY*2);
+            // 背景（半透明）
+            ctx.fillStyle = 'rgba(0,0,0,0.55)';
+            ctx.fillRect(x0, y0, boxW, boxH);
+            // テキスト
+            ctx.fillStyle = '#fff';
+            ctx.fillText(liveLabel, x0 + padX, y0 + padY);
+            ctx.restore();
+        }catch(_){ }
     }
     // キャリブレーションのカウントダウン表示（タイムライン上に大きく）
     if(isCalibrating && calibCountdownText){
@@ -5371,7 +5397,7 @@ rateSlider && (rateSlider.oninput=()=>{ analysisRate=parseInt(rateSlider.value);
 A4Sel && (A4Sel.onchange=()=>{ A4Frequency=parseFloat(A4Sel.value); });
 octToggle && (octToggle.onchange=()=>{ octaveAlign=octToggle.checked; });
 labelSel && (labelSel.onchange=()=>{ labelNotation=labelSel.value; });
-vZoom && (vZoom.oninput=()=>{ verticalZoom=parseInt(vZoom.value); drawChart(); });
+vZoom && (vZoom.oninput=()=>{ verticalZoom=parseFloat(vZoom.value); drawChart(); });
 timeScale && (timeScale.oninput=()=>{ pxPerSec=parseInt(timeScale.value); if(timeScaleVal) timeScaleVal.textContent=pxPerSec; drawChart(); });
 guideVol && (guideVol.oninput=()=>{ if(!melodyGain) return; const v=parseFloat(guideVol.value); melodyGain.gain.value = (isFinite(v)? v: (melodyGain.gain.value||0.8)); });
 accompVol && (accompVol.oninput=()=>{ if(!accompGain) return; const v=parseFloat(accompVol.value); accompGain.gain.value = (isFinite(v)? v: (accompGain.gain.value||0.8)); });
