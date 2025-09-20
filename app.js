@@ -20,6 +20,10 @@ let _keepAliveHiOsc=null,_keepAliveHiGain=null; // destination直結の微小信
 let _keepAliveConst=null,_keepAliveConstGain=null; // チェーン内の微小DC
 let audioActivated=false; // ユーザー操作でAudioContextを有効化したか
 let micStream=null,micSource=null,micAnalyser=null,micData=null,analysisTimer=null;
+// ---- Modular YIN tracker integration ----
+let USE_YIN_TRACKER = true; // set false to fallback to legacy pipeline
+let _yinTracker = null;     // instance of window.__PitchModules.YinPitchTracker
+let _pitchSmootherMod = null; // instance of window.__PitchModules.PitchSmoother
 let _micVoicedRecently=false; // 直近に有声音を検知
 let _micFlatFrames=0;        // 連続フラット(ほぼゼロ)フレーム数
 let _micLastReinitAt=0;      // 直近の再初期化時刻(ms)
@@ -1674,13 +1678,21 @@ async function initMic(allowPrompt=false){
             micLPF.frequency.setValueAtTime(cutoff, audioCtx.currentTime);
         }catch(_){ micLPF.frequency.value = 8000; }
         // アナライザ
-        micAnalyser = audioCtx.createAnalyser();
+    micAnalyser = audioCtx.createAnalyser();
     micAnalyser.fftSize = 2048; // 分解能を上げ高音域の安定性を改善（約22fps）
         micAnalyser.smoothingTimeConstant = 0.0;
         micData = new Float32Array(micAnalyser.fftSize);
         // 配線: mic -> HPF -> LPF -> analyser （destination へは繋がない）
         try{ micSource.disconnect(); }catch(_){ }
         micSource.connect(micHPF); micHPF.connect(micLPF); micLPF.connect(micAnalyser);
+        // YIN/CMNDF tracker modules (if available)
+        try{
+            const M = window.__PitchModules;
+            if(M){
+                _yinTracker = new M.YinPitchTracker({ sampleRate: audioCtx.sampleRate, frameSize: micAnalyser.fftSize, fmin: 65, fmax: 5000, threshold: 0.1 });
+                _pitchSmootherMod = new M.PitchSmoother({ windowSize: 5, deadbandCents: 6, riseCents: 35, fallCents: 45 });
+            }
+        }catch(_){ /* ignore */ }
         // 解析タイマー
         if(!analysisTimer){ analysisTimer = setInterval(analyzePitch, 1000/analysisRate); }
         // MIC ステータス表示
@@ -2897,6 +2909,114 @@ function analyzePitch(){
         } else { _micFlatFrames=0; }
         return;
     }
+
+    // --- New YIN pipeline (optional) ---
+    try{
+        if(USE_YIN_TRACKER && _yinTracker && micData){
+            const r = _yinTracker.process(micData);
+            let freqY = (r && r.freq)||0; let confY = (r && r.conf)||0;
+            if(freqY>0){
+                const sm = _pitchSmootherMod? _pitchSmootherMod.push(freqY, confY): freqY;
+                lastMicFreq = sm;
+                let liveMidi = 69 + 12*Math.log2(Math.max(1e-9,lastMicFreq)/A4Frequency);
+                lastMicMidi = liveMidi;
+                // 保存用 dispMidi と dCents を計算し、pitchHistory に記録
+                let dispMidi = liveMidi;
+                let dCentsForDot = null; // ガイドに対するセント偏差（±600c折畳み）
+                let pcForDot = null;     // ピッチクラス 0..11（C=0）
+                try{
+                    // ガイドノート取得（メロディトラック優先）
+                    let nn=null;
+                    const tr=currentTracks[melodyTrackIndex];
+                    const t = playbackPosition - getPitchVisOffsetSec();
+                    const T_TOL = 0.12; // 120ms 許容
+                    if(tr && tr.notes && tr.notes.length){
+                        nn = tr.notes.find(n=> t>=n.time && t<=n.time+n.duration);
+                        if(!nn){
+                            let prev=null, next=null;
+                            for(const n of tr.notes){ if(n.time<=t) prev=n; if(n.time>t){ next=n; break; } }
+                            let best=null, bd=1e9;
+                            if(prev){ const d=Math.min(Math.abs(t-prev.time), Math.abs((prev.time+prev.duration)-t)); if(d<bd){ bd=d; best=prev; } }
+                            if(next){ const d=Math.min(Math.abs(t-next.time), Math.abs((next.time+next.duration)-t)); if(d<bd){ bd=d; best=next; } }
+                            if(best && bd<=T_TOL) nn=best;
+                            if(!nn) nn = next || tr.notes[tr.notes.length-1];
+                        }
+                    }
+                    if(!nn && Array.isArray(midiGhostNotes) && midiGhostNotes.length){
+                        let best=null, bd=1e9;
+                        for(const g of midiGhostNotes){
+                            const dCenter = Math.abs(t - (g.time + (g.duration||0)/2));
+                            const score = dCenter / Math.max(0.001, g.duration||0.4);
+                            if(score < bd){ bd=score; best=g; }
+                        }
+                        if(best){
+                            const dEdge = Math.min(Math.abs(t-best.time), Math.abs((best.time+(best.duration||0))-t));
+                            if(dEdge<=T_TOL || (t>=best.time && t<=best.time+(best.duration||0))) nn = { midi: best.midi, time: best.time, duration: best.duration };
+                        }
+                    }
+                    if(!nn && isPracticing && Array.isArray(practiceExpectedNotes) && practiceExpectedNotes.length){
+                        let best=null, bd=1e9;
+                        for(const g of practiceExpectedNotes){
+                            const mid = g.time + (g.duration||0)/2;
+                            const d = Math.abs(t - mid);
+                            if(d<bd){ bd=d; best=g; }
+                        }
+                        if(best){
+                            const dEdge = Math.min(Math.abs(t-best.time), Math.abs((best.time+(best.duration||0))-t));
+                            if(dEdge<=T_TOL || (t>=best.time && t<=best.time+(best.duration||0))) nn = { midi: best.midi, time: best.time, duration: best.duration };
+                        }
+                    }
+                    if(nn){
+                        let best=nn.midi, bestD=1e9;
+                        for(let k=-2;k<=2;k++){
+                            const cand=nn.midi + 12*k;
+                            const d=Math.abs(cand - liveMidi);
+                            if(d<bestD){ bestD=d; best=cand; }
+                        }
+                        const fTar = midiToFreq(best);
+                        let centErr = 1200*Math.log2(Math.max(1e-9,lastMicFreq)/Math.max(1e-9,fTar));
+                        centErr = wrapToPm600(centErr);
+                        dCentsForDot = centErr;
+                        dispMidi = nn.midi + (centErr/100);
+                        pcForDot = ((nn.midi%12)+12)%12;
+                        try{
+                            if((isPlaying || isPracticing) && scoreStats && Number.isFinite(centErr)){
+                                const bin = scoreStats.bins[pcForDot];
+                                bin.count++;
+                                scoreStats.total++;
+                                bin.sum += centErr;
+                                bin.sumAbs += Math.abs(centErr);
+                                const tol = toleranceCents||0;
+                                if(Math.abs(centErr) <= tol) bin.inTol++; else bin.outTol++;
+                                const bias = 5;
+                                if(centErr >= bias) bin.sharp++;
+                                else if(centErr <= -bias) bin.flat++;
+                            }
+                        }catch(_){ }
+                    }
+                }catch(_){ }
+                try{
+                    if((isPlaying || isPracticing) && dCentsForDot!=null && pcForDot!=null){
+                        const tol = toleranceCents||0; const ok = Math.abs(dCentsForDot) <= tol;
+                        const mForOct = (typeof dispMidi==='number') ? dispMidi : (69 + 12*Math.log2(Math.max(1e-9,lastMicFreq)/A4Frequency));
+                        const oct = Math.floor(mForOct/12) - 1; const key = String(oct);
+                        if(!scoreDetailByOct[key]) scoreDetailByOct[key] = {};
+                        const cell = (scoreDetailByOct[key][pcForDot] ||= {in:0,out:0,count:0});
+                        cell.count++; if(ok) cell.in++; else cell.out++;
+                    }
+                }catch(_){ }
+                if(!isCalibrating){
+                    const vOff = getPitchVisOffsetSec();
+                    const recTime = playbackPosition - vOff;
+                    const conf = Math.max(0, Math.min(1, confY));
+                    pitchHistory.push({ time: recTime, visOff: vOff, freq: lastMicFreq, conf, dispMidi, dCents: dCentsForDot, pc: pcForDot, sid: scoreSessionId });
+                    if(pitchHistory.length>2000) pitchHistory.shift();
+                }
+                if(!isPlaying) drawChart();
+                return; // YINパスで完了
+            }
+        }
+    }catch(_){ /* fallback to legacy path */ }
 
     const srLive = audioCtx? audioCtx.sampleRate: 44100;
     const W = micAnalyser.fftSize; // 2048 程度

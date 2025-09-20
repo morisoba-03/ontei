@@ -504,7 +504,15 @@
     Drift(...)
   </div>
   <script src="https://cdn.jsdelivr.net/npm/fflate@0.8.2/umd/index.min.js" onerror="(function(){var s=document.createElement('script');s.src='assets/libs/fflate.min.js';document.head.appendChild(s);})();"></script>
-  <script src="app.js"></script>
+    <script src="app.js"></script>
+    <script type="module">
+      // Lightweight bootstrap to expose modules to app.js if needed
+      import { YinPitchTracker } from './assets/modules/pitch-yin.js';
+      import { PitchSmoother } from './assets/modules/pitch-smoother.js';
+      import { MicRunner } from './assets/modules/mic-runner.js';
+      import { PitchOverlay } from './assets/modules/pitch-overlay.js';
+      window.__PitchModules = { YinPitchTracker, PitchSmoother, MicRunner, PitchOverlay };
+    </script>
   <!-- ビルド時刻トースト（JSで内容/表示制御） -->
   <div id="buildToast" aria-live="polite" style="position:fixed;top:8px;right:8px;background:rgba(0,0,0,0.75);color:#e6eaf2;border:1px solid #2b3244;padding:6px 10px;border-radius:8px;font-family:ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace;font-size:12px;z-index:3000;display:none;pointer-events:none;">0000000000</div>
 </body>
