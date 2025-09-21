@@ -37,6 +37,9 @@ let _initMicInFlight=false, _lastPromptAt=0;
 let _userExplicitMicInit=false; // ユーザーがボタンで明示的に許可要求したか
 let _firstInteractionArmed=false; // 初回操作フックが装着済みか
 let _insecureWarned=false; // 不安全コンテキスト警告の再表示抑止
+// モバイル向け: 一時的な有声音ホールドと履歴間引き用の状態
+let _mobileHoldRemain=0, _mobileHoldFreq=0;
+let _mobilePitchPushToggle=false;
 
 async function getMicPermissionState(){
     try{
@@ -1726,9 +1729,13 @@ async function initMic(allowPrompt=false){
             const cutoff = Math.min(14000, Math.max(6000, sr * 0.45)); // 6k〜14kHzの範囲で自動設定
             micLPF.frequency.setValueAtTime(cutoff, audioCtx.currentTime);
         }catch(_){ micLPF.frequency.value = 8000; }
-        // アナライザ
-    micAnalyser = audioCtx.createAnalyser();
-    micAnalyser.fftSize = 2048; // 分解能を上げ高音域の安定性を改善（約22fps）
+        // アナライザ（モバイルは速度重視でやや小さめ、PCは従来の 2048 を維持）
+        micAnalyser = audioCtx.createAnalyser();
+        if(IS_MOBILE){
+            micAnalyser.fftSize = 1024; // ~45fps 相当。取りこぼしを減らしつつ負荷を抑制
+        }else{
+            micAnalyser.fftSize = 2048; // PC 既定（変更なし）
+        }
         micAnalyser.smoothingTimeConstant = 0.0;
         micData = new Float32Array(micAnalyser.fftSize);
         // 配線: mic -> HPF -> LPF -> analyser （destination へは繋がない）
@@ -1743,14 +1750,21 @@ async function initMic(allowPrompt=false){
                 try{
                     const sr = audioCtx.sampleRate || 48000;
                     const hop = Math.max(1, Math.floor(micAnalyser.fftSize/2));
-                    const hopRate = Math.max(10, Math.min(120, Math.round(sr / hop)));
+                    // モバイルは上限をやや低めに（CPUと電池配慮）。PCは従来通り最大120。
+                    const hopRate = Math.max(10, Math.min(IS_MOBILE? 90: 120, Math.round(sr / hop)));
                     analysisRate = Math.max(analysisRate||0, hopRate);
                 }catch(_){ }
-                _pitchSmootherMod = new M.PitchSmoother({ windowSize: 7, deadbandCents: 8, riseCents: 35, fallCents: 45 });
+                // モバイルはわずかに強めのスムージング（微細な揺れを抑制）。PCは従来値。
+                _pitchSmootherMod = new M.PitchSmoother(
+                    IS_MOBILE
+                        ? { windowSize: 9, deadbandCents: 10, riseCents: 32, fallCents: 40 }
+                        : { windowSize: 7, deadbandCents: 8,  riseCents: 35, fallCents: 45 }
+                );
             }
         }catch(_){ /* ignore */ }
-        // 解析タイマー
-        if(!analysisTimer){ analysisTimer = setInterval(analyzePitch, 1000/analysisRate); }
+        // 解析タイマー（モバイルは再設定で cadence を揃える）
+        if(analysisTimer){ try{ clearInterval(analysisTimer); }catch(_){ } analysisTimer=null; }
+        analysisTimer = setInterval(analyzePitch, 1000/analysisRate);
         // MIC ステータス表示
         try{ setMicStatus('ON'); }catch(_){ }
         // 許可後は一覧のラベルが取得できるため更新
@@ -3042,19 +3056,28 @@ function analyzePitch(){
             const r = _yinTracker.process(micData);
             const rawFreq = (r && r.freq) || 0;
             const rawConf = (r && r.conf) || 0;
+            // モバイル向け: 低信頼点は強めに抑制し、短時間のドロップアウトは補完
+            const confMin = IS_MOBILE ? Math.max(0.50, PITCH_CONF_MIN) : PITCH_CONF_MIN;
             if(rawFreq>0){
                 // 低信頼はスムージング/赤丸更新をスキップ（前回値を保持して見た目を安定化）
-                if(rawConf >= PITCH_CONF_MIN){
+                if(rawConf >= confMin){
                     const sm = _pitchSmootherMod? _pitchSmootherMod.push(rawFreq, rawConf): rawFreq;
-                    lastMicFreq = sm;
+                    lastMicFreq = sm; _mobileHoldRemain = IS_MOBILE? 2: 0; _mobileHoldFreq = sm;
                     lastMicMidi = 69 + 12*Math.log2(Math.max(1e-9,lastMicFreq)/A4Frequency);
+                }else if(IS_MOBILE){
+                    // 直近の有声音を 2 フレームだけ保持（ギザギザ抑制）
+                    if(_mobileHoldRemain>0 && _mobileHoldFreq>0){
+                        _mobileHoldRemain--; lastMicFreq=_mobileHoldFreq; lastMicMidi = 69 + 12*Math.log2(lastMicFreq/A4Frequency);
+                    }
                 }
-                if(!isCalibrating && rawConf >= PITCH_CONF_MIN){
+                if(!isCalibrating && rawConf >= confMin){
                     const vOff = getPitchVisOffsetSec();
                     const recTime = playbackPosition - vOff;
                     // 履歴にはスムージング前の生周波数を保存（描画側で一貫して再計算）
-                    pitchHistory.push({ time: recTime, visOff: vOff, freq: rawFreq, conf: rawConf, sid: scoreSessionId });
-                    if(pitchHistory.length>2000) pitchHistory.shift();
+                    if(!IS_MOBILE || (_mobilePitchPushToggle = !_mobilePitchPushToggle)){
+                        pitchHistory.push({ time: recTime, visOff: vOff, freq: rawFreq, conf: rawConf, sid: scoreSessionId });
+                        if(pitchHistory.length>2000) pitchHistory.shift();
+                    }
                 }
             }
             if(!isPlaying) drawChart();
