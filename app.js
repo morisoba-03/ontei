@@ -3710,8 +3710,9 @@ function loop(){
     }
     let doDraw = true;
     if(IS_MOBILE){
-        // 60fps 端末で無駄に速いフレームを間引き ( ~30-45fps 目安 )
-        if(dt < 12){ doDraw = false; }
+        // 60fps 端末で無駄に速いフレームを間引き ( ~28-40fps 目安 )
+        // わずかに閾値を上げて描画頻度を抑制し、カクつきを低減
+        if(dt < 14){ doDraw = false; }
     }
     if(doDraw){
         drawChart();
@@ -3997,8 +3998,8 @@ function drawChart(){
             pts.push({t, midi, dCents, conf:(typeof p.conf==='number'? p.conf: 0.7)});
         }
         if(pts.length){
-            // 時間順（pitchHistoryは時間順だが安全のためソート）
-            pts.sort((a,b)=>a.t-b.t);
+            // pitchHistory は時系列で追加されるため、ここでの追加点列 pts も概ね時系列。
+            // 不要な毎フレームソートを避けて描画負荷を軽減する（極端な順序入替は上流で統一）。
             if(micRenderMode==='dot'){
                 // 赤い点モード: サンプルごとに小さな点を描画
                 ctx.save();
@@ -5572,6 +5573,17 @@ if(melodyAudioInput){ melodyAudioInput.onchange=async e=>{ const f=e.target.file
     midiGhostNotes = null; calibCountdownText=null; calibAnchorActive=false;
     // パートのノーツを編集対象に切替
     currentTracks=[{name:`Melody P${currentMelodyPart+1}`, notes:(P.notes||[])}]; melodyTrackIndex=0; melodyNotesExtracted=true;
+    // ピッチ専用モードの解除（読込直後はノーツ表示・再生を有効に戻す）
+    try{
+        if(isPitchOnlyMode){
+            isPitchOnlyMode = false;
+            const btn = document.getElementById('pitchOnlyModeBtn');
+            if(btn){
+                btn.classList.toggle('active', false);
+                btn.title = '音源を使わず、マイクの音程だけを記録・表示します（再生は無音）';
+            }
+        }
+    }catch(_){ }
     // 再生関連を初期化
     if(isPlaying){ try{ pausePlayback(); }catch(_){ } }
     stopStage = 0;
