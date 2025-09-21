@@ -3023,6 +3023,7 @@ timelineScroll && (timelineScroll.oninput = () => {
 Object.keys(markerCfg).forEach(k=>{ const [s,p]=markerCfg[k]; const sb=$(s),pb=$(p); if(sb) sb.onclick=()=> markers[k]=playbackPosition; if(pb) pb.onclick=()=>{ if(markers[k]!=null) seekTo(markers[k]); }; });
 // ---- Pitch ----
 function analyzePitch(){
+    const nowMs = (typeof performance!=='undefined' && performance.now)? performance.now() : Date.now();
     try{ if(audioCtx && audioCtx.state==='suspended'){ audioCtx.resume().catch(()=>{}); } }catch(_){ }
     if(!micAnalyser||!micData) return;
     try{ micAnalyser.getFloatTimeDomainData(micData); }catch(_){ return; }
@@ -3059,6 +3060,7 @@ function analyzePitch(){
     }catch(_){ }
     // ヒステリシス: 一度開いたら少し下がるまで閉めない（オンセットのバタつき抑制）
     if(typeof analyzePitch._gateOpen==='undefined') analyzePitch._gateOpen=false;
+    if(typeof analyzePitch._gateOpenedAt==='undefined') analyzePitch._gateOpenedAt=0;
     let gateToUse = gateDbEff;
     if(IS_MOBILE){ if(analyzePitch._gateOpen){ gateToUse = gateDbEff - 3; } }
     if(db<gateToUse) {
@@ -3074,7 +3076,12 @@ function analyzePitch(){
         analyzePitch._gateOpen=false;
         return;
     }
+    if(!analyzePitch._gateOpen){
+        // ゲートが今開いた（オンセット）
+        analyzePitch._gateOpenedAt = nowMs;
+    }
     analyzePitch._gateOpen=true;
+    const onsetActive = IS_MOBILE && (nowMs - (analyzePitch._gateOpenedAt||0) <= 180);
 
     // --- New YIN pipeline (optional) ---
     try{
@@ -3118,7 +3125,8 @@ function analyzePitch(){
                         }catch(_){ }
                     }
                     // 直近の連続性バイアス
-                    let wHalf=0.88, wBase=1.00, wDbl=1.06; // 下オクターブをさらに抑制し、上はごく僅かに優遇
+                    let wHalf=0.92, wBase=1.00, wDbl=1.03; // 直前の強化をロールバック
+                    if(onsetActive){ wHalf*=0.8; wDbl*=0.95; } // オンセット中はf/2選択をさらに抑制
                     if(lastMicFreq>0){
                         const dSemi = Math.abs(12*Math.log2(base/lastMicFreq));
                         if(dSemi<=3){ wBase*=1.05; wDbl*=0.98; }
@@ -3131,7 +3139,11 @@ function analyzePitch(){
                     if(half>30 && rHalf>rBase && rHalf>rDbl){ pick=half; bestS=sHalf; }
                     if(rDbl>bestS && rDbl>rHalf){ pick=dbl; bestS=sDbl; }
                     // 僅差時は上側優先（上昇追従性を確保）
-                    if(pick===half){ const alt=Math.max(rBase,rDbl); if(rHalf < alt*1.18){ pick=(rDbl>=rBase? dbl: base); bestS=(rDbl>=rBase? sDbl: sBase); } }
+                    if(pick===half){
+                        const alt=Math.max(rBase,rDbl);
+                        const th = onsetActive? 1.25 : 1.10; // オンセット時はより厳しく
+                        if(rHalf < alt*th){ pick=(rDbl>=rBase? dbl: base); bestS=(rDbl>=rBase? sDbl: sBase); }
+                    }
                     // rawFreq と信頼度に反映（相対優位でブースト）
                     const second = (pick===base)? Math.max(sHalf, sDbl) : (pick===half? Math.max(sBase, sDbl): Math.max(sBase, sHalf));
                     const shsRel = bestS>0? Math.min(1, bestS / Math.max(1e-9, second*1.05)) : 0;
@@ -3153,7 +3165,8 @@ function analyzePitch(){
                             const dp=frames.map(f=>new Array(f.cands.length).fill(Infinity));
                             const pv=frames.map(f=>new Array(f.cands.length).fill(-1));
                             for(let j=0;j<frames[0].cands.length;j++){ dp[0][j]=frames[0].costs[j]; }
-                            const beta=0.10, octPenalty=1.22; // オクターブ遷移をもう少し強めに抑制
+                            const baseBeta=0.08, baseOct=1.15; // ロールバック（安定実績値）
+                            const beta=baseBeta, octPenalty = onsetActive? 1.50 : baseOct; // オンセットは強く抑制
                             for(let i=1;i<N;i++){
                                 const a=frames[i-1], b=frames[i];
                                 for(let j=0;j<b.cands.length;j++){
@@ -3179,13 +3192,13 @@ function analyzePitch(){
                 const liveMin = IS_MOBILE ? Math.max(0.38, Math.min(confMin, 0.50)) : confMin; // モバイルはライブ表示用に少し緩め
                 if(rawConf >= confMin){
                     const sm = _pitchSmootherMod? _pitchSmootherMod.push(rawFreq, rawConf): rawFreq;
-                    lastMicFreq = sm; _mobileHoldRemain = IS_MOBILE? 1: 0; _mobileHoldFreq = sm;
+                    lastMicFreq = sm; _mobileHoldRemain = IS_MOBILE? (onsetActive? 2: 1) : 0; _mobileHoldFreq = sm;
                     lastMicMidi = 69 + 12*Math.log2(Math.max(1e-9,lastMicFreq)/A4Frequency);
                 }else if(IS_MOBILE){
                     // 履歴には残さないが、赤丸用にはやや低信頼でも更新して可視性を確保
                     if(rawConf >= liveMin){
                         const sm = _pitchSmootherMod? _pitchSmootherMod.push(rawFreq, rawConf): rawFreq;
-                        lastMicFreq = sm; _mobileHoldRemain = 0; _mobileHoldFreq = sm;
+                        lastMicFreq = sm; _mobileHoldRemain = (onsetActive? 1: 0); _mobileHoldFreq = sm;
                         lastMicMidi = 69 + 12*Math.log2(Math.max(1e-9,lastMicFreq)/A4Frequency);
                     }
                     // 直近の有声音を 2 フレームだけ保持（ギザギザ抑制）
@@ -3344,7 +3357,9 @@ function analyzePitch(){
                     const pv = frames.map(f => new Array(f.cands.length).fill(-1));
                     // 初期化
                     const f0 = frames[0]; for(let j=0;j<f0.cands.length;j++){ dp[0][j] = f0.costs[j]; }
-                    const beta = 0.12; const octPenalty = 1.32;
+                    const baseBeta = 0.10; const baseOct = 1.25;
+                    const beta = onsetActive? baseBeta : baseBeta;
+                    const octPenalty = onsetActive? 1.45 : baseOct;
                     for(let i=1;i<N;i++){
                         const fi = frames[i]; const fi_1 = frames[i-1];
                         for(let j=0;j<fi.cands.length;j++){
