@@ -3036,7 +3036,7 @@ function analyzePitch(){
             const alpha = 0.02; // ノイズフロアのEMA係数（遅め）
             // 音声が無いときにのみフロアを更新したいが、まずは常時EMAしてからマージンで吸収
             _mobileNoiseDb = (1-alpha)*_mobileNoiseDb + alpha*db;
-            const margin = 12; // フロア+12dB 以上のみ有声扱い
+            const margin = 8; // フロア+8dB 以上のみ有声扱い（やや緩め）
             gateDbEff = Math.max(gateThreshold, _mobileNoiseDb + margin);
         }catch(_){ gateDbEff = gateThreshold; }
     }
@@ -3141,11 +3141,18 @@ function analyzePitch(){
             }
             if(rawFreq>0){
                 // 低信頼はスムージング/赤丸更新をスキップ（前回値を保持して見た目を安定化）
+                const liveMin = IS_MOBILE ? Math.max(0.38, Math.min(confMin, 0.50)) : confMin; // モバイルはライブ表示用に少し緩め
                 if(rawConf >= confMin){
                     const sm = _pitchSmootherMod? _pitchSmootherMod.push(rawFreq, rawConf): rawFreq;
                     lastMicFreq = sm; _mobileHoldRemain = IS_MOBILE? 2: 0; _mobileHoldFreq = sm;
                     lastMicMidi = 69 + 12*Math.log2(Math.max(1e-9,lastMicFreq)/A4Frequency);
                 }else if(IS_MOBILE){
+                    // 履歴には残さないが、赤丸用にはやや低信頼でも更新して可視性を確保
+                    if(rawConf >= liveMin){
+                        const sm = _pitchSmootherMod? _pitchSmootherMod.push(rawFreq, rawConf): rawFreq;
+                        lastMicFreq = sm; _mobileHoldRemain = 1; _mobileHoldFreq = sm;
+                        lastMicMidi = 69 + 12*Math.log2(Math.max(1e-9,lastMicFreq)/A4Frequency);
+                    }
                     // 直近の有声音を 2 フレームだけ保持（ギザギザ抑制）
                     if(_mobileHoldRemain>0 && _mobileHoldFreq>0){
                         _mobileHoldRemain--; lastMicFreq=_mobileHoldFreq; lastMicMidi = 69 + 12*Math.log2(lastMicFreq/A4Frequency);
