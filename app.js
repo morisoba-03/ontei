@@ -124,6 +124,10 @@ let lastMicFreq=0,lastMicMidi=0; const pitchSmoothBuf=[]; const PITCH_SMOOTH_WIN
 const LIVE_VIT_LAG = 5;           // フレーム遅延（約0.1〜0.15s）
 const LIVE_VIT_MAX = 48;          // バッファ保持上限
 let liveVitFrames = [];           // [{cands:number[], costs:number[], time:number}]
+// YINパス専用: f/2, f, 2f の3候補で簡易Viterbi（モバイルのオクターブ安定化）
+const YIN_VIT_LAG = 4;            // 約30〜60ms程度の遅延
+const YIN_VIT_MAX = 64;           // バッファ保持上限
+let yinVitFrames = [];
 // 視覚化タイミング補正（検出・スムージング遅延を見越して左に寄せる秒数）
 const PITCH_TIME_OFFSET_SEC = 0.10; // 基本の前倒し
 function getPitchVisOffsetSec(){
@@ -3097,6 +3101,42 @@ function analyzePitch(){
                     const second = (pick===base)? Math.max(sHalf, sDbl) : (pick===half? Math.max(sBase, sDbl): Math.max(sBase, sHalf));
                     const shsRel = bestS>0? Math.min(1, bestS / Math.max(1e-9, second*1.05)) : 0;
                     rawFreq = pick; rawConf = Math.max(rawConf, 0.35*rawConf + 0.65*Math.min(1, shsRel));
+
+                    // 追加: 候補系列（half, base, dbl）をViterbiで安定化（ごく短遅延、モバイル限定）
+                    if(IS_MOBILE) try{
+                        const cands = [];
+                        const costs = [];
+                        // コストは負の相対スコア + 連続性ペナルティ
+                        function pushCand(f, score){ if(!(f>0)) return; cands.push(f); const inv = 1/Math.max(1e-9, score); let pen=0; if(lastMicFreq>0){ const dSemi=Math.abs(12*Math.log2(f/lastMicFreq)); pen = 0.06*dSemi + (Math.min(Math.abs(dSemi-12),Math.abs(dSemi-24))<0.7? 0.35: 0); } costs.push(inv+pen); }
+                        pushCand(half, Math.max(1e-9, rHalf));
+                        pushCand(base, Math.max(1e-9, rBase));
+                        pushCand(dbl,  Math.max(1e-9, rDbl));
+                        yinVitFrames.push({ cands, costs, time: playbackPosition });
+                        if(yinVitFrames.length>YIN_VIT_MAX) yinVitFrames.shift();
+                        const runVit=(frames, lag)=>{
+                            const N=frames.length; if(N===0) return null; const out=N-1-Math.max(0,lag|0); if(out<0) return null;
+                            const dp=frames.map(f=>new Array(f.cands.length).fill(Infinity));
+                            const pv=frames.map(f=>new Array(f.cands.length).fill(-1));
+                            for(let j=0;j<frames[0].cands.length;j++){ dp[0][j]=frames[0].costs[j]; }
+                            const beta=0.08, octPenalty=0.9;
+                            for(let i=1;i<N;i++){
+                                const a=frames[i-1], b=frames[i];
+                                for(let j=0;j<b.cands.length;j++){
+                                    const f2=b.cands[j]; const lc=b.costs[j]; let best=Infinity,bk=-1;
+                                    for(let k=0;k<a.cands.length;k++){
+                                        const f1=a.cands[k]; let trans=0; if(f1===0||f2===0) trans=0.18; else { const d= Math.abs(12*Math.log2(f2/f1)); const nearOct=Math.min(Math.abs(d-12),Math.abs(d-24)); trans = beta*d + (nearOct<0.6? octPenalty: 0); if(d<=2.5) trans -= 0.03; }
+                                        const cost=dp[i-1][k]+lc+trans; if(cost<best){ best=cost; bk=k; }
+                                    }
+                                    dp[i][j]=best; pv[i][j]=bk;
+                                }
+                            }
+                            let lastJ=0; { let mv=Infinity; const last=dp[N-1]; for(let j=0;j<last.length;j++){ if(last[j]<mv){ mv=last[j]; lastJ=j; } } }
+                            const path=new Array(N).fill(0); path[N-1]=lastJ; for(let i=N-1;i>0;i--){ const k=pv[i][path[i]]; path[i-1]=(k>=0? k: 0); }
+                            const j=path[out]; return { idx: out, freq: frames[out].cands[j], time: frames[out].time };
+                        };
+                        const vit = runVit(yinVitFrames, YIN_VIT_LAG);
+                        if(vit && vit.freq>0){ rawFreq = vit.freq; }
+                    }catch(_){ }
                 }catch(_){ /* ignore SHS fallback */ }
             }
             if(rawFreq>0){
