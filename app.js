@@ -3095,6 +3095,14 @@ function analyzePitch(){
             const confMin = (IS_MOBILE && !IS_MOBILE_PCPIPE) ? Math.max(0.50, PITCH_CONF_MIN) : PITCH_CONF_MIN;
             // 追加: 軽量SHSで f/2, f, 2f を評価しオクターブ誤認を抑止（rawFreq>0 のとき）
             if(rawFreq>0){
+                // モバイル: 極端なオクターブ飛び（±3oct=36半音以上）は短時間拒否（瞬発ノイズ対策）
+                if(typeof analyzePitch._lastAcceptedFreqDisp==='undefined') analyzePitch._lastAcceptedFreqDisp=0;
+                if(typeof analyzePitch._lastAcceptedRawHist==='undefined') analyzePitch._lastAcceptedRawHist=0;
+                if(typeof analyzePitch._extremeFramesDisp==='undefined') analyzePitch._extremeFramesDisp=0;
+                if(typeof analyzePitch._extremeFramesHist==='undefined') analyzePitch._extremeFramesHist=0;
+                const isExtremeJump = (fNew, fRef)=>{
+                    try{ if(!(fNew>0 && fRef>0)) return false; const dSemi=Math.abs(12*Math.log2(fNew/fRef)); return dSemi>=36; }catch(_){ return false; }
+                };
                 try{
                     const sr = audioCtx? audioCtx.sampleRate: 44100;
                     // 直接 micData を使用（既に getFloatTimeDomainData 済み）
@@ -3194,14 +3202,40 @@ function analyzePitch(){
                 const liveMin = (IS_MOBILE && !IS_MOBILE_PCPIPE) ? Math.max(0.38, Math.min(confMin, 0.50)) : confMin; // PCパイプライン時はPCと同一
                 if(rawConf >= confMin){
                     const sm = _pitchSmootherMod? _pitchSmootherMod.push(rawFreq, rawConf): rawFreq;
-                    lastMicFreq = sm; _mobileHoldRemain = (IS_MOBILE && !IS_MOBILE_PCPIPE)? (onsetActive? 2: 1) : 0; _mobileHoldFreq = sm;
-                    lastMicMidi = 69 + 12*Math.log2(Math.max(1e-9,lastMicFreq)/A4Frequency);
+                    // 表示用（赤点/滑らかな追従）の極端ジャンプ抑制（モバイルのみ）
+                    let acceptDisp = true;
+                    if(IS_MOBILE){
+                        const ref = lastMicFreq>0? lastMicFreq : (analyzePitch._lastAcceptedFreqDisp||0);
+                        if(isExtremeJump(sm, ref)){
+                            analyzePitch._extremeFramesDisp = (analyzePitch._extremeFramesDisp|0)+1;
+                            if(analyzePitch._extremeFramesDisp < 2){ acceptDisp=false; }
+                        } else { analyzePitch._extremeFramesDisp=0; }
+                    }
+                    if(acceptDisp){
+                        lastMicFreq = sm; _mobileHoldRemain = (IS_MOBILE && !IS_MOBILE_PCPIPE)? (onsetActive? 2: 1) : 0; _mobileHoldFreq = sm;
+                        analyzePitch._lastAcceptedFreqDisp = lastMicFreq;
+                        lastMicMidi = 69 + 12*Math.log2(Math.max(1e-9,lastMicFreq)/A4Frequency);
+                    } else {
+                        // ホールドして見た目の突発を抑制
+                        if((IS_MOBILE && !IS_MOBILE_PCPIPE) && _mobileHoldRemain>0 && _mobileHoldFreq>0){
+                            _mobileHoldRemain--; lastMicFreq=_mobileHoldFreq; lastMicMidi = 69 + 12*Math.log2(lastMicFreq/A4Frequency);
+                        }
+                    }
                 }else if(IS_MOBILE){
                     // 履歴には残さないが、赤丸用にはやや低信頼でも更新して可視性を確保
                     if(rawConf >= liveMin){
                         const sm = _pitchSmootherMod? _pitchSmootherMod.push(rawFreq, rawConf): rawFreq;
-                        lastMicFreq = sm; _mobileHoldRemain = ((IS_MOBILE && !IS_MOBILE_PCPIPE) && onsetActive? 1: 0); _mobileHoldFreq = sm;
-                        lastMicMidi = 69 + 12*Math.log2(Math.max(1e-9,lastMicFreq)/A4Frequency);
+                        let acceptDisp = true;
+                        const ref = lastMicFreq>0? lastMicFreq : (analyzePitch._lastAcceptedFreqDisp||0);
+                        if(IS_MOBILE && isExtremeJump(sm, ref)){
+                            analyzePitch._extremeFramesDisp = (analyzePitch._extremeFramesDisp|0)+1;
+                            if(analyzePitch._extremeFramesDisp < 2){ acceptDisp=false; }
+                        } else { analyzePitch._extremeFramesDisp=0; }
+                        if(acceptDisp){
+                            lastMicFreq = sm; _mobileHoldRemain = ((IS_MOBILE && !IS_MOBILE_PCPIPE) && onsetActive? 1: 0); _mobileHoldFreq = sm;
+                            analyzePitch._lastAcceptedFreqDisp = lastMicFreq;
+                            lastMicMidi = 69 + 12*Math.log2(Math.max(1e-9,lastMicFreq)/A4Frequency);
+                        }
                     }
                     // 直近の有声音を 2 フレームだけ保持（ギザギザ抑制）
                     if(_mobileHoldRemain>0 && _mobileHoldFreq>0){
@@ -3212,12 +3246,22 @@ function analyzePitch(){
                     const vOff = getPitchVisOffsetSec();
                     const recTime = playbackPosition - vOff;
                     // 履歴にはスムージング前の生周波数を保存（描画側で一貫して再計算）
-                    // 高信頼はモバイルでも常時記録（間引きしない）
+                    // 高信頼はモバイルでも常時記録（間引きしない）が、極端ジャンプは短時間拒否
+                    let acceptHist = true;
+                    if(IS_MOBILE){
+                        const refH = analyzePitch._lastAcceptedRawHist||0;
+                        if(isExtremeJump(rawFreq, refH)){
+                            analyzePitch._extremeFramesHist = (analyzePitch._extremeFramesHist|0)+1;
+                            if(analyzePitch._extremeFramesHist < 2){ acceptHist=false; }
+                        } else { analyzePitch._extremeFramesHist=0; }
+                    }
                     if(!IS_MOBILE || IS_MOBILE_PCPIPE || true){
-                        pitchHistory.push({ time: recTime, visOff: vOff, freq: rawFreq, conf: rawConf, sid: scoreSessionId });
-                        if(pitchHistory.length>2000) pitchHistory.shift();
-                        // 高信頼で押し込んだ場合は低信頼のデシメーションカウンタをリセット
-                        if(IS_MOBILE) _mobileLowDecim = 0;
+                        if(acceptHist){
+                            pitchHistory.push({ time: recTime, visOff: vOff, freq: rawFreq, conf: rawConf, sid: scoreSessionId });
+                            analyzePitch._lastAcceptedRawHist = rawFreq;
+                            if(pitchHistory.length>2000) pitchHistory.shift();
+                            if(IS_MOBILE) _mobileLowDecim = 0;
+                        }
                     }
                 } else if(!isCalibrating && (IS_MOBILE && !IS_MOBILE_PCPIPE)){
                     // 低信頼だが liveMin 以上: 線の連続性確保のため軽量に履歴へ記録（さらに間引き）
@@ -3228,8 +3272,18 @@ function analyzePitch(){
                         // さらに間引き: シンプルなカウンタで3〜4フレームに1回程度
                         _mobileLowDecim = ((_mobileLowDecim|0) + 1);
                         if((_mobileLowDecim % 3)===0){
-                            pitchHistory.push({ time: recTime, visOff: vOff, freq: rawFreq, conf: rawConf, sid: scoreSessionId });
-                            if(pitchHistory.length>2000) pitchHistory.shift();
+                            // 低信頼でも極端ジャンプは記録しない（線の突発スパイク防止）
+                            let acceptHistL = true;
+                            const refH = analyzePitch._lastAcceptedRawHist||0;
+                            if(isExtremeJump(rawFreq, refH)){
+                                analyzePitch._extremeFramesHist = (analyzePitch._extremeFramesHist|0)+1;
+                                if(analyzePitch._extremeFramesHist < 2){ acceptHistL=false; }
+                            } else { analyzePitch._extremeFramesHist=0; }
+                            if(acceptHistL){
+                                pitchHistory.push({ time: recTime, visOff: vOff, freq: rawFreq, conf: rawConf, sid: scoreSessionId });
+                                analyzePitch._lastAcceptedRawHist = rawFreq;
+                                if(pitchHistory.length>2000) pitchHistory.shift();
+                            }
                         }
                     }
                 }
@@ -4558,51 +4612,27 @@ if(chartCanvas){
     },{passive:false});
     chartCanvas.addEventListener('touchend',()=>{ draggingRange=false; swipeStartY=0; });
 }
-if(rangeEndBtn){
-    rangeEndBtn.onclick=()=>{
-        try{
-            if(!_rangePending){ return; }
-            setSelectionByPlayhead();
-            const sel=window._selection; const tr=currentTracks[melodyTrackIndex]; if(!(tr&&tr.notes&&tr.notes.length)) return;
-            if(!(sel.type==='single' && sel.index!=null)){ rangeHint.textContent='終点ノートを特定できません'; return; }
-            const sIdx=_rangePending.startIdx; const eIdx=sel.index; if(eIdx < sIdx){ rangeHint.textContent='終点は起点より右を選んでください'; return; }
-            const startTime = tr.notes[sIdx].time; const endTime = tr.notes[eIdx].time + tr.notes[eIdx].duration;
-            window._selection = { type:'range', index:null, startSec:startTime, endSec:endTime };
-            _rangePending=null; if(rangeEndBtn) rangeEndBtn.disabled=true; rangeHint.textContent='';
-            drawChart();
-        }catch(_){ }
-    };
-}
-// フレーズ終端の探索（以降適用用）
-function findPhraseEndIndex(fromIdx){ try{ const notes=currentTracks[melodyTrackIndex]?.notes||[]; if(!notes.length) return fromIdx; const PHRASE_GAP_SEC=0.26; for(let i=fromIdx;i<notes.length-1;i++){ const gap=notes[i+1].time - (notes[i].time+notes[i].duration); if(gap>=PHRASE_GAP_SEC) return i; } return notes.length-1; }catch(_){ return fromIdx; } }
-// オクターブ補正適用
-function applyOctaveShift(delta){ const tr=currentTracks[melodyTrackIndex]; if(!tr||!tr.notes||!tr.notes.length) return; const notes=tr.notes; const clamp=(m)=> Math.max(36,Math.min(127,m)); const sel=window._selection; if(sel.type==='single' && sel.index!=null){ const idx=sel.index; const applyForward = !!(applyForwardToggle && applyForwardToggle.checked); const endIdx = applyForward? findPhraseEndIndex(idx): idx; for(let i=idx;i<=endIdx;i++){ notes[i].midi = clamp(notes[i].midi + delta); } setSingleSelection(idx); } else if(sel.type==='range' && sel.startSec!=null && sel.endSec!=null){ for(let i=0;i<notes.length;i++){ const st=notes[i].time,en=st+notes[i].duration; if(!(en<sel.startSec || st>sel.endSec)){ notes[i].midi = clamp(notes[i].midi + delta); } } } autoCenterMelodyTrack(); drawChart(); }
+// オクターブ補正適用（±12）
 function applyOctaveShift(delta){
-    autoCenterFrozen = true; // 以降の自動センタリングを停止
     const tr=currentTracks[melodyTrackIndex]; if(!tr||!tr.notes||!tr.notes.length) return;
-    // 編集モード中は、実行直前に再生線下ノートへ選択を同期（範囲選択中は維持）
-    try{
-        if(editToolbar && !editToolbar.classList.contains('hidden')){
-            const selNow = window._selection || {type:'none'};
-            if(selNow.type !== 'range'){ setSelectionByPlayhead(); }
-        }
-    }catch(_){ }
-    const notes=tr.notes; const clamp=(m)=> Math.max(36,Math.min(127,m)); const sel=window._selection;
+    const notes=tr.notes; const clamp=(m)=> Math.max(36,Math.min(127,m));
+    const sel=window._selection;
     if(sel.type==='single' && sel.index!=null){
-        const idx=sel.index; const applyForward = !!(applyForwardToggle && applyForwardToggle.checked);
+        const idx=sel.index;
+        const applyForward = !!(applyForwardToggle && applyForwardToggle.checked);
         const endIdx = applyForward? findPhraseEndIndex(idx): idx;
         for(let i=idx;i<=endIdx;i++){ notes[i].midi = clamp(notes[i].midi + delta); }
-        // 変更後即プレビュー（forward 適用時は最後のみ）
-        if(!applyForward){
-            try{ ensureAudio(); const m=clamp(notes[endIdx].midi); const d=Math.min(notes[endIdx].duration||0.4,0.6); simplePlaySfz(m,(audioCtx?audioCtx.currentTime:0)+0.02,d,masterGain||audioCtx?.destination); }catch(_){ }
-        }
-        setSingleSelection(idx,{audition:false});
+        setSingleSelection(idx);
     } else if(sel.type==='range' && sel.startSec!=null && sel.endSec!=null){
-        for(let i=0;i<notes.length;i++){ const st=notes[i].time,en=st+notes[i].duration; if(!(en<sel.startSec || st>sel.endSec)){ notes[i].midi = clamp(notes[i].midi + delta); } }
+        for(let i=0;i<notes.length;i++){
+            const st=notes[i].time, en=st+notes[i].duration;
+            if(!(en<sel.startSec || st>sel.endSec)){
+                notes[i].midi = clamp(notes[i].midi + delta);
+            }
+        }
     }
     autoCenterMelodyTrack();
-    // ノート配列が変わったのでスケジュールをリセット
-    scheduleAll(); if(isPlaying){ pausePlayback(); startPlayback(); } else { drawChart(); }
+    drawChart();
 }
 function applySemitoneShift(delta){
     autoCenterFrozen = true; // 以降の自動センタリングを停止
