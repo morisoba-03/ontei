@@ -127,11 +127,11 @@ const LIVE_VIT_LAG = 5;           // フレーム遅延（約0.1〜0.15s）
 const LIVE_VIT_MAX = 48;          // バッファ保持上限
 let liveVitFrames = [];           // [{cands:number[], costs:number[], time:number}]
 // YINパス専用: f/2, f, 2f の3候補で簡易Viterbi（モバイルのオクターブ安定化）
-const YIN_VIT_LAG = 4;            // 約30〜60ms程度の遅延
+const YIN_VIT_LAG = 3;            // 遅延をさらに短縮（約25〜45ms相当）
 const YIN_VIT_MAX = 64;           // バッファ保持上限
 let yinVitFrames = [];
 // 視覚化タイミング補正（検出・スムージング遅延を見越して左に寄せる秒数）
-const PITCH_TIME_OFFSET_SEC = 0.10; // 基本の前倒し
+const PITCH_TIME_OFFSET_SEC = 0.085; // 基本の前倒し（モバイルの見かけ遅延をわずかに短縮）
 function getPitchVisOffsetSec(){
     // 測定された出力遅延の一部を可視化にも反映（行き過ぎないよう上限）
     const extra = btLatencyEnabled? Math.min(0.15, (btLatencySec||0)*0.6) : 0;
@@ -1760,8 +1760,8 @@ async function initMic(allowPrompt=false){
                 // モバイルはわずかに強めのスムージング（微細な揺れを抑制）。PCは従来値。
                 _pitchSmootherMod = new M.PitchSmoother(
                     IS_MOBILE
-                        ? { windowSize: 9, deadbandCents: 10, riseCents: 32, fallCents: 40 }
-                        : { windowSize: 7, deadbandCents: 8,  riseCents: 35, fallCents: 45 }
+                        ? { windowSize: 7, deadbandCents: 8, riseCents: 30, fallCents: 38 }
+                        : { windowSize: 7, deadbandCents: 8, riseCents: 35, fallCents: 45 }
                 );
             }
         }catch(_){ /* ignore */ }
@@ -3152,13 +3152,13 @@ function analyzePitch(){
                 const liveMin = IS_MOBILE ? Math.max(0.38, Math.min(confMin, 0.50)) : confMin; // モバイルはライブ表示用に少し緩め
                 if(rawConf >= confMin){
                     const sm = _pitchSmootherMod? _pitchSmootherMod.push(rawFreq, rawConf): rawFreq;
-                    lastMicFreq = sm; _mobileHoldRemain = IS_MOBILE? 2: 0; _mobileHoldFreq = sm;
+                    lastMicFreq = sm; _mobileHoldRemain = IS_MOBILE? 1: 0; _mobileHoldFreq = sm;
                     lastMicMidi = 69 + 12*Math.log2(Math.max(1e-9,lastMicFreq)/A4Frequency);
                 }else if(IS_MOBILE){
                     // 履歴には残さないが、赤丸用にはやや低信頼でも更新して可視性を確保
                     if(rawConf >= liveMin){
                         const sm = _pitchSmootherMod? _pitchSmootherMod.push(rawFreq, rawConf): rawFreq;
-                        lastMicFreq = sm; _mobileHoldRemain = 1; _mobileHoldFreq = sm;
+                        lastMicFreq = sm; _mobileHoldRemain = 0; _mobileHoldFreq = sm;
                         lastMicMidi = 69 + 12*Math.log2(Math.max(1e-9,lastMicFreq)/A4Frequency);
                     }
                     // 直近の有声音を 2 フレームだけ保持（ギザギザ抑制）
@@ -3170,7 +3170,8 @@ function analyzePitch(){
                     const vOff = getPitchVisOffsetSec();
                     const recTime = playbackPosition - vOff;
                     // 履歴にはスムージング前の生周波数を保存（描画側で一貫して再計算）
-                    if(!IS_MOBILE || (_mobilePitchPushToggle = !_mobilePitchPushToggle)){
+                    // 高信頼はモバイルでも常時記録（間引きしない）
+                    if(!IS_MOBILE || true){
                         pitchHistory.push({ time: recTime, visOff: vOff, freq: rawFreq, conf: rawConf, sid: scoreSessionId });
                         if(pitchHistory.length>2000) pitchHistory.shift();
                         // 高信頼で押し込んだ場合は低信頼のデシメーションカウンタをリセット
@@ -3918,7 +3919,7 @@ function drawChart(){
                 // グラフモード: 無音ギャップで分割し、許容内は前面緑、許容外は背面赤
                 // 近接判定のための閾値
                 const CHANGE_TOL_SEMI = 0.5;      // 半音差分の分割しきい値
-                const bridgeGap = Math.max(0.001, (1/Math.max(1,(analysisRate||20))) * 1.5);
+                const bridgeGap = Math.max(0.02, (1/Math.max(1,(analysisRate||20))) * 1.8);
                 // まず連続セグメントに分割
                 const segs=[]; // {pts:[{x,y,t,midi,inTol,conf}]}
                 let cur=null; let last=null;
