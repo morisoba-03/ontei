@@ -4057,7 +4057,8 @@ function drawChart(){
     }
     // 仮ノーツ（MIDIアライン/練習ゴーストのプレビュー）
     // 通常: 赤の破線。基礎練習モード中はメロディと同じ青の実線で表示。
-    if(Array.isArray(midiGhostNotes) && midiGhostNotes.length && !isPitchOnlyMode){
+    // 変更: モバイルの基礎練習モードでは、ピッチ専用モード中でもガイド/赤破線を表示する
+    if(Array.isArray(midiGhostNotes) && midiGhostNotes.length && (!isPitchOnlyMode || (IS_MOBILE && isPracticing))){
     const visStart=eff - (playX/pxPerSec)*tempoFactor - 1; const visEnd=eff + ((w-playX)/pxPerSec)*tempoFactor + 1;
         ctx.save();
         ctx.lineWidth = Math.max(2, guideLineWidth);
@@ -4112,8 +4113,9 @@ function drawChart(){
         }
         ctx.restore();
     }
-    // アシスト中の棒線はゴーストの上に重ねて描く（白縁＋緑で視認性UP）。音程モードでは非表示。
-    if(_assistSegments && _assistSegments.length && !isPitchOnlyMode){
+    // アシスト中の棒線はゴーストの上に重ねて描く（白縁＋緑で視認性UP）。
+    // 変更: モバイルの基礎練習モードでは、ピッチ専用モード中でも表示する
+    if(_assistSegments && _assistSegments.length && (!isPitchOnlyMode || (IS_MOBILE && isPracticing))){
         ctx.save();
         for(const s of _assistSegments){
             // 外側の白縁
