@@ -681,10 +681,24 @@ button.info-tip:hover { background: #263045; }
 }
 @media (max-width: 420px) {
 	#practiceToolbar { left: 6px !important; right: 6px; gap: 6px; row-gap: 4px; }
-	#practiceToolbar select { max-width: 60vw; }
-	#practiceToolbar button { font-size: 12px; }
-}
-
+	#top-bar button .txt, #mic-permission-bar .txt { display: inline; }
+	#top-bar button .icon { margin-right: 4px; }
+	/* ボタン文字の自動フィット: フォント縮小の許容範囲とパディングを最適化 */
+	#top-bar button, #transportBar button, .marker-pair button {
+		font-size: clamp(11px, 3.4vw, 14px);
+		padding: 4px 8px;
+		line-height: 1.2;
+		max-width: 46vw; /* 画面幅の約半分までで省略 */
+		white-space: nowrap !important;
+		overflow: hidden !important;
+		text-overflow: ellipsis !important;
+	}
+	/* マイク許可バーのボタンは横幅を広めに確保し、最小幅を下げる */
+	#mic-permission-bar button { min-width: 54px; max-width: 70vw; font-weight: 600; }
+	/* 2列→1列への潰れ時に文字が切れないようラベルを短縮/折返し許容 */
+	#mic-permission-bar .txt { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+	/* 長い日本語ラベルがあるマーカー/トランスポートは更に縮小幅を緩める */
+	#transportBar button, .marker-pair button { font-size: clamp(10px, 3.2vw, 13px); max-width: 48vw; }
 /* --- 最終ガード: どのブレークポイントでもボタンは必ず横書き1行 --- */
 button {
 	white-space: nowrap !important;

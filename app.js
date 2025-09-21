@@ -3118,7 +3118,7 @@ function analyzePitch(){
                         }catch(_){ }
                     }
                     // 直近の連続性バイアス
-                    let wHalf=0.92, wBase=1.00, wDbl=1.03; // 上オクターブ優遇を弱め、下オクターブは軽く抑制
+                    let wHalf=0.88, wBase=1.00, wDbl=1.06; // 下オクターブをさらに抑制し、上はごく僅かに優遇
                     if(lastMicFreq>0){
                         const dSemi = Math.abs(12*Math.log2(base/lastMicFreq));
                         if(dSemi<=3){ wBase*=1.05; wDbl*=0.98; }
@@ -3131,7 +3131,7 @@ function analyzePitch(){
                     if(half>30 && rHalf>rBase && rHalf>rDbl){ pick=half; bestS=sHalf; }
                     if(rDbl>bestS && rDbl>rHalf){ pick=dbl; bestS=sDbl; }
                     // 僅差時は上側優先（上昇追従性を確保）
-                    if(pick===half){ const alt=Math.max(rBase,rDbl); if(rHalf < alt*1.10){ pick=(rDbl>=rBase? dbl: base); bestS=(rDbl>=rBase? sDbl: sBase); } }
+                    if(pick===half){ const alt=Math.max(rBase,rDbl); if(rHalf < alt*1.18){ pick=(rDbl>=rBase? dbl: base); bestS=(rDbl>=rBase? sDbl: sBase); } }
                     // rawFreq と信頼度に反映（相対優位でブースト）
                     const second = (pick===base)? Math.max(sHalf, sDbl) : (pick===half? Math.max(sBase, sDbl): Math.max(sBase, sHalf));
                     const shsRel = bestS>0? Math.min(1, bestS / Math.max(1e-9, second*1.05)) : 0;
@@ -3153,7 +3153,7 @@ function analyzePitch(){
                             const dp=frames.map(f=>new Array(f.cands.length).fill(Infinity));
                             const pv=frames.map(f=>new Array(f.cands.length).fill(-1));
                             for(let j=0;j<frames[0].cands.length;j++){ dp[0][j]=frames[0].costs[j]; }
-                            const beta=0.08, octPenalty=1.15; // オクターブ遷移をより強めに抑制
+                            const beta=0.10, octPenalty=1.22; // オクターブ遷移をもう少し強めに抑制
                             for(let i=1;i<N;i++){
                                 const a=frames[i-1], b=frames[i];
                                 for(let j=0;j<b.cands.length;j++){
@@ -3344,7 +3344,7 @@ function analyzePitch(){
                     const pv = frames.map(f => new Array(f.cands.length).fill(-1));
                     // 初期化
                     const f0 = frames[0]; for(let j=0;j<f0.cands.length;j++){ dp[0][j] = f0.costs[j]; }
-                    const beta = 0.10; const octPenalty = 1.25;
+                    const beta = 0.12; const octPenalty = 1.32;
                     for(let i=1;i<N;i++){
                         const fi = frames[i]; const fi_1 = frames[i-1];
                         for(let j=0;j<fi.cands.length;j++){
@@ -3967,29 +3967,52 @@ function drawChart(){
                     last=p;
                 }
                 if(cur && cur.pts.length>=2) segs.push(cur);
+                // 平滑化描画ヘルパー: ポリラインを二次曲線でスムーズに
+                function drawSmoothedPolyline(ctx, points){
+                    if(!points || points.length<2) return;
+                    ctx.beginPath();
+                    if(points.length===2){
+                        ctx.moveTo(points[0].x, points[0].y);
+                        ctx.lineTo(points[1].x, points[1].y);
+                        ctx.stroke();
+                        return;
+                    }
+                    ctx.moveTo(points[0].x, points[0].y);
+                    for(let i=1;i<points.length-1;i++){
+                        const xc=(points[i].x + points[i+1].x)/2;
+                        const yc=(points[i].y + points[i+1].y)/2;
+                        ctx.quadraticCurveTo(points[i].x, points[i].y, xc, yc);
+                    }
+                    ctx.lineTo(points[points.length-1].x, points[points.length-1].y);
+                    ctx.stroke();
+                }
+                function splitRuns(points, predicate){
+                    const runs=[]; let run=[];
+                    for(const pt of points){
+                        if(predicate(pt)){
+                            run.push(pt);
+                        } else {
+                            if(run.length>=2) runs.push(run);
+                            run=[];
+                        }
+                    }
+                    if(run.length>=2) runs.push(run);
+                    return runs;
+                }
                 // 背面（赤）→ 前面（緑）の順に描画
                 ctx.save();
                 ctx.lineWidth = 2.0;
                 // 赤: 許容外連続部分のみポリライン
                 ctx.strokeStyle = 'rgba(255,120,120,0.9)';
                 for(const s of segs){
-                    // サブセグメント: inTol=false をつないで描く
-                    let started=false; ctx.beginPath();
-                    for(const pt of s.pts){
-                        if(!pt.inTol){ if(!started){ ctx.moveTo(pt.x, pt.y); started=true; } else { ctx.lineTo(pt.x, pt.y);} }
-                        else { if(started){ ctx.stroke(); started=false; ctx.beginPath(); } }
-                    }
-                    if(started){ ctx.stroke(); }
+                    const runs = splitRuns(s.pts, (pt)=>!pt.inTol);
+                    for(const r of runs){ drawSmoothedPolyline(ctx, r); }
                 }
                 // 緑: 許容内を前面で
                 ctx.strokeStyle = 'rgba(24,200,70,0.98)';
                 for(const s of segs){
-                    let started=false; ctx.beginPath();
-                    for(const pt of s.pts){
-                        if(pt.inTol){ if(!started){ ctx.moveTo(pt.x, pt.y); started=true; } else { ctx.lineTo(pt.x, pt.y);} }
-                        else { if(started){ ctx.stroke(); started=false; ctx.beginPath(); } }
-                    }
-                    if(started){ ctx.stroke(); }
+                    const runs = splitRuns(s.pts, (pt)=>pt.inTol);
+                    for(const r of runs){ drawSmoothedPolyline(ctx, r); }
                 }
                 ctx.restore();
             } else {
