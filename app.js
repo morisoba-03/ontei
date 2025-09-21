@@ -1748,19 +1748,19 @@ async function initMic(allowPrompt=false){
         try{
             const M = window.__PitchModules;
             if(M){
-                _yinTracker = new M.YinPitchTracker({ sampleRate: audioCtx.sampleRate, frameSize: micAnalyser.fftSize, fmin: 65, fmax: 1000, threshold: 0.15 });
+                _yinTracker = new M.YinPitchTracker({ sampleRate: audioCtx.sampleRate, frameSize: micAnalyser.fftSize, fmin: 55, fmax: 2000, threshold: 0.12 });
                 // hop = frame/2 に近い解析レートへ（目安）。UIの値より低すぎる場合に引き上げ。
                 try{
                     const sr = audioCtx.sampleRate || 48000;
                     const hop = Math.max(1, Math.floor(micAnalyser.fftSize/2));
-                    // モバイルは上限をやや低めに（CPUと電池配慮）。PCは従来通り最大120。
-                    const hopRate = Math.max(10, Math.min(IS_MOBILE? 90: 120, Math.round(sr / hop)));
+                    // モバイルの上限を引き上げ（応答性）: 90 → 110。PCは従来通り最大120。
+                    const hopRate = Math.max(10, Math.min(IS_MOBILE? 110: 120, Math.round(sr / hop)));
                     analysisRate = Math.max(analysisRate||0, hopRate);
                 }catch(_){ }
                 // モバイルはわずかに強めのスムージング（微細な揺れを抑制）。PCは従来値。
                 _pitchSmootherMod = new M.PitchSmoother(
                     IS_MOBILE
-                        ? { windowSize: 7, deadbandCents: 8, riseCents: 30, fallCents: 38 }
+                        ? { windowSize: 7, deadbandCents: 6, riseCents: 30, fallCents: 38 }
                         : { windowSize: 7, deadbandCents: 8, riseCents: 35, fallCents: 45 }
                 );
             }
@@ -2514,7 +2514,7 @@ async function extractMelodyNotesFromBuffer(buf){
     const M=candFreqsPerFrame.length; const dp=new Array(M); const prv=new Array(M);
     for(let i=0;i<M;i++){ dp[i]=new Array(candFreqsPerFrame[i].length).fill(Infinity); prv[i]=new Array(candFreqsPerFrame[i].length).fill(-1); }
     for(let j=0;j<dp[0].length;j++){ dp[0][j]=candCostsPerFrame[0][j]; }
-    const beta=0.10; // 半音距離をやや強く
+    const beta=0.12; // 半音距離をやや強く（微増して跳躍抑制）
     const octPenalty=1.25; // ±12近傍の抑制を更に強化
     for(let i=1;i<M;i++){
         const cf=candFreqsPerFrame[i], cc=candCostsPerFrame[i];
@@ -3057,7 +3057,11 @@ function analyzePitch(){
             setTimeout(async()=>{ try{ await initMic(false).catch(()=>{}); }finally{ _micReinitInFlight=false; } }, 0);
         }
     }catch(_){ }
-    if(db<gateDbEff) {
+    // ヒステリシス: 一度開いたら少し下がるまで閉めない（オンセットのバタつき抑制）
+    if(typeof analyzePitch._gateOpen==='undefined') analyzePitch._gateOpen=false;
+    let gateToUse = gateDbEff;
+    if(IS_MOBILE){ if(analyzePitch._gateOpen){ gateToUse = gateDbEff - 3; } }
+    if(db<gateToUse) {
         // 完全フラットが続く場合はデバイス不具合の可能性 → 再初期化を早めに仕掛ける
         let flat=true; for(let i=0;i<micData.length;i++){ if(micData[i]!==0){ flat=false; break; } }
         if(flat){
@@ -3067,8 +3071,10 @@ function analyzePitch(){
                 _micLastReinitAt=now; _micFlatFrames=0; setTimeout(()=>{ try{ initMic(false).catch(()=>{}); }catch(_){ } }, 0);
             }
         } else { _micFlatFrames=0; }
+        analyzePitch._gateOpen=false;
         return;
     }
+    analyzePitch._gateOpen=true;
 
     // --- New YIN pipeline (optional) ---
     try{
@@ -3112,7 +3118,7 @@ function analyzePitch(){
                         }catch(_){ }
                     }
                     // 直近の連続性バイアス
-                    let wHalf=0.90, wBase=1.00, wDbl=1.08; // 上オクターブをやや優遇、下オクターブは抑制
+                    let wHalf=0.92, wBase=1.00, wDbl=1.03; // 上オクターブ優遇を弱め、下オクターブは軽く抑制
                     if(lastMicFreq>0){
                         const dSemi = Math.abs(12*Math.log2(base/lastMicFreq));
                         if(dSemi<=3){ wBase*=1.05; wDbl*=0.98; }
@@ -3147,7 +3153,7 @@ function analyzePitch(){
                             const dp=frames.map(f=>new Array(f.cands.length).fill(Infinity));
                             const pv=frames.map(f=>new Array(f.cands.length).fill(-1));
                             for(let j=0;j<frames[0].cands.length;j++){ dp[0][j]=frames[0].costs[j]; }
-                            const beta=0.08, octPenalty=0.9;
+                            const beta=0.08, octPenalty=1.15; // オクターブ遷移をより強めに抑制
                             for(let i=1;i<N;i++){
                                 const a=frames[i-1], b=frames[i];
                                 for(let j=0;j<b.cands.length;j++){
