@@ -3087,9 +3087,30 @@ function analyzePitch(){
                     function goertzelPower(arr, sr, f){ if(!(f>0) || f>=sr*0.5) return 0; const w=2*Math.PI*f/sr; const c=Math.cos(w); const coeff=2*c; let s0=0,s1=0,s2=0; for(let n=0;n<arr.length;n++){ s0 = arr[n] + coeff*s1 - s2; s2=s1; s1=s0; } return Math.max(0, s1*s1 + s2*s2 - coeff*s1*s2); }
                     function shsScore(arr, sr, f0, K){ if(!(f0>0)) return 0; const kMax=Math.max(1, K|0); let sum=0, used=0; for(let k=1;k<=kMax;k++){ const fk=f0*k; if(fk>=sr*0.5) break; const p=goertzelPower(arr, sr, fk); sum += (p>0? Math.sqrt(p):0) * (1/k); used++; } return used? sum/used: 0; }
                     const base = rawFreq; const half=base*0.5; const dbl=base*2;
-                    const sBase = shsScore(frame, sr, base, 5);
-                    const sHalf = shsScore(frame, sr, half, 5);
-                    const sDbl  = shsScore(frame, sr, Math.min(dbl, sr*0.49), 5);
+                    let sBase = shsScore(frame, sr, base, 5);
+                    let sHalf = shsScore(frame, sr, half, 5);
+                    let sDbl  = shsScore(frame, sr, Math.min(dbl, sr*0.49), 5);
+                    // モバイル: 再生線上のガイドMIDIに近いオクターブを微優遇（音程モードやゴーストにも対応）
+                    if(IS_MOBILE){
+                        try{
+                            let guideMidiAtPlayhead = null;
+                            const tRef = playbackPosition - getPitchVisOffsetSec();
+                            if(!isPitchOnlyMode){
+                                const tr=currentTracks[melodyTrackIndex];
+                                if(tr&&tr.notes&&tr.notes.length){ const nn=tr.notes.find(n=> tRef>=n.time && tRef<=n.time+n.duration) || tr.notes.find(n=> n.time>tRef) || tr.notes[tr.notes.length-1]; if(nn) guideMidiAtPlayhead = nn.midi|0; }
+                            }
+                            if(guideMidiAtPlayhead==null && Array.isArray(midiGhostNotes) && midiGhostNotes.length){
+                                const g = midiGhostNotes.find(n=> tRef>=n.time && tRef<=n.time+n.duration) || null; if(g) guideMidiAtPlayhead = g.midi|0;
+                            }
+                            if(guideMidiAtPlayhead!=null){
+                                const mGuide = guideMidiAtPlayhead;
+                                function octaveBias(f, score){ if(!(f>0) || score<=0) return score; const m = 69+12*Math.log2(f/ A4Frequency); let mAdj=m; while(mAdj - mGuide > 6) mAdj -= 12; while(mGuide - mAdj > 6) mAdj += 12; const d=Math.abs(mAdj - mGuide); const w = 1 + Math.max(0, 0.15 * Math.max(0, (6 - d))/6); return score * w; }
+                                sHalf = octaveBias(half, sHalf);
+                                sBase = octaveBias(base, sBase);
+                                sDbl  = octaveBias(dbl,  sDbl);
+                            }
+                        }catch(_){ }
+                    }
                     // 直近の連続性バイアス
                     let wHalf=0.90, wBase=1.00, wDbl=1.08; // 上オクターブをやや優遇、下オクターブは抑制
                     if(lastMicFreq>0){
@@ -5224,6 +5245,7 @@ function startPlayback(){
     }
     if(analysisTimer){ clearInterval(analysisTimer); analysisTimer=null; }
     analysisTimer=setInterval(analyzePitch, 1000/analysisRate);
+    // 音程モード（無音再生）でも進行ループは必ず起動
     requestAnimationFrame(loop);
     // 採点開始: 統計をリセット
     try{
