@@ -3955,11 +3955,12 @@ function drawChart(){
     // キャリブレーション中は非表示
     // 追加仕様（緩和）: モバイルでは停止中でも直近に有声音履歴があれば描画を許可
     let allowDrawPitch = (isPitchOnlyMode || isPlaying);
-    if(!allowDrawPitch && (IS_MOBILE && !IS_MOBILE_PCPIPE)){
+    // 停止中でも直近に有効な履歴があれば描画を許可（PC/モバイル共通）
+    if(!allowDrawPitch){
         try{
             // 直近 0.5 秒以内に信頼度閾値以上の点があれば描画許可
             const tNow = playbackPosition - getPitchVisOffsetSec();
-            const drawConfMin = (IS_MOBILE && !IS_MOBILE_PCPIPE) ? DRAW_CONF_MIN_MOBILE : PITCH_CONF_MIN;
+            const drawConfMin = IS_MOBILE ? DRAW_CONF_MIN_MOBILE : PITCH_CONF_MIN;
             for(let i=pitchHistory.length-1;i>=0;i--){ const p=pitchHistory[i]; if((tNow - p.time) > 0.5) break; if((p.conf==null) || (p.conf >= drawConfMin)){ allowDrawPitch = true; break; } }
         }catch(_){ }
     }
@@ -4018,6 +4019,19 @@ function drawChart(){
                 // 近接判定のための閾値
                 const CHANGE_TOL_SEMI = 0.5;      // 半音差分の分割しきい値
                 const bridgeGap = Math.max(0.02, (1/Math.max(1,(analysisRate||20))) * 1.8);
+                // 表示専用の軽量平滑化: 3点移動平均 [1,2,1]/4 を適用（時間はそのまま）
+                (function smoothDisplayPoints(){
+                    if(pts.length<3) return;
+                    const sm = new Array(pts.length);
+                    for(let i=0;i<pts.length;i++){
+                        if(i===0 || i===pts.length-1){ sm[i] = { ...pts[i] }; }
+                        else {
+                            const m = (pts[i-1].midi + 2*pts[i].midi + pts[i+1].midi)/4;
+                            sm[i] = { ...pts[i], midi: m };
+                        }
+                    }
+                    for(let i=0;i<pts.length;i++){ pts[i].midi = sm[i].midi; }
+                })();
                 // まず連続セグメントに分割
                 const segs=[]; // {pts:[{x,y,t,midi,inTol,conf}]}
                 let cur=null; let last=null;
