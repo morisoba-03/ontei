@@ -108,6 +108,8 @@ let toleranceCents=20,gateThreshold=-40,analysisRate=120,A4Frequency=440,labelNo
 // 可視化/記録に用いるピッチ信頼度の下限（0..1）
 const PITCH_CONF_MIN = 0.45;
 const DRAW_CONF_MIN_MOBILE = 0.42; // モバイル描画用の最低信頼度（履歴の採用よりやや緩く）
+// ユーザー要望: モバイルでもPCと同じパイプラインを使えるようにする切替（既定ON）
+let USE_PC_PIPELINE_ON_MOBILE = true;
 let verticalZoom=2.5,verticalOffset=0,pxPerSec=150,timelineOffsetSec=0,isPanning=false,panStartX=0,panStartOffset=0;
 let isAdjustingVOffset=false; // 右側スライダ操作中のガード
 let autoCenterFrozen=false; // ノーツ編集以降は自動センタリングを凍結
@@ -3034,7 +3036,7 @@ function analyzePitch(){
     if(micDbText){ micDbText.textContent=db.toFixed(1)+' dB'; }
     // モバイル: ノイズフロア追従型のゲート（環境に応じて自動チューニング）
     let gateDbEff = gateThreshold;
-    if(IS_MOBILE){
+    if(IS_MOBILE && !IS_MOBILE_PCPIPE){
         try{
             const alpha = 0.02; // ノイズフロアのEMA係数（遅め）
             // 修正: フロアは「静かな時のみ」更新して、歌声に追随して上がらないようにする
@@ -3062,7 +3064,7 @@ function analyzePitch(){
     if(typeof analyzePitch._gateOpen==='undefined') analyzePitch._gateOpen=false;
     if(typeof analyzePitch._gateOpenedAt==='undefined') analyzePitch._gateOpenedAt=0;
     let gateToUse = gateDbEff;
-    if(IS_MOBILE){ if(analyzePitch._gateOpen){ gateToUse = gateDbEff - 3; } }
+    if(IS_MOBILE && !IS_MOBILE_PCPIPE){ if(analyzePitch._gateOpen){ gateToUse = gateDbEff - 3; } }
     if(db<gateToUse) {
         // 完全フラットが続く場合はデバイス不具合の可能性 → 再初期化を早めに仕掛ける
         let flat=true; for(let i=0;i<micData.length;i++){ if(micData[i]!==0){ flat=false; break; } }
@@ -3081,7 +3083,7 @@ function analyzePitch(){
         analyzePitch._gateOpenedAt = nowMs;
     }
     analyzePitch._gateOpen=true;
-    const onsetActive = IS_MOBILE && (nowMs - (analyzePitch._gateOpenedAt||0) <= 180);
+    const onsetActive = (IS_MOBILE && !IS_MOBILE_PCPIPE) && (nowMs - (analyzePitch._gateOpenedAt||0) <= 180);
 
     // --- New YIN pipeline (optional) ---
     try{
@@ -3090,7 +3092,7 @@ function analyzePitch(){
             let rawFreq = (r && r.freq) || 0;
             let rawConf = (r && r.conf) || 0;
             // モバイル向け: 低信頼点は強めに抑制し、短時間のドロップアウトは補完
-            const confMin = IS_MOBILE ? Math.max(0.50, PITCH_CONF_MIN) : PITCH_CONF_MIN;
+            const confMin = (IS_MOBILE && !IS_MOBILE_PCPIPE) ? Math.max(0.50, PITCH_CONF_MIN) : PITCH_CONF_MIN;
             // 追加: 軽量SHSで f/2, f, 2f を評価しオクターブ誤認を抑止（rawFreq>0 のとき）
             if(rawFreq>0){
                 try{
@@ -3104,7 +3106,7 @@ function analyzePitch(){
                     let sHalf = shsScore(frame, sr, half, 5);
                     let sDbl  = shsScore(frame, sr, Math.min(dbl, sr*0.49), 5);
                     // モバイル: 再生線上のガイドMIDIに近いオクターブを微優遇（音程モードやゴーストにも対応）
-                    if(IS_MOBILE){
+                    if(IS_MOBILE && !IS_MOBILE_PCPIPE){
                         try{
                             let guideMidiAtPlayhead = null;
                             const tRef = playbackPosition - getPitchVisOffsetSec();
@@ -3125,7 +3127,7 @@ function analyzePitch(){
                         }catch(_){ }
                     }
                     // 直近の連続性バイアス
-                    let wHalf=0.92, wBase=1.00, wDbl=1.03; // 直前の強化をロールバック
+                    let wHalf=0.92, wBase=1.00, wDbl=1.03; // PC相当の重み
                     if(onsetActive){ wHalf*=0.8; wDbl*=0.95; } // オンセット中はf/2選択をさらに抑制
                     if(lastMicFreq>0){
                         const dSemi = Math.abs(12*Math.log2(base/lastMicFreq));
@@ -3150,7 +3152,7 @@ function analyzePitch(){
                     rawFreq = pick; rawConf = Math.max(rawConf, 0.35*rawConf + 0.65*Math.min(1, shsRel));
 
                     // 追加: 候補系列（half, base, dbl）をViterbiで安定化（ごく短遅延、モバイル限定）
-                    if(IS_MOBILE) try{
+                    if(IS_MOBILE && !IS_MOBILE_PCPIPE) try{
                         const cands = [];
                         const costs = [];
                         // コストは負の相対スコア + 連続性ペナルティ
@@ -3189,16 +3191,16 @@ function analyzePitch(){
             }
             if(rawFreq>0){
                 // 低信頼はスムージング/赤丸更新をスキップ（前回値を保持して見た目を安定化）
-                const liveMin = IS_MOBILE ? Math.max(0.38, Math.min(confMin, 0.50)) : confMin; // モバイルはライブ表示用に少し緩め
+                const liveMin = (IS_MOBILE && !IS_MOBILE_PCPIPE) ? Math.max(0.38, Math.min(confMin, 0.50)) : confMin; // PCパイプライン時はPCと同一
                 if(rawConf >= confMin){
                     const sm = _pitchSmootherMod? _pitchSmootherMod.push(rawFreq, rawConf): rawFreq;
-                    lastMicFreq = sm; _mobileHoldRemain = IS_MOBILE? (onsetActive? 2: 1) : 0; _mobileHoldFreq = sm;
+                    lastMicFreq = sm; _mobileHoldRemain = (IS_MOBILE && !IS_MOBILE_PCPIPE)? (onsetActive? 2: 1) : 0; _mobileHoldFreq = sm;
                     lastMicMidi = 69 + 12*Math.log2(Math.max(1e-9,lastMicFreq)/A4Frequency);
                 }else if(IS_MOBILE){
                     // 履歴には残さないが、赤丸用にはやや低信頼でも更新して可視性を確保
                     if(rawConf >= liveMin){
                         const sm = _pitchSmootherMod? _pitchSmootherMod.push(rawFreq, rawConf): rawFreq;
-                        lastMicFreq = sm; _mobileHoldRemain = (onsetActive? 1: 0); _mobileHoldFreq = sm;
+                        lastMicFreq = sm; _mobileHoldRemain = ((IS_MOBILE && !IS_MOBILE_PCPIPE) && onsetActive? 1: 0); _mobileHoldFreq = sm;
                         lastMicMidi = 69 + 12*Math.log2(Math.max(1e-9,lastMicFreq)/A4Frequency);
                     }
                     // 直近の有声音を 2 フレームだけ保持（ギザギザ抑制）
@@ -3211,13 +3213,13 @@ function analyzePitch(){
                     const recTime = playbackPosition - vOff;
                     // 履歴にはスムージング前の生周波数を保存（描画側で一貫して再計算）
                     // 高信頼はモバイルでも常時記録（間引きしない）
-                    if(!IS_MOBILE || true){
+                    if(!IS_MOBILE || IS_MOBILE_PCPIPE || true){
                         pitchHistory.push({ time: recTime, visOff: vOff, freq: rawFreq, conf: rawConf, sid: scoreSessionId });
                         if(pitchHistory.length>2000) pitchHistory.shift();
                         // 高信頼で押し込んだ場合は低信頼のデシメーションカウンタをリセット
                         if(IS_MOBILE) _mobileLowDecim = 0;
                     }
-                } else if(!isCalibrating && IS_MOBILE){
+                } else if(!isCalibrating && (IS_MOBILE && !IS_MOBILE_PCPIPE)){
                     // 低信頼だが liveMin 以上: 線の連続性確保のため軽量に履歴へ記録（さらに間引き）
                     const liveMin = Math.max(0.38, Math.min(confMin, 0.50));
                     if(rawConf >= liveMin){
@@ -3899,11 +3901,11 @@ function drawChart(){
     // キャリブレーション中は非表示
     // 追加仕様（緩和）: モバイルでは停止中でも直近に有声音履歴があれば描画を許可
     let allowDrawPitch = (isPitchOnlyMode || isPlaying);
-    if(!allowDrawPitch && IS_MOBILE){
+    if(!allowDrawPitch && (IS_MOBILE && !IS_MOBILE_PCPIPE)){
         try{
             // 直近 0.5 秒以内に信頼度閾値以上の点があれば描画許可
             const tNow = playbackPosition - getPitchVisOffsetSec();
-            const drawConfMin = IS_MOBILE ? DRAW_CONF_MIN_MOBILE : PITCH_CONF_MIN;
+            const drawConfMin = (IS_MOBILE && !IS_MOBILE_PCPIPE) ? DRAW_CONF_MIN_MOBILE : PITCH_CONF_MIN;
             for(let i=pitchHistory.length-1;i>=0;i--){ const p=pitchHistory[i]; if((tNow - p.time) > 0.5) break; if((p.conf==null) || (p.conf >= drawConfMin)){ allowDrawPitch = true; break; } }
         }catch(_){ }
     }
@@ -5337,6 +5339,7 @@ function updatePlaybackPosition(){ if(!isPlaying||!audioCtx) return; const dt=Ma
 // AudioContext.currentTime が環境要因で著しく遅れる場合に備え、performance.now() を併用
 let playbackStartPerf=0; // 秒（performance.now/1000）
 const IS_MOBILE = /Android|iPhone|iPad|iPod|Mobile|Tablet/i.test(navigator.userAgent||'');
+const IS_MOBILE_PCPIPE = IS_MOBILE && USE_PC_PIPELINE_ON_MOBILE;
 let _lastFrameTime=performance.now();
 let _frameAccum=0, _frameCnt=0, _lastPerfLog=performance.now();
 let _frameSkipToggle=false;
