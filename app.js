@@ -586,6 +586,8 @@ try{
 }catch(_){ }
 let practiceMode='off'; // 'off' | 'basic'
 let isPracticing=false;
+// 基礎練習: 赤破線(call)の表示オクターブシフト（見た目のみ、音は変えない）
+let practiceCallDisplayOctShift = 0; // 単位: 半音（通常は±12の倍数）
 let practiceRAF=0;
 let practiceStartPerf=0;
 let practiceBaseSongTime=0;
@@ -982,6 +984,8 @@ function parseFromTo(){
 function startBasicPractice(){
     if(isPracticing) return;
     ensureAudio();
+    // 表示用: 赤破線(call)を1オクターブ上に見せる（音はそのまま）
+    practiceCallDisplayOctShift = 12;
     // 採点開始: 練習モードでも統計をリセットし、集計を有効化
     try{
         scoreSessionId++;
@@ -1241,10 +1245,15 @@ function startBasicPractice(){
     // 練習開始時に現在のゴースト（またはFROM/TO）範囲が見えるように自動縦オフセット調整
     try{
         if(Array.isArray(midiGhostNotes) && midiGhostNotes.length){
-            let gMin=Infinity, gMax=-Infinity; for(const n of midiGhostNotes){ if(n.midi<gMin) gMin=n.midi; if(n.midi>gMax) gMax=n.midi; }
+            let gMin=Infinity, gMax=-Infinity;
+            for(const n of midiGhostNotes){
+                // 表示時は call のみ視覚シフトを考慮
+                const mm = (n.role==='call') ? (n.midi + (practiceCallDisplayOctShift|0)) : n.midi;
+                if(mm<gMin) gMin=mm; if(mm>gMax) gMax=mm;
+            }
             if(isFinite(gMin) && isFinite(gMax)) setVerticalOffsetToRange(gMin, gMax);
         } else {
-            setVerticalOffsetToRange(low, high);
+            setVerticalOffsetToRange(low + (practiceCallDisplayOctShift|0), high + (practiceCallDisplayOctShift|0));
         }
     }catch(_){ }
     startPracticeScheduler();
@@ -4224,7 +4233,7 @@ function drawChart(){
     const visStart=eff - (playX/pxPerSec)*tempoFactor - 1; const visEnd=eff + ((w-playX)/pxPerSec)*tempoFactor + 1;
         ctx.save();
         ctx.lineWidth = Math.max(2, guideLineWidth);
-        for(const n of midiGhostNotes){
+    for(const n of midiGhostNotes){
             // ノート毎の描画スタイルを切替
             if(n.role==='resp' || n.role==='calib'){
                 ctx.strokeStyle = '#4e8cff';
@@ -4242,7 +4251,9 @@ function drawChart(){
             const x1=playX+(st-eff)*pxPerSec/tempoFactor;
             const x2=playX+((en)-eff)*pxPerSec/tempoFactor;
             if(x2<0 || x1>w) continue;
-            const y=h-(n.midi-vmin+1)*pxSemi;
+            // 見た目のみのオクターブ表示シフト（call の赤破線に限定）
+            const dispMidi = (n.role==='call') ? (n.midi + (practiceCallDisplayOctShift|0)) : n.midi;
+            const y=h-(dispMidi-vmin+1)*pxSemi;
             ctx.beginPath();
             ctx.moveTo(x1,y);
             ctx.lineTo(x2,y);
@@ -4701,8 +4712,57 @@ function shiftAllMelodyNotes(delta){
         scheduleAll(); if(isPlaying){ pausePlayback(); startPlayback(); } else { drawChart(); }
     }catch(_){ }
 }
-if(globalOctUpBtn){ globalOctUpBtn.onclick = ()=> shiftAllMelodyNotes(+12); }
-if(globalOctDownBtn){ globalOctDownBtn.onclick = ()=> shiftAllMelodyNotes(-12); }
+function updateGlobalOctButtonsTooltip(){
+    try{
+        const up = document.getElementById('globalOctUpBtn');
+        const dn = document.getElementById('globalOctDownBtn');
+        if(!up || !dn) return;
+        if(practiceMode==='basic'){
+            up.title = '基礎練習: 赤破線ガイドの表示オクターブを+12（音は変わりません）';
+            dn.title = '基礎練習: 赤破線ガイドの表示オクターブを-12（音は変わりません）';
+        } else {
+            up.title = 'メロディ全体を+12（編集）';
+            dn.title = 'メロディ全体を-12（編集）';
+        }
+    }catch(_){ }
+}
+if(globalOctUpBtn){
+    globalOctUpBtn.onclick = ()=>{
+        if(practiceMode==='basic'){
+            practiceCallDisplayOctShift = (practiceCallDisplayOctShift|0) + 12;
+            // 表示範囲も合わせて寄せる（見やすさ優先）
+            try{
+                if(Array.isArray(midiGhostNotes) && midiGhostNotes.length){
+                    let gMin=Infinity, gMax=-Infinity;
+                    for(const n of midiGhostNotes){ const mm=(n.role==='call')? (n.midi + (practiceCallDisplayOctShift|0)) : n.midi; if(mm<gMin) gMin=mm; if(mm>gMax) gMax=mm; }
+                    if(isFinite(gMin) && isFinite(gMax)) setVerticalOffsetToRange(gMin, gMax);
+                }
+            }catch(_){ }
+            drawChart();
+        } else {
+            shiftAllMelodyNotes(+12);
+        }
+        updateGlobalOctButtonsTooltip();
+    };
+}
+if(globalOctDownBtn){
+    globalOctDownBtn.onclick = ()=>{
+        if(practiceMode==='basic'){
+            practiceCallDisplayOctShift = (practiceCallDisplayOctShift|0) - 12;
+            try{
+                if(Array.isArray(midiGhostNotes) && midiGhostNotes.length){
+                    let gMin=Infinity, gMax=-Infinity;
+                    for(const n of midiGhostNotes){ const mm=(n.role==='call')? (n.midi + (practiceCallDisplayOctShift|0)) : n.midi; if(mm<gMin) gMin=mm; if(mm>gMax) gMax=mm; }
+                    if(isFinite(gMin) && isFinite(gMax)) setVerticalOffsetToRange(gMin, gMax);
+                }
+            }catch(_){ }
+            drawChart();
+        } else {
+            shiftAllMelodyNotes(-12);
+        }
+        updateGlobalOctButtonsTooltip();
+    };
+}
 // 半音ボタン
 const semiDownBtn=document.getElementById('semiDownBtn');
 const semiUpBtn=document.getElementById('semiUpBtn');
@@ -6952,6 +7012,8 @@ window.addEventListener('load',()=>{
                     practiceModeOff && (practiceModeOff.style.display='');
                     practiceModeOn && (practiceModeOn.style.display='none');
                     practiceMode='basic';
+                    // 左＋/－のツールチップを練習用に更新
+                    updateGlobalOctButtonsTooltip();
                     // 練習モード中は音声ファイル選択を無効化（ダイアログ抑止）
                     try{
                         if(melodyAudioBtn){ melodyAudioBtn.disabled = true; melodyAudioBtn.title = '練習モード中は無効'; }
@@ -6986,6 +7048,9 @@ window.addEventListener('load',()=>{
                 practiceModeOn && (practiceModeOn.style.display='');
                 if(practiceCloseBtn){ practiceCloseBtn.style.display='none'; }
                 practiceMode='off';
+                // 表示用シフトをリセットし、ツールチップも戻す
+                practiceCallDisplayOctShift = 0;
+                updateGlobalOctButtonsTooltip();
                 // 無効化解除
                 try{
                     if(melodyAudioBtn){ melodyAudioBtn.disabled = false; melodyAudioBtn.title = 'メロディ音声を選択'; }
