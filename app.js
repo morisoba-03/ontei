@@ -128,6 +128,21 @@ let lastMicFreq=0,lastMicMidi=0; const pitchSmoothBuf=[]; const PITCH_SMOOTH_WIN
 const LIVE_VIT_LAG = 5;           // フレーム遅延（約0.1〜0.15s）
 const LIVE_VIT_MAX = 48;          // バッファ保持上限
 let liveVitFrames = [];           // [{cands:number[], costs:number[], time:number}]
+// ---- Diagnostics (lightweight, rate-limited) ----
+let __diagEnabled = true; // 開発用: 解析/描画の異常検出をコンソールへ出す（本番では false 推奨）
+const __diagMarks = Object.create(null);
+function __diagLog(kind, data, rateMs=2000){
+    if(!__diagEnabled) return;
+    try{
+        const now = Date.now();
+        const last = __diagMarks[kind] || 0;
+        if(now - last < rateMs) return;
+        __diagMarks[kind] = now;
+        // 例: kind='c-only-visual'
+        // 出力は控えめに（必要最小限のキーのみ）
+        console.warn('[Diag]', kind, data);
+    }catch(_){ /* ignore diag logging failures */ }
+}
 // YINパス専用: f/2, f, 2f の3候補で簡易Viterbi（モバイルのオクターブ安定化）
 const YIN_VIT_LAG = 3;            // 遅延をさらに短縮（約25〜45ms相当）
 const YIN_VIT_MAX = 64;           // バッファ保持上限
@@ -784,39 +799,33 @@ let practiceMutedUntil=0; // audio time until which call gain is held at 0 (for 
         const addMo = new MutationObserver(muts => {
             let added = [];
             for(const m of muts){
-                m.addedNodes && m.addedNodes.forEach(node => {
-                    if(node.nodeType === 1){ // ELEMENT_NODE
-                        if(node.matches && node.matches(FIT_SELECTOR)){
-                            added.push(node);
-                        }
-                        // 子孫も検索
-                        const found = node.querySelectorAll ? node.querySelectorAll(FIT_SELECTOR) : [];
-                        if(found && found.length){ added.push(...found); }
+                m.addedNodes && m.addedNodes.forEach(node=>{
+                    if(node.nodeType !== 1) return; // ELEMENT_NODEのみ
+                    if(node.matches && node.matches(FIT_SELECTOR)){
+                        added.push(node);
                     }
+                    // 子孫も検索
+                    const found = node.querySelectorAll ? node.querySelectorAll(FIT_SELECTOR) : [];
+                    if(found && found.length){ added.push(...found); }
                 });
             }
-        if(added.length){
+            if(added.length){
                 for(const btn of added){
                     // 初期スタイル
                     btn.style.overflow = btn.style.overflow || 'hidden';
                     if(!btn.style.whiteSpace) btn.style.whiteSpace = 'nowrap';
-                    if(!btn.style.textOverflow) btn.style.textOverflow = 'ellipsis';
                     if(!btn.style.alignItems) btn.style.alignItems = 'center';
                     if(!btn.style.justifyContent) btn.style.justifyContent = 'center';
-            if(!btn.style.display) btn.style.display = 'inline-flex';
-            ensureInnerWrapper(btn);
-                    // 監視とフィット
+                    if(!btn.style.display) btn.style.display = 'inline-flex';
+                    ensureInnerWrapper(btn);
                     ro.observe(btn);
                     mo.observe(btn, { subtree: true, characterData: true, childList: true });
                     fitOne(btn);
-                    buttons.push(btn);
                 }
             }
         });
         addMo.observe(document.body, { childList: true, subtree: true });
-    }catch(e){
-        console.warn('AutoFitButtons init error', e);
-    }
+    }catch(e){ console.warn('AutoFitButtons init error', e); }
 })();
 
 // =============================
@@ -995,7 +1004,7 @@ function startBasicPractice(){
     const bpm = Math.max(40, Math.min(200, parseInt(practiceBpmEl?.value||practiceTempoBpm)));
     practiceTempoBpm=bpm; const beatSec = 60 / bpm; const noteDur = beatSec;
     const rootMidi = parseNoteNameToMidi(practiceRootSel?.value||'C5');
-    const keyMode = (practiceKeyModeSel?.value||'major'); // 'major' | 'minor'
+    let keyMode = (practiceKeyModeSel?.value||'major'); // 'major' | 'minor' | 'random'
     const use7th = !!(practiceSeventhChk && practiceSeventhChk.checked);
     const use6th = !!(practiceSixthChk && practiceSixthChk.checked);
     const [low, high] = parseFromTo();
@@ -1008,7 +1017,7 @@ function startBasicPractice(){
     for(let c=0;c<cycles;c++){
         // コール: アプリが演奏
     if(pat==='chordPractice' || pat==='chordPracticeRandOrder' || pat==='chordAllMajor' || pat==='chordAllMinor'){
-            // キー（メジャー/マイナー）と7th有無に応じたダイアトニック進行（絶対表記）
+            // キー（メジャー/マイナー/ランダム）と7th/6th有無に応じたダイアトニック進行（絶対表記）
             const keyRootPC = (rootMidi%12+12)%12;
             const namesCDE=['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
             // 度数→和音（PC配列）と表記関数
@@ -1016,19 +1025,20 @@ function startBasicPractice(){
                 // deg: 0..6
                 const scaleMaj=[0,2,4,5,7,9,11];
                 const scaleMin=[0,2,3,5,7,8,10];
-                const scale = keyMode==='minor'? scaleMin: scaleMaj;
+                const modeEff = (keyMode==='random') ? (Math.random()<0.5? 'major':'minor') : keyMode;
+                const scale = modeEff==='minor'? scaleMin: scaleMaj;
                 const rootPc = (keyRootPC + scale[deg]) % 12;
-                let third = (keyMode==='minor' && (deg===0||deg===3||deg===4))? 3 : // i, iv, v in natural minor
-                             (keyMode==='minor' && (deg===2||deg===5))? 4 :
-                             (keyMode==='minor' && deg===6)? 3 :
+                let third = (modeEff==='minor' && (deg===0||deg===3||deg===4))? 3 : // i, iv, v in natural minor
+                             (modeEff==='minor' && (deg===2||deg===5))? 4 :
+                             (modeEff==='minor' && deg===6)? 3 :
                              // major key
                              (deg===1||deg===2||deg===5)? 3 : 4; // ii, iii, vi minor triads in major
                 let fifth = 7;
                 let quality = '';
                 // diminished in major: vii°; in minor: ii° (natural)
-                if((keyMode==='major' && deg===6) || (keyMode==='minor' && deg===1)){
+                if((modeEff==='major' && deg===6) || (modeEff==='minor' && deg===1)){
                     fifth = 6; quality = 'dim';
-                } else if((keyMode==='major' && (deg===1||deg===2||deg===5)) || (keyMode==='minor' && (deg===0||deg===3||deg===4||deg===6))){
+                } else if((modeEff==='major' && (deg===1||deg===2||deg===5)) || (modeEff==='minor' && (deg===0||deg===3||deg===4||deg===6))){
                     quality = 'm';
                 } else {
                     quality = '';
@@ -1039,8 +1049,8 @@ function startBasicPractice(){
                 if(use7th){
                     let seventhInt = (quality==='dim')? 10 : // diminished triad + m7 => m7b5 label
                                       (quality==='m')? 10 : // minor triad + m7 => m7
-                                      (deg===4 && keyMode==='major')? 10 : // V7 in major
-                                      (keyMode==='minor' && deg===4)? 10 : // v7 (natural minor)
+                                      (deg===4 && modeEff==='major')? 10 : // V7 in major
+                                      (modeEff==='minor' && deg===4)? 10 : // v7 (natural minor)
                                       11; // maj7 default
                     seventh = seventhInt;
                     if(quality==='dim') extLabel = 'm7b5';
@@ -1122,16 +1132,17 @@ function startBasicPractice(){
                 // chordForDegree を pcRootOverride に基づいて再計算
                 const scaleMaj=[0,2,4,5,7,9,11];
                 const scaleMin=[0,2,3,5,7,8,10];
-                const scale = keyMode==='minor'? scaleMin: scaleMaj;
+                const modeEff = (keyMode==='random') ? (Math.random()<0.5? 'major':'minor') : keyMode;
+                const scale = modeEff==='minor'? scaleMin: scaleMaj;
                 const rootPc = (pcRootOverride + scale[deg]) % 12;
                 // 以下は chordForDegree と同様
-                let third = (keyMode==='minor' && (deg===0||deg===3||deg===4))? 3 :
-                             (keyMode==='minor' && (deg===2||deg===5))? 4 :
-                             (keyMode==='minor' && deg===6)? 3 :
+                let third = (modeEff==='minor' && (deg===0||deg===3||deg===4))? 3 :
+                             (modeEff==='minor' && (deg===2||deg===5))? 4 :
+                             (modeEff==='minor' && deg===6)? 3 :
                              (deg===1||deg===2||deg===5)? 3 : 4;
                 let fifth = 7; let quality='';
-                if((keyMode==='major' && deg===6) || (keyMode==='minor' && deg===1)){ fifth=6; quality='dim'; }
-                else if((keyMode==='major' && (deg===1||deg===2||deg===5)) || (keyMode==='minor' && (deg===0||deg===3||deg===4||deg===6))){ quality='m'; }
+                if((modeEff==='major' && deg===6) || (modeEff==='minor' && deg===1)){ fifth=6; quality='dim'; }
+                else if((modeEff==='major' && (deg===1||deg===2||deg===5)) || (modeEff==='minor' && (deg===0||deg===3||deg===4||deg===6))){ quality='m'; }
                 let seventh=null, extLabel='';
                 if(use7th){
                     let seventhInt = (quality==='dim')? 10 : (quality==='m')? 10 : (deg===4? 10: 11);
@@ -1191,6 +1202,33 @@ function startBasicPractice(){
                 sequences.push({ type:'resp', seq });
                 }
             }
+        } else if(pat==='scaleUp' || pat==='scaleDown' || pat==='scaleUpDown'){
+            // スケール練習（サイトの一般的な運指練習に準拠する基本版）
+            // モード: メジャー/ナチュラルマイナー（random時は都度抽選）
+            const scaleMaj=[0,2,4,5,7,9,11,12];
+            const scaleMinNat=[0,2,3,5,7,8,10,12];
+            const modeEff = (keyMode==='random') ? (Math.random()<0.5? 'major':'minor') : keyMode;
+            const scale = (modeEff==='minor')? scaleMinNat: scaleMaj;
+            // 基準キー（rootMidi）からスケールトーンを範囲いっぱいへ展開
+            const tones=[];
+            // 低域側へ展開
+            for(let k=0;k>=-8;k--){ for(const d of scale){ const m=rootMidi + d + 12*k; if(m<low) continue; if(m>high) continue; tones.push(m); } }
+            // 基準オクターブ以上も展開
+            for(let k=1;k<=8;k++){ for(const d of scale){ const m=rootMidi + d + 12*k; if(m<low) continue; if(m>high) continue; tones.push(m); } }
+            // 重複・順序を整える
+            const uniq = Array.from(new Set(tones)).sort((a,b)=>a-b);
+            function mkCallSeq(){
+                if(!uniq.length) return [rootMidi];
+                if(pat==='scaleUp'){ return uniq.slice(); }
+                if(pat==='scaleDown'){ return uniq.slice().reverse(); }
+                // 往復: 端を重ねない [上行] + [下行(端カット)]
+                const up = uniq.slice();
+                const dn = uniq.slice(0, -1).reverse();
+                return up.concat(dn);
+            }
+            const callSeq = mkCallSeq();
+            sequences.push({type:'call', seq:callSeq});
+            sequences.push({type:'resp', seq:callSeq.slice()});
         } else {
             let callSeq = makePracticePattern(pat, rootMidi + startDegree, Math.min(span, cycleBeats));
             // 範囲へ寄せる。ただしメジャースケールの最終ド(root+12)は下へ畳み込まずに残す。
@@ -1212,6 +1250,7 @@ function startBasicPractice(){
     // お手本用の専用ゲイン（全体音量と独立）
     if(!practiceCallGain){ try{ practiceCallGain = audioCtx.createGain(); practiceCallGain.gain.value = Math.max(0, Math.min(1, parseFloat(practiceCallVolEl?.value||'0.85'))); (masterGain||audioCtx.destination)&&practiceCallGain.connect(masterGain||audioCtx.destination); }catch(_){ } }
     let planIdx=0;
+    const isScalePat = (pat==='scaleUp' || pat==='scaleDown' || pat==='scaleUpDown');
     for(const block of sequences){
         const isCall = (block.type==='call');
         // コードラベル（コール時のみ）。chordPractice の場合は block.labelName を優先
@@ -1224,11 +1263,14 @@ function startBasicPractice(){
             // コール中はブロック全体で同一ラベルを表示（先頭音だけで切れないように）
             if(isCall && block.labelName){ label = { name: block.labelName }; }
             else if(blockLabels && blockLabels.length){ label = blockLabels.find(lb=> Math.abs((lb.at||0) - tCursorSong) < 1e-6); }
-            const g = {midi:dispM, time:tCursorSong, duration: noteDur, role: isCall? 'call':'resp'};
+            // スケール練習: お手本は2倍速（半分の長さ）、レスポンスは等速
+            const durLocal = isScalePat ? (isCall ? (beatSec*0.5) : beatSec) : noteDur;
+            const stepLocal = durLocal; // ノート間隔
+            const g = {midi:dispM, time:tCursorSong, duration: durLocal, role: isCall? 'call':'resp'};
             if(label){ g.label = label.name; }
             ghost.push(g);
-            practicePlan.push({ idx: planIdx++, midi:m, timeSong:tCursorSong, duration:noteDur, role: isCall? 'call':'resp' });
-            tCursorSong += beatSec; tCursorAudio += beatSec;
+            practicePlan.push({ idx: planIdx++, midi:m, timeSong:tCursorSong, duration:durLocal, role: isCall? 'call':'resp' });
+            tCursorSong += stepLocal; tCursorAudio += stepLocal;
         }
         // 各ブロックのあとに1拍休符
         tCursorSong += beatSec*1.0; tCursorAudio += beatSec*1.0;
@@ -3266,6 +3308,10 @@ function analyzePitch(){
                     }
                     if(!IS_MOBILE || IS_MOBILE_PCPIPE || true){
                         if(acceptHist){
+                            // 診断: 無効値検出
+                            if(!(rawFreq>0) || !Number.isFinite(rawFreq) || rawFreq>12000){
+                                __diagLog('hist-push-invalid', {rawFreq, rawConf, recTime, vOff, A4:A4Frequency});
+                            }
                             pitchHistory.push({ time: recTime, visOff: vOff, freq: rawFreq, conf: rawConf, sid: scoreSessionId });
                             analyzePitch._lastAcceptedRawHist = rawFreq;
                             if(pitchHistory.length>2000) pitchHistory.shift();
@@ -3289,6 +3335,9 @@ function analyzePitch(){
                                 if(analyzePitch._extremeFramesHist < 2){ acceptHistL=false; }
                             } else { analyzePitch._extremeFramesHist=0; }
                             if(acceptHistL){
+                                if(!(rawFreq>0) || !Number.isFinite(rawFreq) || rawFreq>12000){
+                                    __diagLog('hist-push-invalid-low', {rawFreq, rawConf, recTime, vOff, A4:A4Frequency});
+                                }
                                 pitchHistory.push({ time: recTime, visOff: vOff, freq: rawFreq, conf: rawConf, sid: scoreSessionId });
                                 analyzePitch._lastAcceptedRawHist = rawFreq;
                                 if(pitchHistory.length>2000) pitchHistory.shift();
@@ -3643,6 +3692,9 @@ function analyzePitch(){
         if(!isCalibrating){
             const vOff = getPitchVisOffsetSec();
             const recTime = ((typeof __vitTimeOverride==='number')? __vitTimeOverride: playbackPosition) - vOff;
+            if(!(lastMicFreq>0) || !Number.isFinite(lastMicFreq) || lastMicFreq>12000){
+                __diagLog('live-push-invalid', {lastMicFreq, conf, recTime, vOff, A4:A4Frequency});
+            }
             pitchHistory.push({ time: recTime, visOff: vOff, freq: lastMicFreq, conf, sid: scoreSessionId });
             if(pitchHistory.length>2000) pitchHistory.shift();
         }
@@ -4004,9 +4056,28 @@ function drawChart(){
             let dCents = (p.dCents!=null && Number.isFinite(p.dCents))? p.dCents : null;
             midi = (69+12*Math.log2(Math.max(1e-9,p.freq)/A4Frequency));
             if(!(midi>=vmin && midi<=vmax)) continue;
-            pts.push({t, midi, dCents, conf:(typeof p.conf==='number'? p.conf: 0.7)});
+            pts.push({t, midi, dCents, conf:(typeof p.conf==='number'? p.conf: 0.7), freq:p.freq});
         }
         if(pts.length){
+            // 診断: 可視範囲の音高クラスが実質的に1クラス（例: Cのみ）に張り付いているか検出
+            try{
+                const classes = new Map();
+                for(const p of pts){
+                    const pc = ((Math.round(p.midi)%12)+12)%12;
+                    classes.set(pc, (classes.get(pc)||0)+1);
+                }
+                if(classes.size===1){
+                    const onlyPc=[...classes.keys()][0];
+                    __diagLog('c-only-visual', {
+                        pc: onlyPc,
+                        count: pts.length,
+                        A4: A4Frequency,
+                        visRange: {vmin, vmax},
+                        states: {isCalibrating, practicing:isPracticing, assist:isAssistActive()},
+                        micRenderMode
+                    }, 4000);
+                }
+            }catch(_){ }
             // pitchHistory は時系列で追加されるため、ここでの追加点列 pts も概ね時系列。
             // 不要な毎フレームソートを避けて描画負荷を軽減する（極端な順序入替は上流で統一）。
             if(micRenderMode==='dot'){
@@ -4197,6 +4268,9 @@ function drawChart(){
                     }
                 }catch(_){ }
             };
+            // ゆっくりした連続ドリフトを長い水平バーに平均化しないための分割しきい値（セミトーン）
+            const DRIFT_SPLIT_SEMI = 0.18; // ≈ 18 cents
+            const DRIFT_MIN_DUR = 0.25;    // 0.25s 以上続いたら評価
             for(const p of pts){
                     const key = Math.round(p.midi); // 半音丸め（ビブラートを同一トーンとして扱う）
                     const w = 0.5 + 0.5*p.conf;
@@ -4206,14 +4280,29 @@ function drawChart(){
                         continue;
                     }
                     const gap = p.t - run.lastT;
-                    const deltaSemi = Math.abs(p.midi - run.baseKey);
-                    const continuous = (gap <= bridgeGap) && (deltaSemi <= CHANGE_TOL_SEMI);
+                    const lastMidiInRun = run.samples[run.samples.length-1]?.midi ?? (run.sumMidi/Math.max(1e-6,run.sumW));
+                    const mAvgCur = run.sumMidi/Math.max(1e-6,run.sumW);
+                    const deltaToKey = Math.abs(p.midi - run.baseKey);
+                    const deltaToLast = Math.abs(p.midi - lastMidiInRun);
+                    const deltaToAvg  = Math.abs(p.midi - mAvgCur);
+                    // 連続性は「直前/移動平均」のどちらかが許容内ならOK（キー固定による過度な引っ張りを抑制）
+                    const continuous = (gap <= bridgeGap) && ( (deltaToLast <= CHANGE_TOL_SEMI*1.2) || (deltaToAvg <= CHANGE_TOL_SEMI) || (deltaToKey <= CHANGE_TOL_SEMI*0.9) );
                     if(continuous){
-                        run.t1 = p.t; run.lastT = p.t;
-                        run.sumMidi += p.midi*w; run.sumW += w;
-                        run.confSum += p.conf; run.cnt++;
-                        run.samples.push({t:p.t, midi:p.midi});
-                        if(p.dCents!=null){ (Math.abs(p.dCents) <= (toleranceCents||0)) ? run.inTol++ : run.outTol++; }
+                        // 累積ドリフトが閾値を超えたら分割（長い水平バー抑制）
+                        const durRun = (run.lastT - run.t0);
+                        if(durRun >= DRIFT_MIN_DUR && Math.abs(p.midi - mAvgCur) > DRIFT_SPLIT_SEMI){
+                            // 現在の run を確定し、新しい run を開始
+                            __diagLog('line-split-drift', {dur:durRun, drift:Math.abs(p.midi - mAvgCur), tol:DRIFT_SPLIT_SEMI}, 4000);
+                            flushRun(run);
+                            run = { t0:p.t, t1:p.t, sumMidi:p.midi*w, sumW:w, lastT:p.t, baseKey:key, inTol:0, outTol:0, confSum:p.conf, cnt:1, samples:[{t:p.t, midi:p.midi}] };
+                            if(p.dCents!=null){ (Math.abs(p.dCents) <= (toleranceCents||0)) ? run.inTol++ : run.outTol++; }
+                        } else {
+                            run.t1 = p.t; run.lastT = p.t;
+                            run.sumMidi += p.midi*w; run.sumW += w;
+                            run.confSum += p.conf; run.cnt++;
+                            run.samples.push({t:p.t, midi:p.midi});
+                            if(p.dCents!=null){ (Math.abs(p.dCents) <= (toleranceCents||0)) ? run.inTol++ : run.outTol++; }
+                        }
                     } else {
                         // いまのrunを確定して新規開始
                         flushRun(run);
@@ -4229,7 +4318,8 @@ function drawChart(){
     // 仮ノーツ（MIDIアライン/練習ゴーストのプレビュー）
     // 通常: 赤の破線。基礎練習モード中はメロディと同じ青の実線で表示。
     // 変更: モバイルの基礎練習モードでは、ピッチ専用モード中でもガイド/赤破線を表示する
-    if(Array.isArray(midiGhostNotes) && midiGhostNotes.length && (!isPitchOnlyMode || (IS_MOBILE && isPracticing))){
+    // 練習モード中は PC/モバイル問わずピッチ専用モードでもガイドを表示
+    if(Array.isArray(midiGhostNotes) && midiGhostNotes.length && (!isPitchOnlyMode || isPracticing)){
     const visStart=eff - (playX/pxPerSec)*tempoFactor - 1; const visEnd=eff + ((w-playX)/pxPerSec)*tempoFactor + 1;
         ctx.save();
         ctx.lineWidth = Math.max(2, guideLineWidth);
@@ -4251,22 +4341,30 @@ function drawChart(){
             const x1=playX+(st-eff)*pxPerSec/tempoFactor;
             const x2=playX+((en)-eff)*pxPerSec/tempoFactor;
             if(x2<0 || x1>w) continue;
-            // 見た目のみのオクターブ表示シフト（call の赤破線に限定）
-            const dispMidi = (n.role==='call') ? (n.midi + (practiceCallDisplayOctShift|0)) : n.midi;
+            // 見た目のみのオクターブ表示シフト（基礎練習の call/resp/calib に適用）
+            const dispMidi = (practiceMode==='basic' && (n.role==='call' || n.role==='resp' || n.role==='calib'))
+                ? (n.midi + (practiceCallDisplayOctShift|0))
+                : n.midi;
             const y=h-(dispMidi-vmin+1)*pxSemi;
             ctx.beginPath();
             ctx.moveTo(x1,y);
             ctx.lineTo(x2,y);
             ctx.stroke();
-            // ラベルがあれば、線の少し上に表示（ガイド周辺）
-            if(n.role==='call' && n.label){
-                ctx.save();
-                ctx.font='12px sans-serif';
-                ctx.textAlign='center'; ctx.textBaseline='bottom';
-                const textX = (x1+x2)/2, textY = y-6;
-                ctx.fillStyle='rgba(0,0,0,0.6)'; const tw=ctx.measureText(n.label).width; ctx.fillRect(textX - tw/2 - 4, textY-16, tw+8, 14);
-                ctx.fillStyle='#ffd27d'; ctx.fillText(n.label, textX, textY-2);
-                ctx.restore();
+            // ラベル: コード名ではなく音名を表示（call/resp 双方）。
+            if(n.role==='call' || n.role==='resp'){
+                try{
+                    const lbl = noteLabel(Math.round(dispMidi));
+                    ctx.save();
+                    ctx.font='12px sans-serif';
+                    ctx.textAlign='center'; ctx.textBaseline='bottom';
+                    const textX = (x1+x2)/2, textY = y-6;
+                    const tw=ctx.measureText(lbl).width;
+                    ctx.fillStyle='rgba(0,0,0,0.6)';
+                    ctx.fillRect(textX - tw/2 - 4, textY-16, tw+8, 14);
+                    ctx.fillStyle = (n.role==='call')? '#ffd27d' : '#d6f0ff';
+                    ctx.fillText(lbl, textX, textY-2);
+                    ctx.restore();
+                }catch(_){ }
             }
             // 青いユーザ用ノーツ（resp）には通常モード同様の許容範囲ラインを付与
             if(n.role==='resp'){

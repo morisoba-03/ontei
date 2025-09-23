@@ -182,6 +182,9 @@
       <button id="practiceModeOn" type="button" title="基礎練習モードに切替">🎯 <span class="txt">基礎練習モード</span></button>
       <button id="practiceModeOff" type="button" title="通常モードに戻る" style="display:none;">↩ <span class="txt">通常モード</span></button>
       <select id="practicePatternSelect" title="練習パターン" style="display:none;">
+        <option value="scaleUp">スケール（上行）</option>
+        <option value="scaleDown">スケール（下行）</option>
+        <option value="scaleUpDown">スケール（往復）</option>
         <option value="ascMajor">ドレミファソラシド（上行）</option>
         <option value="descMajor">ドシラソファミレド（下行）</option>
         <option value="chromaticAsc">半音階 上行</option>
@@ -201,6 +204,7 @@
           <select id="practiceKeyMode" title="キー種別">
             <option value="major" selected>メジャー</option>
             <option value="minor">マイナー</option>
+            <option value="random">ランダム</option>
           </select>
           <label style="display:inline-flex;align-items:center;gap:4px;">
             <input id="practiceSeventh" type="checkbox" /> 7thを含む
