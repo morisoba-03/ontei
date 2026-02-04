@@ -62,6 +62,7 @@ export function CanvasView() {
         let lastTouchDistance = 0;
         let lastTouchCenterX = 0;
         let isTwoFingerGesture = false;
+        let anchorTime = 0; // Time at pinch center (fixed point during zoom)
 
         const getTouchDistance = (touches: TouchList) => {
             if (touches.length < 2) return 0;
@@ -81,6 +82,15 @@ export function CanvasView() {
                 isTwoFingerGesture = true;
                 lastTouchDistance = getTouchDistance(e.touches);
                 lastTouchCenterX = getTouchCenterX(e.touches);
+
+                // Calculate the time at the pinch center point
+                const rect = canvas.getBoundingClientRect();
+                const centerXOnCanvas = lastTouchCenterX - rect.left;
+                const playX = getPlayX(canvas.width);
+                const ppm = audioEngine.state.pxPerSec / audioEngine.state.tempoFactor;
+                const eff = audioEngine.state.playbackPosition + audioEngine.state.timelineOffsetSec;
+                anchorTime = eff + (centerXOnCanvas - playX) / ppm;
+
                 audioEngine.startSeek();
             }
         };
@@ -89,24 +99,43 @@ export function CanvasView() {
             if (!isTwoFingerGesture || e.touches.length < 2) return;
             e.preventDefault();
 
+            const rect = canvas.getBoundingClientRect();
             const currentDistance = getTouchDistance(e.touches);
             const currentCenterX = getTouchCenterX(e.touches);
+            const centerXOnCanvas = currentCenterX - rect.left;
+            const playX = getPlayX(canvas.width);
 
-            // Pinch zoom (horizontal timeline zoom)
+            // Pinch zoom (centered on pinch point)
             if (lastTouchDistance > 0) {
                 const scale = currentDistance / lastTouchDistance;
                 if (Math.abs(scale - 1) > 0.01) {
-                    const newPxPerSec = Math.max(20, Math.min(800, audioEngine.state.pxPerSec * scale));
-                    audioEngine.updateState({ pxPerSec: newPxPerSec });
+                    const oldPxPerSec = audioEngine.state.pxPerSec;
+                    const newPxPerSec = Math.max(20, Math.min(800, oldPxPerSec * scale));
+                    const newPpm = newPxPerSec / audioEngine.state.tempoFactor;
+
+                    // Calculate new playback position to keep anchorTime at the same screen position
+                    // anchorTime should appear at centerXOnCanvas
+                    // newPlaybackPos = anchorTime - timelineOffset - (centerXOnCanvas - playX) / newPpm
+                    const newPos = Math.max(0, anchorTime - audioEngine.state.timelineOffsetSec - (centerXOnCanvas - playX) / newPpm);
+
+                    audioEngine.updateState({
+                        pxPerSec: newPxPerSec,
+                        playbackPosition: newPos
+                    });
                 }
             }
 
-            // Two-finger horizontal swipe (seek)
+            // Two-finger horizontal swipe (pan/seek)
             const deltaX = currentCenterX - lastTouchCenterX;
             if (Math.abs(deltaX) > 2) {
-                const dt = -deltaX / audioEngine.state.pxPerSec;
+                const ppm = audioEngine.state.pxPerSec / audioEngine.state.tempoFactor;
+                const dt = -deltaX / ppm;
                 const newPos = Math.max(0, audioEngine.state.playbackPosition + dt);
                 audioEngine.updateState({ playbackPosition: newPos });
+
+                // Update anchor time for the new center position
+                const eff = newPos + audioEngine.state.timelineOffsetSec;
+                anchorTime = eff + (centerXOnCanvas - playX) / ppm;
             }
 
             lastTouchDistance = currentDistance;
