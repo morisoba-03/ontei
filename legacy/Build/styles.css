@@ -1,0 +1,40 @@
+:root{
+  --bg:#0f1115; --fg:#e6eaf2; --muted:#9aa3b2; --acc:#5ac8fa;
+  --red:#ff6b6b; --green:#2ecc71; --yellow:#ffd166; --panel:#171a22; --line:#2a2f3a;
+}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0;background:var(--bg);color:var(--fg);font-family:system-ui,Segoe UI,Roboto,Helvetica,Arial,"Noto Sans JP",sans-serif}
+.topbar{display:flex;justify-content:space-between;align-items:center;padding:12px 16px;background:#0b0d12;border-bottom:1px solid #1d2230;position:sticky;top:0;z-index:10}
+h1{font-size:18px;margin:0} .badge{font-size:12px;color:#fff;background:var(--acc);padding:2px 6px;border-radius:6px;margin-left:6px}
+main{padding:12px}
+.file-panel,.controls,.transport,.markers,.stage,.score{background:var(--panel);border:1px solid #1d2230;border-radius:10px;padding:12px;margin:10px 0}
+.file-label{display:block;border:1px dashed #2c3342;padding:10px;border-radius:8px;background:#0f1320}
+.hint{font-size:12px;color:var(--muted)}
+.tracks{display:flex;gap:16px}
+.tracks ul{list-style:none;padding:0;margin:0;max-height:180px;overflow:auto;border:1px solid #22283a;border-radius:8px}
+.tracks li{padding:6px 8px;border-bottom:1px solid #1e2433}
+.roles select{width:100%}
+.controls .group{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px;margin-bottom:8px}
+.controls label{display:block;border:1px solid #22283a;padding:8px;border-radius:8px}
+.toggles label{display:flex;align-items:center;gap:8px}
+.transport{display:grid;grid-template-columns:repeat(6,minmax(120px,1fr));gap:8px;align-items:center}
+.vols{grid-column:1/-1;display:flex;gap:12px}
+.markers .marker-col{display:flex;flex-direction:column;gap:8px;max-width:240px}
+.marker{display:flex;justify-content:space-between;align-items:center;border:1px solid #22283a;padding:6px 8px;border-radius:8px}
+.stage{display:flex;gap:8px;align-items:stretch;overflow:hidden}
+#piano{background:#0b0d12;border:1px solid #22283a;border-radius:8px}
+#chart{background:#0b0d12;border:1px solid #22283a;border-radius:8px;flex:1}
+.score .rtScore{display:flex;align-items:center;gap:8px}
+progress{width:240px;height:16px}
+#finalReport{margin-top:8px;border-top:1px solid #1d2230;padding-top:8px}
+#debugPanel{background:#0b0d12;border:1px solid #22283a;border-radius:8px;padding:8px}
+.log{max-height:160px;overflow:auto;background:#0a0c12;border:1px solid #1b2232;padding:8px;border-radius:6px}
+button{background:#1a2130;color:#e6eaf2;border:1px solid #2b3244;border-radius:8px;padding:8px 10px;cursor:pointer}
+button:hover{background:#20283a}
+select,input[type="range"],input[type="number"]{width:100%}
+@media (max-width:900px){
+  .transport{grid-template-columns:repeat(3,1fr)}
+  .tracks{flex-direction:column}
+  .stage{flex-direction:column}
+  #piano,#chart{width:100%}
+}

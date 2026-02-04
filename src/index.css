@@ -1,0 +1,34 @@
+@import "tailwindcss";
+
+@theme {
+  --color-glass-100: rgba(255, 255, 255, 0.1);
+  --color-glass-200: rgba(255, 255, 255, 0.2);
+  --color-glass-300: rgba(255, 255, 255, 0.3);
+  --color-glass-dark: rgba(0, 0, 0, 0.3);
+  --color-glass-darker: rgba(0, 0, 0, 0.5);
+  --blur-xs: 2px;
+}
+
+@layer base {
+  body {
+    @apply bg-slate-900 text-slate-50 antialiased overflow-hidden;
+  }
+}
+
+/* Custom scrollbar for glass look */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  @apply bg-white/10 rounded-full;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  @apply bg-white/20;
+}

@@ -1,0 +1,223 @@
+import { useState, useEffect } from 'react';
+import { Play, Square, Mic, MousePointer2, Hand, Pencil, Eraser, Settings, Activity, Clock } from 'lucide-react';
+import { audioEngine } from '../lib/AudioEngine';
+import { MidiTrackSelector } from './MidiTrackSelector';
+import type { MidiTrackInfo } from './MidiTrackSelector';
+import type { AudioEngineState } from '../lib/types';
+import { cn } from '../lib/utils';
+// Unused modal imports removed since they are handled by App.tsx callbacks
+
+interface ControlsProps {
+    onOpenSettings: () => void;
+    onOpenPractice: () => void; // Not used here yet but in props
+    onOpenHistory?: () => void;
+    onRecordingComplete?: (blob: Blob) => void;
+
+}
+
+export function Controls({ onOpenSettings, onOpenPractice, onOpenHistory, onRecordingComplete }: ControlsProps) {
+    const [isPlaying, setIsPlaying] = useState(audioEngine.state.isPlaying);
+    const [isMicOn, setIsMicOn] = useState(!!audioEngine.micStream);
+    const [isRecording, setIsRecording] = useState(audioEngine.isRecording);
+    const [editTool, setEditTool] = useState(audioEngine.state.editTool);
+    const [midiTracks, setMidiTracks] = useState<MidiTrackInfo[]>([]);
+    const [showMidiSelector, setShowMidiSelector] = useState(false);
+
+    useEffect(() => {
+
+        const unsub = audioEngine.subscribe(() => {
+            setIsPlaying(audioEngine.state.isPlaying);
+            setIsMicOn(!!audioEngine.micStream);
+            setIsRecording(audioEngine.isRecording);
+            setEditTool(audioEngine.state.editTool);
+
+            // Check for MIDI candidates to import
+            const candidates = audioEngine.state.midiTrackCandidates;
+            if (candidates && candidates.length > 0) {
+                setMidiTracks(candidates);
+                setShowMidiSelector(true);
+                // Clear the state so it doesn't pop up again immediately
+                // Actually we should clear it after selection or cancel
+                audioEngine.updateState({ midiTrackCandidates: undefined });
+            }
+        });
+        const i = setInterval(() => {
+            // Polling for selectedNote visibility since it's not in local state
+            // Or better, add it to local state:
+            // setHasSelection(!!audioEngine.state.selectedNote);
+        }, 100);
+
+        return () => {
+            unsub();
+            clearInterval(i);
+        };
+    }, []);
+
+    // Better way: use useSyncExternalStore or just a simple hook wrapper.
+    // For now, let's use a simple "dummy" state to force re-render on notify
+    const [, forceUpdate] = useState(0);
+
+    useEffect(() => {
+        return audioEngine.subscribe(() => forceUpdate(n => n + 1));
+    }, []);
+
+    const togglePlay = async () => {
+        if (audioEngine.state.isPlaying) {
+            audioEngine.stopPlayback();
+        } else {
+            await audioEngine.ensureAudio();
+            audioEngine.startPlayback();
+        }
+    };
+
+    const toggleMic = async () => {
+        if (isMicOn) {
+            // Stop mic
+            if (audioEngine.micStream) {
+                audioEngine.micStream.getTracks().forEach(t => t.stop());
+                audioEngine.micStream = null;
+                audioEngine.notify();
+            }
+        } else {
+            await audioEngine.initMic();
+        }
+    };
+
+    const handleMidiSelect = (trackId: number) => {
+        audioEngine.importMidiTrack(trackId);
+        audioEngine.startPractice({ mode: 'Midi' });
+        setShowMidiSelector(false);
+    };
+
+    const toggleRecord = async () => {
+        if (isRecording) {
+            const blob = await audioEngine.stopRecording();
+            if (blob && onRecordingComplete) {
+                onRecordingComplete(blob);
+            }
+        } else {
+            await audioEngine.startRecording();
+        }
+    };
+
+    return (
+        <div id="bottom-controls-panel" className="fixed bottom-0 left-0 right-0 bg-neutral-900 border-t border-white/10 p-4 pb-safe z-50">
+            <div className="max-w-4xl mx-auto flex items-center justify-between gap-4 overflow-x-auto no-scrollbar">
+
+                {/* Left: Playback & Recording */}
+                <div className="flex items-center gap-2 shrink-0">
+                    <button
+                        onClick={togglePlay}
+                        className={cn(
+                            "w-12 h-12 rounded-full flex items-center justify-center transition-all",
+                            isPlaying
+                                ? "bg-red-500/20 text-red-500 hover:bg-red-500/30"
+                                : "bg-blue-600 hover:bg-blue-500 text-white shadow-lg shadow-blue-500/20"
+                        )}
+                        title={isPlaying ? "Stop (Space)" : "Play (Space)"}
+                    >
+                        {isPlaying ? <Square className="w-5 h-5 fill-current" /> : <Play className="w-5 h-5 fill-current translate-x-0.5" />}
+                    </button>
+
+                    <button
+                        onClick={toggleMic}
+                        className={cn(
+                            "w-10 h-10 rounded-full flex items-center justify-center transition-all border",
+                            isMicOn
+                                ? "bg-red-500 text-white border-red-500 shadow-red-500/20 animate-pulse"
+                                : "bg-white/5 border-white/10 text-white/70 hover:text-white hover:bg-white/10"
+                        )}
+                        title="Toggle Microphone"
+                    >
+                        <Mic className="w-5 h-5" />
+                    </button>
+
+                    <button
+                        onClick={toggleRecord}
+                        className={cn(
+                            "w-10 h-10 rounded-full flex items-center justify-center transition-all border",
+                            isRecording
+                                ? "bg-red-600 text-white border-red-600 shadow-lg shadow-red-600/30"
+                                : "bg-white/5 border-white/10 text-white/70 hover:text-white hover:bg-white/10"
+                        )}
+                        title={isRecording ? "Stop Recording" : "Start Recording"}
+                    >
+                        <div className={cn(
+                            "w-4 h-4 rounded-full transition-all",
+                            isRecording ? "bg-white rounded-sm" : "bg-red-500"
+                        )} />
+                    </button>
+                </div>
+
+                <div className="w-px h-8 bg-white/10 shrink-0 hidden sm:block" />
+
+                {/* Center: Tools */}
+                <div className="flex items-center bg-white/5 rounded-full p-1 gap-1 shrink-0">
+                    {[
+                        { id: 'select', icon: MousePointer2, label: 'Select' },
+                        { id: 'view', icon: Hand, label: 'Pan' },
+                        { id: 'pencil', icon: Pencil, label: 'Draw' },
+                        { id: 'eraser', icon: Eraser, label: 'Erase' }
+                    ].map(tool => (
+                        <button
+                            key={tool.id}
+                            onClick={() => audioEngine.setTool(tool.id as AudioEngineState['editTool'])}
+                            className={cn(
+                                "p-2 rounded-full transition-all relative group",
+                                editTool === tool.id
+                                    ? "bg-blue-600 text-white shadow-md"
+                                    : "text-white/50 hover:text-white hover:bg-white/10"
+                            )}
+                            title={tool.label}
+                        >
+                            <tool.icon className="w-5 h-5" />
+                        </button>
+                    ))}
+                </div>
+
+                <div className="w-px h-8 bg-white/10 shrink-0 hidden sm:block" />
+
+                {/* Right: Actions */}
+                <div className="flex items-center gap-2 shrink-0 ml-auto">
+                    {onOpenPractice && (
+                        <button
+                            onClick={onOpenPractice}
+                            className="p-2.5 rounded-lg border border-white/10 bg-white/5 text-white/70 hover:text-white hover:bg-white/10 transition-all"
+                            title="Practice Tools"
+                        >
+                            <Activity className="w-5 h-5" />
+                        </button>
+                    )}
+
+                    {onOpenHistory && (
+                        <button
+                            onClick={onOpenHistory}
+                            className="p-2.5 rounded-lg border border-white/10 bg-white/5 text-white/70 hover:text-white hover:bg-white/10 transition-all"
+                            title="History & Analytics"
+                        >
+                            <Clock className="w-5 h-5" />
+                        </button>
+                    )}
+
+                    <button
+                        onClick={onOpenSettings}
+                        className="p-2.5 rounded-lg border border-white/10 bg-white/5 text-white/70 hover:text-white hover:bg-white/10 transition-all"
+                        title="Settings"
+                    >
+                        <Settings className="w-5 h-5" />
+                    </button>
+                </div>
+            </div>
+
+            {/* MIDI Selector Modal */}
+            {showMidiSelector && (
+                <MidiTrackSelector
+                    tracks={midiTracks}
+                    onSelect={handleMidiSelect}
+                    onCancel={() => setShowMidiSelector(false)}
+                    open={showMidiSelector}
+                />
+            )}
+        </div>
+    );
+}

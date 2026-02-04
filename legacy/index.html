@@ -1,0 +1,510 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <title>音程練習アプリ</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta http-equiv="Cache-Control" content="no-store" />
+  <link rel="stylesheet" href="styles.css?v=20250920-1" />
+</head>
+<body>
+  
+  
+  <!-- アドバイスパネル（ボタンで開閉） -->
+  <div id="advicePanel" style="display:none;position:fixed;top:48px;right:12px;width:min(520px,92vw);max-width:92vw;max-height:70vh;overflow:auto;background:#111;color:#eee;border:1px solid #444;border-radius:8px;box-shadow:0 6px 20px rgba(0,0,0,0.5);padding:12px;z-index:1400;">
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:8px;">
+      <div style="font-weight:600;">採点フィードバック</div>
+      <button id="adviceClose" title="閉じる">✖</button>
+    </div>
+    <div id="adviceText" style="white-space:pre-wrap;font-size:13px;line-height:1.5;margin-bottom:8px;">データを集計しています…</div>
+    <div style="font-size:12px;margin:6px 0 4px;opacity:0.85;">正しい率（音種×オクターブ）</div>
+    <canvas id="adviceCanvas" width="480" height="240" style="width:100%;height:auto;border:1px solid #333;background:#0b0b0b;"></canvas>
+  </div>
+  <!-- マイク安定化ヘルプパネル -->
+  <div id="micHelpPanel" style="display:none;position:fixed;top:56px;right:12px;width:min(560px,94vw);max-width:94vw;max-height:72vh;overflow:auto;background:#0f0f10;color:#e6eaf2;border:1px solid #2b3244;border-radius:10px;box-shadow:0 8px 24px rgba(0,0,0,0.55);padding:14px;z-index:1450;">
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:8px;">
+      <div style="font-weight:600;">🎤 マイクがロングトーンで途切れるときの対処</div>
+      <button id="micHelpClose" title="閉じる">✖</button>
+    </div>
+    <div style="font-size:13px;line-height:1.6;white-space:normal;">
+      <p style="margin:6px 0 10px;opacity:0.9;">ロングトーンで入力レベルがすぐゼロになる場合、多くはOS/ドライバやブラウザ側の自動ノイズ抑制/AGC/VADが原因です。以下を上から順にお試しください。</p>
+      <details open style="margin:6px 0 8px;">
+        <summary style="cursor:pointer;font-weight:600;">Windows（PC）</summary>
+        <ul style="margin:6px 0 0 18px;">
+          <li>設定 → システム → サウンド → 入力 → デバイスのプロパティ → 追加のデバイスプロパティ（コントロール パネル）で、ノイズ抑制/ビームフォーミング/自動ゲインを無効にする。</li>
+          <li>録音デバイスの「詳細」で既定の形式（例: 48kHz 16bit）を固定。アプリの要求と揃えると安定する場合あり。</li>
+          <li>Zoom/Teams/Discord 等の常駐アプリは完全終了、あるいはアプリ内の「高度なオーディオ処理」をOFF。</li>
+        </ul>
+      </details>
+      <details style="margin:6px 0 8px;">
+        <summary style="cursor:pointer;font-weight:600;">macOS（Mac）</summary>
+        <ul style="margin:6px 0 0 18px;">
+          <li>システム設定 → サウンド → 入力 → 「環境ノイズを低減」をOFF（OSバージョンで文言が異なる場合あり）。</li>
+          <li>通話系アプリのバックグラウンド処理を停止、もしくはアプリ側のノイズ抑制/AGCをOFF。</li>
+        </ul>
+      </details>
+      <details style="margin:6px 0 8px;">
+        <summary style="cursor:pointer;font-weight:600;">iPhone / iPad（iOS/iPadOS）</summary>
+        <ul style="margin:6px 0 0 18px;">
+          <li>コントロールセンター → マイクモードを「ワイドスペクトル」に変更（ノイズ抑制が弱まり持続音が途切れにくくなる場合あり）。</li>
+          <li>ブラウザは最新のSafari推奨。ホーム画面に追加（PWA）＋画面常時オンで安定することがあります。</li>
+        </ul>
+      </details>
+      <details style="margin:6px 0 8px;">
+        <summary style="cursor:pointer;font-weight:600;">Android</summary>
+        <ul style="margin:6px 0 0 18px;">
+          <li>通話強化や騒音抑制の端末設定をOFF（機種により名称が異なります）。</li>
+          <li>Chrome最新版を推奨。ホーム追加（PWA）＋画面常時オンで省電力の影響を受けにくくなる場合あり。</li>
+        </ul>
+      </details>
+      <details style="margin:6px 0 8px;">
+        <summary style="cursor:pointer;font-weight:600;">ブラウザのヒント</summary>
+        <ul style="margin:6px 0 0 18px;">
+          <li>このアプリは可能な限り「生のマイク」を要求しています（AEC/NS/AGCをOFF指定）。ただし端末側で強制される場合は回避できません。</li>
+          <li>Chrome系では flags や実験的機能が影響することがあります。業務端末ではポリシーにより変更不可の場合あり。</li>
+        </ul>
+      </details>
+      <details style="margin:6px 0 8px;">
+        <summary style="cursor:pointer;font-weight:600;">外部マイク / オーディオIF</summary>
+        <ul style="margin:6px 0 0 18px;">
+          <li>USBオーディオインターフェースや外部マイクは、内蔵マイクより自動処理が少ない傾向。ロングトーンの安定性が大きく向上します。</li>
+        </ul>
+      </details>
+      <details style="margin:6px 0 8px;">
+        <summary style="cursor:pointer;font-weight:600;">クイックチェック（困ったら）</summary>
+        <ol style="margin:6px 0 0 18px;">
+          <li>通話アプリを完全終了</li>
+          <li>OSのノイズ抑制/AGCをOFF</li>
+          <li>外部マイク/IFがあれば切替</li>
+          <li>ブラウザ最新版で再試行（必要ならPWA＋画面ON）</li>
+        </ol>
+      </details>
+      <p style="margin:10px 0 0;opacity:0.85;font-size:12px;">注: これらは端末/OS/ブラウザの設計に依存します。アプリ側ではAEC/NS/AGCを無効化要求していますが、上流で強制される場合は端末設定の調整が必要です。</p>
+    </div>
+  </div>
+  <!-- アプリ全体ヘルプパネル -->
+  <div id="globalHelpPanel" style="display:none;position:fixed;top:56px;right:12px;width:min(640px,95vw);max-width:95vw;max-height:76vh;overflow:auto;background:#0f0f10;color:#e6eaf2;border:1px solid #2b3244;border-radius:10px;box-shadow:0 8px 24px rgba(0,0,0,0.55);padding:14px;z-index:1460;">
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:8px;">
+      <div style="font-weight:600;">❓ このアプリの使い方</div>
+      <button id="globalHelpClose" title="閉じる">✖</button>
+    </div>
+    <div style="font-size:13px;line-height:1.6;white-space:normal;">
+      <details open style="margin:6px 0 8px;">
+        <summary style="cursor:pointer;font-weight:600;">まずはこれだけ</summary>
+        <ol style="margin:6px 0 0 18px;">
+          <li>上の「メロディ音声を選択」か「🎯 基礎練習モード」を選ぶ</li>
+          <li>▶ 再生 を押して、ガイドに合わせて声を出す（棒線が履歴）</li>
+          <li>止めたら「🧠 アドバイス」で改善ポイントを見る</li>
+        </ol>
+      </details>
+      <details style="margin:6px 0 8px;">
+        <summary style="cursor:pointer;font-weight:600;">音声を読み込む</summary>
+        <ul style="margin:6px 0 0 18px;">
+          <li>「メロディ音声を選択」から WAV / MP3 / M4A を選ぶ</li>
+          <li>必要なら「伴奏音声を選択」も追加できる</li>
+        </ul>
+      </details>
+      <details style="margin:6px 0 8px;">
+        <summary style="cursor:pointer;font-weight:600;">マイクで練習</summary>
+        <ul style="margin:6px 0 0 18px;">
+          <li>「マイク許可」を押して、メーターが動くか確認</li>
+          <li>小さすぎる音はゲート(dB)でカット。遅延は「🧭 アシスト」で合わせる</li>
+          <li>長音が途切れる時は「📘 マイクの安定化ヘルプ」を見る</li>
+        </ul>
+      </details>
+      <details style="margin:6px 0 8px;">
+        <summary style="cursor:pointer;font-weight:600;">編集モード</summary>
+        <ul style="margin:6px 0 0 18px;">
+          <li>「✏️ 編集モード」ONで、再生線のノートが自動で選ばれる（黄色は単一選択）</li>
+          <li>分割 / ±1 / ±12 / 範囲選択。保存→復帰でいつでも戻せる</li>
+        </ul>
+      </details>
+      <details style="margin:6px 0 8px;">
+        <summary style="cursor:pointer;font-weight:600;">採点とアドバイス</summary>
+        <ul style="margin:6px 0 0 18px;">
+          <li>棒線がガイドに近ければOK。許容は「採点」で調整できる</li>
+          <li>停止後に「🧠 アドバイス」で傾向とヒントをチェック</li>
+        </ul>
+      </details>
+      <details style="margin:6px 0 8px;">
+        <summary style="cursor:pointer;font-weight:600;">見づらい・合わない時</summary>
+        <ul style="margin:6px 0 0 18px;">
+          <li>見づらい: 「表示」で縦範囲やガイド太さを調整（触らなくてもOK）</li>
+          <li>精度を上げたい: 「解析」でレートやA4を調整（分からなければ既定でOK）</li>
+        </ul>
+      </details>
+      <details style="margin:6px 0 8px;">
+        <summary style="cursor:pointer;font-weight:600;">トラブル時のヒント</summary>
+        <ul style="margin:6px 0 0 18px;">
+          <li>音が拾えない: 入力レベル/ゲートを上げる。静かな場所で</li>
+          <li>遅れて聞こえる: 「🧭 遅延補正アシスト」で合わせる</li>
+          <li>長音が切れる: 「📘 マイクの安定化ヘルプ」を開く</li>
+        </ul>
+      </details>
+    </div>
+  </div>
+  <!-- 右上バーはトップバー内の末尾に常設（通常フロー配置） -->
+  <div id="top-bar" style="display:flex;gap:8px;align-items:center;flex-wrap:nowrap;overflow-x:auto;scrollbar-width:thin;">
+    <div style="display:inline-flex;align-items:center;gap:6px;">
+      <label style="display:inline-flex;align-items:center;gap:4px;">
+        <span class="txt">Part</span>
+        <select id="melodyPartSelect" title="編集・読込対象のメロディパート">
+          <option value="0">1</option>
+          <option value="1">2</option>
+          <option value="2">3</option>
+          <option value="3">4</option>
+        </select>
+      </label>
+      <button id="melodyAudioSelectBtn" type="button" title="メロディ音声ファイルを読み込む"><span class="icon">🎵</span><span class="txt">メロディ音声を選択</span></button>
+  <span id="melodyAudioLabel" style="display:inline-block;" title="未選択">未選択</span>
+      <input id="melodyAudioInput" type="file" accept="audio/wav,audio/mpeg,audio/mp3,audio/mp4,audio/aac,.wav,.mp3,.m4a" style="display:none;" />
+    </div>
+  <div style="display:inline-flex;align-items:center;gap:6px;">
+      <button id="accompAudioSelectBtn" type="button" title="伴奏音声ファイルを読み込む"><span class="icon">🎶</span><span class="txt">伴奏音声を選択</span></button>
+  <span id="accompAudioLabel" style="display:inline-block;" title="未選択">未選択</span>
+      <input id="accompAudioInput" type="file" accept="audio/wav,audio/mpeg,audio/mp3,audio/mp4,audio/aac,.wav,.mp3,.m4a" style="display:none;" />
+    </div>
+    <div style="display:inline-flex;align-items:center;gap:6px;">
+      <button id="sessionSaveBtn" type="button" title="音声・ノート・赤点をzipに保存">💾 <span class="txt">記録</span></button>
+      <button id="sessionLoadBtn" type="button" title="保存したzipを読み込み">📂 <span class="txt">読込</span></button>
+      <input id="sessionLoadInput" type="file" accept=".zip" style="display:none;" />
+    </div>
+    <div style="display:inline-flex;align-items:center;gap:8px;flex:0 0 auto;min-width:auto;">
+      <button id="editModeToggle" type="button" title="ノートの編集を行う">✏️ <span class="txt">編集モード</span></button>
+      <label style="display:inline-flex;align-items:center;gap:4px;">
+        <input id="partNotesToggle" type="checkbox" checked /> <span class="txt">ノーツ</span>
+      </label>
+      <label style="display:inline-flex;align-items:center;gap:4px;">
+        <input id="partPlaybackToggle" type="checkbox" checked /> <span class="txt">再生</span>
+      </label>
+    </div>
+    <div style="display:inline-flex;align-items:center;gap:6px;">
+      <button id="practiceModeOn" type="button" title="基礎練習モードに切替">🎯 <span class="txt">基礎練習モード</span></button>
+      <button id="practiceModeOff" type="button" title="通常モードに戻る" style="display:none;">↩ <span class="txt">通常モード</span></button>
+      <select id="practicePatternSelect" title="練習パターン" style="display:none;">
+        <option value="scaleUp">スケール（上行）</option>
+        <option value="scaleDown">スケール（下行）</option>
+        <option value="scaleUpDown">スケール（往復）</option>
+        <option value="ascMajor">ドレミファソラシド（上行）</option>
+        <option value="descMajor">ドシラソファミレド（下行）</option>
+        <option value="chromaticAsc">半音階 上行</option>
+        <option value="chromaticDesc">半音階 下行</option>
+        <option value="chordPractice">コード練習（ランダム進行）</option>
+        <option value="chordPracticeRandOrder">コード練習（ランダム進行・ランダム並び）</option>
+        <option value="chordAllMajor">コード練習（全メジャー12キー）</option>
+        <option value="chordAllMinor">コード練習（全マイナー12キー）</option>
+      </select>
+      <div style="display:none;align-items:center;gap:6px;" id="practiceRangeWrap">
+        <span class="lbl">基準:</span>
+        <select id="practiceRootSel" title="基準音">
+          <option>C5</option><option>C#5</option><option>D5</option><option>D#5</option><option>E5</option><option>F5</option><option>F#5</option><option>G5</option><option>G#5</option><option>A5</option><option>A#5</option><option>B5</option>
+        </select>
+        <span id="practiceChordOptsWrap" style="display:none;align-items:center;gap:6px;">
+          <span class="lbl">キー:</span>
+          <select id="practiceKeyMode" title="キー種別">
+            <option value="major" selected>メジャー</option>
+            <option value="minor">マイナー</option>
+            <option value="random">ランダム</option>
+          </select>
+          <label style="display:inline-flex;align-items:center;gap:4px;">
+            <input id="practiceSeventh" type="checkbox" /> 7thを含む
+          </label>
+          <label style="display:inline-flex;align-items:center;gap:4px;">
+            <input id="practiceSixth" type="checkbox" /> 6thを含む
+          </label>
+        </span>
+        <span class="lbl">FROM:</span>
+        <select id="practiceFromSel" title="範囲の下限">
+          <option selected>C4</option><option>C#4</option><option>D4</option><option>D#4</option><option>E4</option><option>F4</option><option>F#4</option><option>G4</option><option>G#4</option><option>A4</option><option>A#4</option><option>B4</option>
+          <option>C5</option><option>C#5</option><option>D5</option><option>D#5</option><option>E5</option><option>F5</option><option>F#5</option><option>G5</option><option>G#5</option><option>A5</option><option>A#5</option><option>B5</option>
+          <option>C6</option><option>C#6</option><option>D6</option><option>D#6</option><option>E6</option><option>F6</option><option>F#6</option><option>G6</option><option>G#6</option><option>A6</option>
+        </select>
+        <span class="lbl">TO:</span>
+        <select id="practiceToSel" title="範囲の上限">
+          <option>C4</option><option>C#4</option><option>D4</option><option>D#4</option><option>E4</option><option>F4</option><option>F#4</option><option>G4</option><option>G#4</option><option>A4</option><option>A#4</option><option>B4</option>
+          <option>C5</option><option>C#5</option><option>D5</option><option>D#5</option><option>E5</option><option>F5</option><option>F#5</option><option>G5</option><option>G#5</option><option>A5</option><option>A#5</option><option>B5</option>
+          <option>C6</option><option>C#6</option><option>D6</option><option>D#6</option><option>E6</option><option>F6</option><option>F#6</option><option>G6</option><option>G#6</option><option selected>A6</option>
+        </select>
+        <span class="lbl">速度(BPM):</span> <input id="practiceBpm" type="number" value="80" min="40" max="180" step="1" style="width:70px;" />
+      </div>
+      <button id="practiceStartBtn" type="button" style="display:none;">▶ <span class="txt">開始</span></button>
+      <button id="practicePauseBtn" type="button" style="display:none;">⏸ <span class="txt">一時停止</span></button>
+      <button id="practiceStopBtn" type="button" style="display:none;">■ <span class="txt">終了</span></button>
+      <div id="practiceVolWrap" style="display:none;align-items:center;gap:6px;">
+        <span class="lbl">お手本音量</span>
+        <input id="practiceCallVol" type="range" min="0" max="1" step="0.01" value="0.85" style="width:120px;" />
+      </div>
+    </div>
+    <div id="mic-permission-bar">
+      <button id="adviceBtn" title="採点フィードバックを表示">🧠 <span class="txt">アドバイス</span></button>
+      <button id="micPermissionBtn" title="マイク入力の許可をリクエスト">🎤 <span class="txt">マイク許可</span></button>
+  <button id="micDisconnectBtn" title="マイク入力を停止">🔌 <span class="txt">マイク停止</span></button>
+      <button id="pitchOnlyModeBtn" title="音源を使わず、マイクの音程だけを記録・表示します（再生は無音）">📈 <span class="txt">音程モード</span></button>
+      <button id="globalHelpBtn" title="このアプリの使い方">❓ <span class="txt">ヘルプ</span></button>
+    </div>
+  </div>
+  <div id="chartContainer">
+    <canvas id="chartCanvas"></canvas>
+    <!-- 左端オクターブ移動ボタン -->
+    <div id="leftOctavePanel" style="position:absolute;left:8px;top:50%;transform:translateY(-50%);display:flex;flex-direction:column;gap:6px;z-index:1200;">
+      <button id="globalOctUpBtn" type="button" title="メロディ全体を +12">＋</button>
+      <button id="globalOctDownBtn" type="button" title="メロディ全体を -12">－</button>
+    </div>
+    <div id="rightVerticalPanel">
+      <input class="vert-range" id="verticalOffsetSliderRight" type="range" min="0" max="100" value="0" />
+      <div class="v-offset-label">音域</div>
+    </div>
+    <!-- 編集ツールバー（編集モード時のみ表示） -->
+  <div id="editToolbar" class="hidden" style="position:absolute;top:8px;left:80px;z-index:1200;background:rgba(20,20,20,0.95);border:1px solid #555;border-radius:6px;padding:6px 8px;gap:8px;align-items:center;flex-wrap:wrap;display:none;">
+      <button id="undoBtn" type="button" title="元に戻す (Ctrl+Z)">↶ Undo</button>
+      <button id="redoBtn" type="button" title="やり直し (Ctrl+Y)">↷ Redo</button>
+      <div style="width:1px;height:20px;background:#555;"> </div>
+  <button id="splitNoteBtn" type="button" title="再生線位置でノート分割">✂ 分割</button>
+  <button id="rangeStartBtn" type="button" title="範囲開始(起点は再生線上ノート)">[範囲開始]</button>
+  <button id="rangeEndBtn" type="button" title="範囲終了/確定" disabled>[範囲終了]</button>
+  <span id="rangeHint" style="font-size:11px;color:#ccc;"></span>
+      <button id="clearSelectionBtn" type="button">選択解除</button>
+  <button id="octDownBtn" type="button" title="選択に -12 (Shift: 以降)">-12</button>
+  <button id="octUpBtn" type="button" title="選択に +12 (Shift: 以降)">+12</button>
+  <button id="semiDownBtn" type="button" title="選択に -1">-1</button>
+  <button id="semiUpBtn" type="button" title="選択に +1">+1</button>
+      <label style="display:inline-flex;align-items:center;gap:6px;"><input id="applyForwardToggle" type="checkbox" /> 以降にも適用（同フレーズ）</label>
+      <div style="width:1px;height:20px;background:#555;"> </div>
+      <button id="noteSnapSaveBtn" type="button" title="現在のノート状態を保存（ワンタッチ復帰用）">📌 保存</button>
+      <button id="noteSnapRestoreBtn" type="button" title="保存時点のノートに復帰" disabled>↩ 復帰</button>
+      <div style="width:1px;height:20px;background:#555;"> </div>
+  <!-- 保存/復元（補正）はセッション記録/読込に統合したため削除 -->
+      <div style="width:1px;height:20px;background:#555;"> </div>
+      <button id="midiRefSelectBtn" type="button" title="MIDI参照を読み込み">MIDI参照</button>
+      <input id="midiRefInput" type="file" accept="audio/midi,.mid,.midi" style="display:none;" />
+      <select id="midiTrackSelect" style="display:none; max-width:220px;"></select>
+  <button id="midiApplyBtn" type="button" style="display:none;">参照に適用</button>
+  <button id="midiGenerateBtn" type="button" style="display:none;">MIDIから生成</button>
+      <div id="midiAlignPanel" style="display:none; align-items:center; gap:6px; margin-left:6px;">
+  <span style="color:#9ab;">対応調整</span>
+  <label style="display:none;align-items:center;gap:4px;">解析開始<select id="midiAlignDetStart" style="max-width:160px;"></select></label>
+  <label style="display:none;align-items:center;gap:4px;">MIDI開始<select id="midiAlignRefStart" style="max-width:160px;"></select></label>
+  <label style="display:inline-flex;align-items:center;gap:4px;">倍率<input id="midiAlignScale" type="number" step="0.001" value="1.0" style="width:64px;"/></label>
+  <button id="midiAlignFitEnds" type="button" title="頭と最後のノーツを合わせて倍率を自動調整">両端合わせ</button>
+        <span id="midiAlignInfo" style="font-size:12px;color:#bbb;"></span>
+      </div>
+    </div>
+    <!-- 練習ツールバー（練習モード時のみ表示）: トップバーに重なる固定配置 -->
+    <div id="practiceToolbar" class="hidden" style="position:fixed;top:6px;left:8px;z-index:1300;background:rgba(20,20,20,0.95);border:1px solid #555;border-radius:6px;padding:6px 8px;gap:8px;align-items:center;flex-wrap:wrap;display:none;max-width:min(96vw,1100px);">
+      <!-- ここに既存の練習UI要素（#practicePatternSelect, #practiceRangeWrap, #practiceStartBtn, #practicePauseBtn, #practiceStopBtn, #practiceVolWrap）を動的に移設します -->
+      <button id="practiceCloseBtn" type="button" title="通常モードに戻る" style="display:none; margin-left:auto;">✖ <span class="txt">閉じる</span></button>
+    </div>
+  </div>
+  <!-- 解析中オーバーレイ -->
+  <div id="analyzingOverlay" class="overlay hidden" aria-live="polite" aria-busy="true">
+    <div class="overlay-content">
+      <div class="spinner" aria-hidden="true"></div>
+      <div id="analyzingText">解析中…</div>
+    </div>
+  </div>
+  <!-- タイムライン水平スクロール -->
+  <div id="timelineScrollBar" style="margin:6px 0 8px; padding:0 8px;">
+    <input id="timelineScroll" type="range" min="0" max="0" step="0.01" value="0" style="width:100%;" title="タイムラインの位置" />
+  </div>
+  <!-- 再生系ボタン: タイムライン直下 -->
+  <div id="transportBar">
+    <div class="transport-left" style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
+      <button id="rewind10" type="button">⏪ -10s</button>
+      <button id="rewind5" type="button">◀ -5s</button>
+      <button id="playButton" type="button">▶ 再生</button>
+    <button id="pauseButton" type="button">⏸ 一時停止</button>
+  <button id="stopButton" type="button" tabindex="-1" aria-label="停止 (ポインター操作のみ)">⏹ 停止</button>
+      <button id="forward5" type="button">+5s ▶</button>
+      <button id="forward10" type="button">+10s ⏩</button>
+      <div class="transport-hint">停止ボタン: 1回=一時停止, 2回目=頭出し</div>
+    </div>
+    <div class="transport-right" style="margin-left:auto; display:flex; align-items:center; gap:12px; flex-wrap:wrap;">
+  <button id="clearDotsButton" type="button" title="記録済みの音程記録をすべて削除" style="white-space:nowrap; font-size:12px; line-height:1; padding:4px 8px;">🗑 音程記録削除</button>
+      <div style="display:flex; align-items:center; gap:8px;">
+        <span style="color:#fff;">メロディ再生</span>
+  <input id="guideVolumeSlider" type="range" min="0" max="1" value="0.2" step="0.01" style="width:120px;" title="メロディ音量" />
+      </div>
+      <div style="display:flex; align-items:center; gap:8px;">
+        <span style="color:#fff;">伴奏再生</span>
+        <input id="accompVolumeSlider" type="range" min="0" max="1" value="0.8" step="0.01" style="width:120px;" title="伴奏音量" />
+      </div>
+    </div>
+  </div>
+  <!-- マーカー: 再生控制の直下に移動 -->
+  <div class="markers-grid" id="markers">
+    <div class="marker-pair"><button id="markerA_set">Aセット</button><button id="markerA_play">A再生</button></div>
+    <div class="marker-pair"><button id="markerB_set">Bセット</button><button id="markerB_play">B再生</button></div>
+    <div class="marker-pair"><button id="markerC_set">Cセット</button><button id="markerC_play">C再生</button></div>
+    <div class="marker-pair"><button id="markerD_set">Dセット</button><button id="markerD_play">D再生</button></div>
+    <div class="marker-pair"><button id="markerE_set">Eセット</button><button id="markerE_play">E再生</button></div>
+    <div class="marker-pair"><button id="markerF_set">Fセット</button><button id="markerF_play">F再生</button></div>
+    <div class="marker-pair"><button id="markerG_set">Gセット</button><button id="markerG_play">G再生</button></div>
+  </div>
+  <div id="controls">
+    <!-- 入力・マイク（遅延補正を統合） -->
+    <details class="controls-section" id="sec-input" open>
+      <summary>入力・マイク</summary>
+      <div class="controls-grid" style="margin-top:8px;">
+        <div class="control-group">
+          <label for="micRenderModeSelect">マイクの描画モード</label><br />
+          <select id="micRenderModeSelect">
+            <option value="line">棒線</option>
+            <option value="dot">赤い点</option>
+            <option value="graph" selected>グラフ</option>
+          </select>
+          <div class="help-text">リアルタイム音程の表示方法を切り替えます。</div>
+        </div>
+        <div class="control-group">
+          <label for="gateSlider">マイクの感度 (ゲート, dB)</label><br />
+          <input id="gateSlider" type="range" min="-60" max="0" value="-40" />
+          <span id="gateValue">-40</span>
+          <div class="help-text">入力音量の下限。小さい音は無視します。</div>
+          <div id="micLevelMeter" style="position:relative;margin-top:4px;height:10px;background:#222;border:1px solid #444;border-radius:3px;overflow:hidden;">
+            <div id="micLevelBar" style="height:100%;width:0;background:linear-gradient(90deg,#0f0,#ff0,#f00);"></div>
+            <div id="micGateLine" style="position:absolute;top:0;bottom:0;width:2px;background:#fff;opacity:0.8;pointer-events:none;"></div>
+          </div>
+          <div style="font-size:11px;color:#ccc;margin-top:2px;display:flex;justify-content:space-between;">
+            <span>レベル</span><span id="micDbText">-- dB</span>
+          </div>
+          <div style="margin-top:6px;display:flex;gap:8px;flex-wrap:wrap;">
+            <button id="micHelpBtn" type="button" title="ロングトーンが途切れる時の対処やOS側設定のコツを表示">📘 マイクの安定化ヘルプ</button>
+          </div>
+        </div>
+        <div class="control-group" id="btLatencyGroup">
+          <label>遅延補正</label><br/>
+          <label style="display:inline-flex;align-items:center;gap:6px;">
+            <input id="btLatencyToggle" type="checkbox" /> 有効
+          </label>
+          <div style="display:flex;align-items:center;gap:8px;margin-top:6px;">
+            <input id="btLatencySlider" type="range" min="0" max="300" step="10" value="100" style="width:220px;" />
+            <span id="btLatencyValue">100 ms</span>
+          </div>
+          <div style="display:flex;align-items:center;gap:10px;margin-top:6px;flex-wrap:wrap;">
+            <button id="btLatencyCalibBtn" type="button" title="カウントダウン後、停止ボタンを押すまで一定間隔のノーツが流れます。ノーツに合わせて短く発声し、下の遅延補正スライダを動かしてタイミングを合わせてください。">🧭 遅延補正アシスト</button>
+            <span id="btCalibStatus" style="font-size:12px;color:#ccc;">未測定</span>
+          </div>
+          <div class="help-text">イヤホン等で発生する再生遅延を前倒し補正します。アシストでは音程は無視し、音を拾ったタイミングだけで棒線を描画します。スライダ操作は即時反映されます。</div>
+        </div>
+      </div>
+  </details>
+
+    <!-- 解析（ピッチ検出） -->
+    <details class="controls-section" id="sec-analysis">
+      <summary>解析</summary>
+      <div class="controls-grid" style="margin-top:8px;">
+        <div class="control-group">
+          <label for="rateSlider">解析レート (Hz)</label><br />
+          <input id="rateSlider" type="range" min="10" max="120" value="120" step="5" />
+          <span id="rateValue">120</span>
+          <div class="help-text">音程解析の頻度。高いほど滑らか。</div>
+        </div>
+      </div>
+  </details>
+
+    <!-- 表示 -->
+    <details class="controls-section" id="sec-visual">
+      <summary>表示</summary>
+      <div class="controls-grid" style="margin-top:8px;">
+        <div class="control-group">
+          <label for="labelNotationSelect">音名表記</label><br />
+          <select id="labelNotationSelect">
+            <option value="CDE" selected>CDE</option>
+            <option value="ドレミ">ドレミ</option>
+          </select>
+          <div class="help-text">ピアノ鍵盤のラベル表記。</div>
+        </div>
+        <div class="control-group">
+          <label><input id="showNoteNamesToggle" type="checkbox" checked /> ノート音名表示</label>
+          <div class="help-text">ノート上に音名を描画。</div>
+        </div>
+        <div class="control-group">
+          <label for="verticalZoomSlider">表示の高さ範囲 (オクターブ)</label><br />
+          <input id="verticalZoomSlider" type="range" min="1" max="8" value="2.5" step="0.5" />
+          <div class="help-text">縦方向の表示範囲。オクターブ数。</div>
+        </div>
+        <div class="control-group">
+          <label for="timeScaleSlider">タイムスケール (px/秒)</label><br />
+          <input id="timeScaleSlider" type="range" min="40" max="500" value="150" step="10" />
+          <span id="timeScaleValue">150</span>
+          <div class="help-text">横方向の拡大縮小。音の再生速度は変わりません。</div>
+        </div>
+        <div class="control-group">
+          <label for="guideLineWidthSlider">ガイド線の太さ (px)</label><br />
+          <input id="guideLineWidthSlider" type="range" min="1" max="10" value="4" />
+          <div class="help-text">メロディガイド線の太さ。</div>
+        </div>
+        <div class="control-group toggles" style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;">
+          <label><input id="followToggle" type="checkbox" checked /> 追従</label>
+        </div>
+      </div>
+  </details>
+
+    <!-- 採点（折りたたみ） -->
+    <details class="controls-section" id="sec-scoring">
+      <summary>採点</summary>
+      <div class="controls-grid" style="margin-top:8px;">
+        <div class="control-group">
+          <label for="toleranceSlider">音程の許容範囲(±セント)</label><br />
+          <input id="toleranceSlider" type="range" min="10" max="30" value="20" step="10" />
+          <span id="toleranceValue">20</span>
+          <div class="help-text">音程一致とみなす範囲。±20セントが標準。</div>
+        </div>
+      </div>
+  </details>
+
+
+    <!-- 詳細設定（折りたたみ） -->
+    <details class="controls-section" id="sec-advanced">
+      <summary>詳細設定（可視化の調整）</summary>
+      <div class="controls-grid" style="margin-top:8px;">
+        <div class="control-group">
+          <label for="visTimeSnapMs">時間スナップ許容 (ms)</label><br />
+          <input id="visTimeSnapMs" type="range" min="60" max="260" step="10" value="180" />
+          <span id="visTimeSnapMsVal">180</span>
+          <div class="help-text">ガイドノート境界に時刻を吸着させる許容幅。速いフレーズで短切れを防ぎます。</div>
+        </div>
+        <div class="control-group">
+          <label for="visBridgeGapMs">ギャップ連結(一般) (ms)</label><br />
+          <input id="visBridgeGapMs" type="range" min="60" max="300" step="10" value="150" />
+          <span id="visBridgeGapMsVal">150</span>
+          <div class="help-text">検出が一瞬切れた場合に同一棒として繋ぐ最大ギャップ。</div>
+        </div>
+        <div class="control-group">
+          <label for="visBridgeGapInNoteMs">ギャップ連結(同一ノート内) (ms)</label><br />
+          <input id="visBridgeGapInNoteMs" type="range" min="120" max="500" step="10" value="300" />
+          <span id="visBridgeGapInNoteMsVal">300</span>
+          <div class="help-text">同一ガイドノート内に限り、より大きなギャップまで連結します。</div>
+        </div>
+        <div class="control-group">
+          <label for="visChangeTolSemi">分割しきい値 (半音)</label><br />
+          <input id="visChangeTolSemi" type="range" min="0.2" max="1.0" step="0.05" value="0.65" />
+          <span id="visChangeTolSemiVal">0.65</span>
+          <div class="help-text">棒を分割する音程変化のしきい値。大きいほど繋がりやすくなります。</div>
+        </div>
+        <div class="control-group">
+          <label for="visEdgePadMs">端の吸着 (ms)</label><br />
+          <input id="visEdgePadMs" type="range" min="0" max="300" step="10" value="160" />
+          <span id="visEdgePadMsVal">160</span>
+          <div class="help-text">棒線の端がガイド端に近い時に延長・吸着する許容幅。</div>
+        </div>
+      </div>
+    </details>
+  </div>
+  <!-- ドリフト計測オーバーレイ（モバイル同期調査用） -->
+  <div id="driftOverlay" style="position:fixed;right:8px;bottom:8px;font-size:11px;font-family:monospace;background:rgba(0,0,0,0.55);color:#9cf;padding:4px 8px;border:1px solid #345;border-radius:4px;z-index:1600;pointer-events:none;user-select:none;">
+    Drift(...)
+  </div>
+  <script src="https://cdn.jsdelivr.net/npm/fflate@0.8.2/umd/index.min.js" onerror="(function(){var s=document.createElement('script');s.src='assets/libs/fflate.min.js';document.head.appendChild(s);})();"></script>
+    <script src="app.js"></script>
+    <script type="module">
+      // Lightweight bootstrap to expose modules to app.js if needed
+      import { YinPitchTracker } from './assets/modules/pitch-yin.js';
+      import { PitchSmoother } from './assets/modules/pitch-smoother.js';
+      import { MicRunner } from './assets/modules/mic-runner.js';
+      import { PitchOverlay } from './assets/modules/pitch-overlay.js';
+      window.__PitchModules = { YinPitchTracker, PitchSmoother, MicRunner, PitchOverlay };
+    </script>
+  <!-- ビルド時刻トースト（JSで内容/表示制御） -->
+  <div id="buildToast" aria-live="polite" style="position:fixed;top:8px;right:8px;background:rgba(0,0,0,0.75);color:#e6eaf2;border:1px solid #2b3244;padding:6px 10px;border-radius:8px;font-family:ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace;font-size:12px;z-index:3000;display:none;pointer-events:none;">0000000000</div>
+</body>
+</html>

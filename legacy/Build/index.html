@@ -1,0 +1,182 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <title>音程練習（採点対応 / Vanilla JS）</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="preload" href="assets/libs/tonejs-midi.min.js" as="script">
+  <link rel="preload" href="assets/libs/fflate.min.js" as="script">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<header class="topbar">
+  <h1>音程練習 <span class="badge">採点対応</span></h1>
+  <nav><a href="help.html" target="_blank">ヘルプ</a></nav>
+</header>
+
+<main id="app">
+  <section class="file-panel">
+    <label class="file-label">曲ファイルを選択（.mid/.midi/.musicxml/.xml/.mxl）
+      <div class="hint">トラック名を読み込み、メロディ/伴奏を設定できます。</div>
+      <input type="file" id="fileInput" accept=".mid,.midi,.musicxml,.xml,.mxl">
+    </label>
+    <div class="tracks">
+      <div>
+        <h3>トラック一覧</h3>
+        <ul id="trackList"></ul>
+      </div>
+      <div class="roles">
+        <h3>役割設定</h3>
+        <div>
+          <label>メロディ（単音）<div class="hint">ガイド線はメロディのみ描画・採点</div>
+            <select id="melodySelect"></select>
+          </label>
+        </div>
+        <div>
+          <label>各トラックの割り当て<div class="hint">音無 / ピアノ / フルート</div>
+            <div id="trackInstrumentGrid" style="max-height:180px;overflow:auto;border:1px solid #444;padding:6px;border-radius:4px;background:#1f2228;font-size:12px;line-height:1.6;color:#fff;writing-mode:horizontal-tb"></div>
+          </label>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="controls">
+    <div class="group">
+      <label>音程の許容範囲（±セント）
+        <div class="hint">採点・ガイド帯の幅に使用</div>
+        <input type="range" id="tolCents" min="10" max="30" step="10" value="20"><span id="tolCentsVal">±20c</span>
+      </label>
+      <label>マイクの感度（dBFS）
+        <div class="hint">この値より小さい音は無視</div>
+        <input type="range" id="gateDb" min="-80" max="-20" step="1" value="-40"><span id="gateDbVal">-40 dB</span>
+      </label>
+      <label>解析レート（Hz）
+        <div class="hint">高いほど滑らか・CPU 増</div>
+        <input type="range" id="analysisHz" min="10" max="60" step="1" value="20"><span id="analysisHzVal">20 Hz</span>
+      </label>
+      <label>ビブラート緩和（ms）
+        <div class="hint">中央値/外れ除去の窓幅</div>
+        <input type="range" id="vibratoMs" min="50" max="100" step="10" value="70"><span id="vibratoMsVal">70 ms</span>
+      </label>
+    </div>
+    <div class="group">
+      <label>A4 基準（Hz）
+        <div class="hint">音名とセント算出の基準</div>
+        <select id="a4Hz">
+          <option>440</option><option selected>442</option><option>444</option><option>446</option>
+        </select>
+      </label>
+      <label>音名表記
+        <div class="hint">縦軸ラベルの表示方式</div>
+        <select id="noteLabel"><option value="CDE">C D E</option><option value="JPN" selected>ド レ ミ</option></select>
+      </label>
+      <label>移調（半音）
+        <div class="hint">表示・再生・判定に一括適用</div>
+        <select id="transpose">
+          <option value="-2">-2</option><option value="-1">-1</option>
+          <option value="0" selected>0</option>
+          <option value="1">+1</option><option value="2">+2</option>
+        </select>
+      </label>
+      <label>テンポ倍率
+        <div class="hint">0.8～1.2 倍</div>
+        <input type="range" id="tempoMul" min="0.8" max="1.2" step="0.01" value="1"><span id="tempoMulVal">1.00x</span>
+      </label>
+    </div>
+    <div class="group">
+      <label>縦ズーム（オクターブ）
+        <div class="hint">1～6 oct</div>
+        <input type="range" id="zoomOct" min="1" max="6" step="1" value="3"><span id="zoomOctVal">3 oct</span>
+      </label>
+      <label>縦オフセット（半音）
+        <div class="hint">上下位置の微調整</div>
+        <input type="range" id="yOffset" min="-24" max="24" step="1" value="0"><span id="yOffsetVal">0</span>
+      </label>
+      <label>ラベル倍率
+        <div class="hint">縦軸ラベルの大きさ</div>
+        <input type="range" id="labelScale" min="0.8" max="1.6" step="0.05" value="1.0"><span id="labelScaleVal">1.00x</span>
+      </label>
+      <label>ガイド線の太さ（px）
+        <div class="hint">メロディ線の太さ</div>
+        <input type="range" id="guidePx" min="2" max="12" step="1" value="6"><span id="guidePxVal">6 px</span>
+      </label>
+    </div>
+    <div class="group toggles">
+      <label><input type="checkbox" id="follow" checked> 追従<div class="hint">再生線が中央付近で固定</div></label>
+      <label><input type="checkbox" id="playGuide" checked> ガイド再生<div class="hint">メロディを鳴らす</div></label>
+      <label><input type="checkbox" id="playAccomp" checked> 伴奏再生<div class="hint">伴奏を鳴らす</div></label>
+      <label><input type="checkbox" id="metro"> メトロノーム<div class="hint">拍に合わせてクリック</div></label>
+      <label><input type="checkbox" id="octLock" checked> オクターブ合わせ<div class="hint">±12 の自動補正</div></label>
+      <label>鍵盤ハイライト対象<div class="hint">どちらの音を鍵盤強調するか</div>
+        <select id="kbdHL"><option value="guide" selected>ガイド</option><option value="mic">マイク</option></select>
+      </label>
+    </div>
+  </section>
+
+  <section class="transport">
+    <button id="btnBack10">⏮︎ 10秒戻す</button>
+    <button id="btnBack5">◀ 5秒戻す</button>
+    <button id="btnPlay">▶ 再生</button>
+    <button id="btnPause">⏸ 一時停止</button>
+    <button id="btnFwd5">5秒進む ▶</button>
+    <button id="btnFwd10">10秒進む ⏭︎</button>
+
+    <div class="vols">
+      <label>メロディ音量<div class="hint">0–100%</div>
+        <input type="range" id="volMel" min="0" max="100" value="80"><span id="volMelVal">80%</span>
+      </label>
+      <label>伴奏音量<div class="hint">0–100%</div>
+        <input type="range" id="volAcc" min="0" max="100" value="60"><span id="volAccVal">60%</span>
+      </label>
+    </div>
+  </section>
+
+  <section class="markers">
+    <h3>マーカー（A～G）</h3>
+    <div class="marker-col">
+      <div class="marker"><span>A</span><button data-m="A" data-act="set">セット</button><button data-m="A" data-act="play">再生</button></div>
+      <div class="marker"><span>B</span><button data-m="B" data-act="set">セット</button><button data-m="B" data-act="play">再生</button></div>
+      <div class="marker"><span>C</span><button data-m="C" data-act="set">セット</button><button data-m="C" data-act="play">再生</button></div>
+      <div class="marker"><span>D</span><button data-m="D" data-act="set">セット</button><button data-m="D" data-act="play">再生</button></div>
+      <div class="marker"><span>E</span><button data-m="E" data-act="set">セット</button><button data-m="E" data-act="play">再生</button></div>
+      <div class="marker"><span>F</span><button data-m="F" data-act="set">セット</button><button data-m="F" data-act="play">再生</button></div>
+      <div class="marker"><span>G</span><button data-m="G" data-act="set">セット</button><button data-m="G" data-act="play">再生</button></div>
+    </div>
+  </section>
+
+  <section class="stage">
+    <canvas id="piano" width="120" height="300"></canvas>
+    <canvas id="chart" width="900" height="300"></canvas>
+  </section>
+
+  <section class="score">
+    <div class="rtScore">
+      <label>リアルタイムスコア</label>
+      <progress id="rtGauge" max="100" value="0"></progress>
+      <span id="rtGaugeVal">0 点</span>
+    </div>
+    <div id="finalReport"></div>
+  </section>
+
+  <section id="debugPanel" hidden>
+    <h3>デバッグ</h3>
+    <div class="metrics">
+      <div>ctxTime: <span id="mCtxTime">-</span></div>
+      <div>lookahead: <span id="mLook">-</span></div>
+      <div>FPS: <span id="mFps">-</span></div>
+      <div>Hz: <span id="mHz">-</span></div>
+      <div>RMS/dBFS: <span id="mRms">-</span> / <span id="mDb">-</span></div>
+      <div>Pitch: <span id="mPitch">-</span> Hz | MIDI <span id="mMidi">-</span> | Err <span id="mCent">-</span> c | OctFix <span id="mOct">-</span></div>
+    </div>
+    <pre id="log" class="log"></pre>
+    <button id="btnLogClear">ログをクリア</button>
+    <button id="btnLogExport">ログを保存</button>
+  </section>
+</main>
+
+<script src="assets/libs/tonejs-midi.min.js"></script>
+<script src="assets/libs/fflate.min.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
