@@ -7,7 +7,8 @@ import { PracticeControlPanel } from './components/PracticeControlPanel';
 import { ScoreResultModal } from './components/ScoreResultModal';
 import { HistoryPanel } from './components/HistoryPanel';
 import { RecordingPlayer } from './components/RecordingPlayer';
-import { Trophy } from 'lucide-react';
+import { ResetConfirmModal } from './components/ResetConfirmModal';
+import { Trophy, Trash2 } from 'lucide-react';
 
 
 function App() {
@@ -16,8 +17,14 @@ function App() {
   const [showPractice, setShowPractice] = useState(false);
   const [showResult, setShowResult] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
+  const [showReset, setShowReset] = useState(false);
   const [recordingBlob, setRecordingBlob] = useState<Blob | null>(null);
   const [state, setState] = useState(audioEngine.state);
+
+  // Initialize from storage on mount
+  useEffect(() => {
+    audioEngine.initFromStorage();
+  }, []);
 
   useEffect(() => {
     return engine.subscribe(() => {
@@ -27,8 +34,8 @@ function App() {
 
   return (
     <div className="w-screen h-[100dvh] bg-[#1a1a1a] text-white overflow-hidden flex flex-col">
-      {/* Top Bar */}
-      <div className="h-12 border-b border-white/10 flex items-center justify-between px-2 md:px-4 bg-white/5 backdrop-blur-sm z-10">
+      {/* Top Bar - Scrollable */}
+      <div className="h-12 border-b border-white/10 flex items-center px-2 md:px-4 bg-white/5 backdrop-blur-sm z-10 overflow-x-auto no-scrollbar gap-2">
         <h1 className="font-bold text-base md:text-lg tracking-tight bg-gradient-to-r from-blue-400 to-indigo-400 bg-clip-text text-transparent truncate max-w-[120px] md:max-w-none">
           Ontei <span className="hidden md:inline text-xs text-white/40 font-normal ml-2">Legacy Refactor</span>
         </h1>
@@ -121,9 +128,18 @@ function App() {
         </div>
 
         {/* BPM Control */}
-        <div className="flex items-center gap-2 bg-black/20 rounded-full px-3 py-1 border border-white/10">
+        <div className="flex items-center gap-2 bg-black/20 rounded-full px-3 py-1 border border-white/10 shrink-0">
           <span className="text-xs text-white/60 font-medium">BPM: {state.bpm}</span>
         </div>
+
+        {/* Reset Button */}
+        <button
+          onClick={() => setShowReset(true)}
+          className="h-8 w-8 rounded-full bg-red-500/10 text-red-400 hover:bg-red-500/20 transition-all border border-red-500/20 flex items-center justify-center shrink-0 ml-auto"
+          title="リセット"
+        >
+          <Trash2 className="w-4 h-4" />
+        </button>
       </div>
 
       {/* Main Area */}
@@ -137,6 +153,14 @@ function App() {
           setShowPractice(false);
         }} />}
         {showHistory && <HistoryPanel onClose={() => setShowHistory(false)} />}
+        {showReset && (
+          <ResetConfirmModal
+            open={showReset}
+            onClose={() => setShowReset(false)}
+            onResetAll={() => engine.resetSession('all')}
+            onResetPitchOnly={() => engine.resetSession('pitchOnly')}
+          />
+        )}
         {recordingBlob && (
           <RecordingPlayer
             audioBlob={recordingBlob}
