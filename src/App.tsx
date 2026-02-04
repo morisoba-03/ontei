@@ -10,7 +10,8 @@ import { RecordingPlayer } from './components/RecordingPlayer';
 import { ResetConfirmModal } from './components/ResetConfirmModal';
 import { ToastContainer } from './components/Toast';
 import { PitchIndicator } from './components/PitchIndicator';
-import { Trophy, Trash2 } from 'lucide-react';
+import { StatsDashboard } from './components/StatsDashboard';
+import { Trophy, Trash2, BarChart3 } from 'lucide-react';
 
 
 function App() {
@@ -20,6 +21,7 @@ function App() {
   const [showResult, setShowResult] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
   const [showReset, setShowReset] = useState(false);
+  const [showStats, setShowStats] = useState(false);
   const [recordingBlob, setRecordingBlob] = useState<Blob | null>(null);
   const [state, setState] = useState(audioEngine.state);
 
@@ -134,10 +136,19 @@ function App() {
           <span className="text-xs text-white/60 font-medium">BPM: {state.bpm}</span>
         </div>
 
+        {/* Stats Button */}
+        <button
+          onClick={() => setShowStats(true)}
+          className="h-8 w-8 rounded-full bg-blue-500/10 text-blue-400 hover:bg-blue-500/20 transition-all border border-blue-500/20 flex items-center justify-center shrink-0 ml-auto"
+          title="練習統計"
+        >
+          <BarChart3 className="w-4 h-4" />
+        </button>
+
         {/* Reset Button */}
         <button
           onClick={() => setShowReset(true)}
-          className="h-8 w-8 rounded-full bg-red-500/10 text-red-400 hover:bg-red-500/20 transition-all border border-red-500/20 flex items-center justify-center shrink-0 ml-auto"
+          className="h-8 w-8 rounded-full bg-red-500/10 text-red-400 hover:bg-red-500/20 transition-all border border-red-500/20 flex items-center justify-center shrink-0"
           title="リセット"
         >
           <Trash2 className="w-4 h-4" />
@@ -166,6 +177,7 @@ function App() {
             onResetPitchOnly={() => engine.resetSession('pitchOnly')}
           />
         )}
+        <StatsDashboard open={showStats} onClose={() => setShowStats(false)} />
         {recordingBlob && (
           <RecordingPlayer
             audioBlob={recordingBlob}
