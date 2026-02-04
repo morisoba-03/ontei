@@ -54,6 +54,85 @@ export function CanvasView() {
         }
     }, []);
 
+    // Touch gestures: Pinch-to-zoom and two-finger swipe
+    useEffect(() => {
+        const canvas = canvasRef.current;
+        if (!canvas) return;
+
+        let lastTouchDistance = 0;
+        let lastTouchCenterX = 0;
+        let isTwoFingerGesture = false;
+
+        const getTouchDistance = (touches: TouchList) => {
+            if (touches.length < 2) return 0;
+            const dx = touches[0].clientX - touches[1].clientX;
+            const dy = touches[0].clientY - touches[1].clientY;
+            return Math.sqrt(dx * dx + dy * dy);
+        };
+
+        const getTouchCenterX = (touches: TouchList) => {
+            if (touches.length < 2) return touches[0]?.clientX || 0;
+            return (touches[0].clientX + touches[1].clientX) / 2;
+        };
+
+        const handleTouchStart = (e: TouchEvent) => {
+            if (e.touches.length === 2) {
+                e.preventDefault();
+                isTwoFingerGesture = true;
+                lastTouchDistance = getTouchDistance(e.touches);
+                lastTouchCenterX = getTouchCenterX(e.touches);
+                audioEngine.startSeek();
+            }
+        };
+
+        const handleTouchMove = (e: TouchEvent) => {
+            if (!isTwoFingerGesture || e.touches.length < 2) return;
+            e.preventDefault();
+
+            const currentDistance = getTouchDistance(e.touches);
+            const currentCenterX = getTouchCenterX(e.touches);
+
+            // Pinch zoom (horizontal timeline zoom)
+            if (lastTouchDistance > 0) {
+                const scale = currentDistance / lastTouchDistance;
+                if (Math.abs(scale - 1) > 0.01) {
+                    const newPxPerSec = Math.max(20, Math.min(800, audioEngine.state.pxPerSec * scale));
+                    audioEngine.updateState({ pxPerSec: newPxPerSec });
+                }
+            }
+
+            // Two-finger horizontal swipe (seek)
+            const deltaX = currentCenterX - lastTouchCenterX;
+            if (Math.abs(deltaX) > 2) {
+                const dt = -deltaX / audioEngine.state.pxPerSec;
+                const newPos = Math.max(0, audioEngine.state.playbackPosition + dt);
+                audioEngine.updateState({ playbackPosition: newPos });
+            }
+
+            lastTouchDistance = currentDistance;
+            lastTouchCenterX = currentCenterX;
+        };
+
+        const handleTouchEnd = (e: TouchEvent) => {
+            if (isTwoFingerGesture && e.touches.length < 2) {
+                isTwoFingerGesture = false;
+                audioEngine.endSeek();
+            }
+        };
+
+        canvas.addEventListener('touchstart', handleTouchStart, { passive: false });
+        canvas.addEventListener('touchmove', handleTouchMove, { passive: false });
+        canvas.addEventListener('touchend', handleTouchEnd);
+        canvas.addEventListener('touchcancel', handleTouchEnd);
+
+        return () => {
+            canvas.removeEventListener('touchstart', handleTouchStart);
+            canvas.removeEventListener('touchmove', handleTouchMove);
+            canvas.removeEventListener('touchend', handleTouchEnd);
+            canvas.removeEventListener('touchcancel', handleTouchEnd);
+        };
+    }, []);
+
     const handlePointerDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
         // Initialize Audio Context
         if (!audioEngine.audioCtx) {
