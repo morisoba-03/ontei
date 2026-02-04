@@ -2,6 +2,7 @@
 import { useRef, useEffect } from 'react';
 import type { ScoreResult } from '../lib/ScoreAnalyzer';
 import { historyManager } from '../lib/HistoryManager';
+import { practiceStats } from '../lib/practiceStats';
 import { audioEngine } from '../lib/AudioEngine';
 import { X, Trophy, Activity, Target, Music, Zap } from 'lucide-react';
 import { cn } from '../lib/utils';
@@ -25,10 +26,22 @@ export const ScoreResultModal: React.FC<Props> = ({ result, onClose }) => {
         if (!savedRef.current) {
             historyManager.saveRecord({
                 score: result.totalScore,
-                accuracy: result.radar.pitch, // Use pitch score as general accuracy for now
-                songName: "Unknown Song", // Ideally we'd pass the song name here
-                duration: 0 // We aren't tracking duration yet, can add later
+                accuracy: result.radar.pitch,
+                songName: "Unknown Song",
+                duration: 0
             });
+
+            // Save to practice statistics
+            practiceStats.saveSession({
+                duration: audioEngine.state.playbackPosition || 60, // Use playback position as session duration
+                score: result.totalScore,
+                pitchAccuracy: result.radar.pitch,
+                rhythmAccuracy: result.radar.rhythm,
+                notesHit: result.totalScore > 0 ? Math.round(result.totalScore / 10) : 0,
+                notesTotal: audioEngine.state.midiGhostNotes.length || 10,
+                songName: "練習曲"
+            });
+
             savedRef.current = true;
         }
     }, [result]);
