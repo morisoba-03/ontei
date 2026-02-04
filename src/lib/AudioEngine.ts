@@ -2,6 +2,7 @@
 import type { AudioEngineState, Note, Track, GhostNote, PracticeConfig } from './types';
 import { ScoreAnalyzer } from './ScoreAnalyzer';
 import { Midi } from '@tonejs/midi';
+import { storage } from './storage';
 
 // Extend Window interface for webkitAudioContext
 declare global {
@@ -278,6 +279,15 @@ export class AudioEngine {
         if (freq > 0 && this.state.isPlaying) {
             const now = this.state.playbackPosition; // Simplification
             const vOff = 0.05; // Fixed for now
+
+            // Overwrite mode: If recording, remove existing pitch data at current time
+            if (this.isRecording) {
+                const overwriteWindow = 0.1; // 100ms window
+                this.state.pitchHistory = this.state.pitchHistory.filter(
+                    p => p.time < (now - overwriteWindow) || p.time > (now + overwriteWindow)
+                );
+            }
+
             this.state.pitchHistory.push({
                 time: now - vOff,
                 visOff: vOff,
@@ -1068,6 +1078,19 @@ export class AudioEngine {
 
     async loadMidiFile(file: File) {
         const arrayBuffer = await file.arrayBuffer();
+
+        // Save to IndexedDB for session restoration
+        try {
+            await storage.saveMidi(arrayBuffer);
+            console.log('[AudioEngine] MIDI saved to storage');
+        } catch (e) {
+            console.warn('[AudioEngine] Failed to save MIDI to storage', e);
+        }
+
+        return this.loadMidiFromBuffer(arrayBuffer);
+    }
+
+    loadMidiFromBuffer(arrayBuffer: ArrayBuffer) {
         const midi = new Midi(arrayBuffer);
         this.loadedMidi = midi;
 
@@ -1292,6 +1315,61 @@ export class AudioEngine {
         } catch (e) {
             console.error("Failed to load backing file:", e);
         }
+    }
+
+    // Session Restoration from IndexedDB
+    async initFromStorage() {
+        try {
+            await storage.init();
+            const midiData = await storage.loadMidi();
+            if (midiData) {
+                console.log('[AudioEngine] Restoring MIDI from storage...');
+                const candidates = this.loadMidiFromBuffer(midiData);
+                // Auto-import first playable track if available
+                if (candidates && candidates.length > 0) {
+                    const playable = candidates.filter((t: { noteCount: number }) => t.noteCount > 0);
+                    if (playable.length === 1) {
+                        this.importMidiTrack(playable[0].id);
+                    }
+                    // If multiple tracks, user will need to select (modal will show)
+                }
+            }
+        } catch (e) {
+            console.warn('[AudioEngine] Failed to restore from storage', e);
+        }
+    }
+
+    // Reset Session
+    resetSession(mode: 'all' | 'pitchOnly') {
+        this.stopPlayback();
+        this.stopPractice();
+
+        if (mode === 'all') {
+            // Clear everything
+            this.state.currentTracks = [];
+            this.state.melodyTrackIndex = -1;
+            this.state.midiGhostNotes = [];
+            this.state.pitchHistory = [];
+            this.state.phrases = [];
+            this.state.scoreResult = null;
+            this.state.playbackPosition = 0;
+            this.backingBuffer = null;
+            this.loadedMidi = null;
+            this.originalGhostNotes = null;
+
+            // Clear storage
+            storage.saveMidi(new ArrayBuffer(0)).catch(() => { });
+
+            console.log('[AudioEngine] Session fully reset');
+        } else {
+            // Clear only pitch history (green lines)
+            this.state.pitchHistory = [];
+            this.state.scoreResult = null;
+            console.log('[AudioEngine] Pitch history cleared');
+        }
+
+        this.draw();
+        this.notify();
     }
 }
 
