@@ -11,7 +11,8 @@ import { ResetConfirmModal } from './components/ResetConfirmModal';
 import { ToastContainer } from './components/Toast';
 import { PitchIndicator } from './components/PitchIndicator';
 import { StatsDashboard } from './components/StatsDashboard';
-import { Trophy, Trash2, BarChart3 } from 'lucide-react';
+import { PresetSongModal } from './components/PresetSongModal';
+import { Trophy, Trash2, BarChart3, BookOpen } from 'lucide-react';
 
 
 function App() {
@@ -22,6 +23,7 @@ function App() {
   const [showHistory, setShowHistory] = useState(false);
   const [showReset, setShowReset] = useState(false);
   const [showStats, setShowStats] = useState(false);
+  const [showPresets, setShowPresets] = useState(false);
   const [recordingBlob, setRecordingBlob] = useState<Blob | null>(null);
   const [state, setState] = useState(audioEngine.state);
 
@@ -82,6 +84,15 @@ function App() {
             onChange={(e) => e.target.files?.[0] && engine.importBackingFile(e.target.files[0])}
             className="hidden" id="hidden-import-audio"
           />
+
+          {/* Preset Songs */}
+          <button
+            onClick={() => setShowPresets(true)}
+            className="h-8 w-24 rounded-full bg-pink-500/20 text-pink-300 text-xs hover:bg-pink-500/30 transition-all border border-pink-500/30 flex items-center justify-center gap-1.5"
+            title="練習曲ライブラリ"
+          >
+            <BookOpen className="w-4 h-4" /> <span className="hidden md:inline">練習曲</span>
+          </button>
 
           {/* Save Session */}
           <button
@@ -178,6 +189,7 @@ function App() {
           />
         )}
         <StatsDashboard open={showStats} onClose={() => setShowStats(false)} />
+        <PresetSongModal open={showPresets} onClose={() => setShowPresets(false)} />
         {recordingBlob && (
           <RecordingPlayer
             audioBlob={recordingBlob}
