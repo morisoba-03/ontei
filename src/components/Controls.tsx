@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Play, Square, Mic, MousePointer2, Hand, Pencil, Eraser, Settings, Activity, Clock } from 'lucide-react';
+import { Play, Square, Mic, MousePointer2, Hand, Pencil, Eraser, Settings, Activity, Clock, Repeat } from 'lucide-react';
 import { audioEngine } from '../lib/AudioEngine';
 import { MidiTrackSelector } from './MidiTrackSelector';
 import type { MidiTrackInfo } from './MidiTrackSelector';
@@ -20,6 +20,7 @@ export function Controls({ onOpenSettings, onOpenPractice, onOpenHistory, onReco
     const [isMicOn, setIsMicOn] = useState(!!audioEngine.micStream);
     const [isRecording, setIsRecording] = useState(audioEngine.isRecording);
     const [editTool, setEditTool] = useState(audioEngine.state.editTool);
+    const [loopEnabled, setLoopEnabled] = useState(audioEngine.state.loopEnabled);
     const [midiTracks, setMidiTracks] = useState<MidiTrackInfo[]>([]);
     const [showMidiSelector, setShowMidiSelector] = useState(false);
 
@@ -30,6 +31,7 @@ export function Controls({ onOpenSettings, onOpenPractice, onOpenHistory, onReco
             setIsMicOn(!!audioEngine.micStream);
             setIsRecording(audioEngine.isRecording);
             setEditTool(audioEngine.state.editTool);
+            setLoopEnabled(audioEngine.state.loopEnabled);
 
             // Check for MIDI candidates to import
             const candidates = audioEngine.state.midiTrackCandidates;
@@ -154,6 +156,33 @@ export function Controls({ onOpenSettings, onOpenPractice, onOpenHistory, onReco
                 </div>
 
                 <div className="w-px h-8 bg-white/10 shrink-0 hidden sm:block" />
+
+                {/* Loop Toggle */}
+                <button
+                    onClick={() => {
+                        const newLoopEnabled = !audioEngine.state.loopEnabled;
+                        if (newLoopEnabled && audioEngine.state.loopEnd <= audioEngine.state.loopStart) {
+                            // Set default loop range (current position + 10 seconds)
+                            const start = audioEngine.state.playbackPosition;
+                            audioEngine.updateState({
+                                loopEnabled: true,
+                                loopStart: start,
+                                loopEnd: start + 10
+                            });
+                        } else {
+                            audioEngine.updateState({ loopEnabled: newLoopEnabled });
+                        }
+                    }}
+                    className={cn(
+                        "p-2.5 rounded-lg border transition-all shrink-0",
+                        loopEnabled
+                            ? "bg-orange-500/20 border-orange-500/40 text-orange-400"
+                            : "bg-white/5 border-white/10 text-white/50 hover:text-white hover:bg-white/10"
+                    )}
+                    title={loopEnabled ? "ループOFF" : "ループON"}
+                >
+                    <Repeat className="w-5 h-5" />
+                </button>
 
                 {/* Center: Tools */}
                 <div className="flex items-center bg-white/5 rounded-full p-1 gap-1 shrink-0">
