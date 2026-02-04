@@ -26,7 +26,7 @@ function App() {
   }, [engine]);
 
   return (
-    <div className="w-screen h-screen bg-[#1a1a1a] text-white overflow-hidden flex flex-col">
+    <div className="w-screen h-[100dvh] bg-[#1a1a1a] text-white overflow-hidden flex flex-col">
       {/* Top Bar */}
       <div className="h-12 border-b border-white/10 flex items-center justify-between px-2 md:px-4 bg-white/5 backdrop-blur-sm z-10">
         <h1 className="font-bold text-base md:text-lg tracking-tight bg-gradient-to-r from-blue-400 to-indigo-400 bg-clip-text text-transparent truncate max-w-[120px] md:max-w-none">
