@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { audioEngine } from '../lib/AudioEngine';
 import type { Note, Track } from '../lib/types';
 
-type InteractionMode = 'idle' | 'pan' | 'move_note' | 'resize_note' | 'resize_note_left' | 'resize_note_right' | 'creating_note';
+type InteractionMode = 'idle' | 'pan' | 'move_note' | 'resize_note' | 'resize_note_left' | 'resize_note_right' | 'creating_note' | 'set_loop';
 
 // Helper to match Visualizer layout
 function getPlayX(width: number): number {
@@ -153,21 +153,28 @@ export function CanvasView() {
 
         // --- RULER SEEK (Top 30px) ---
         if (y < 30) {
-            modeRef.current = 'scrub';
             const playX = getPlayX(canvas.width);
             const ppm = pxPerSec / tempoFactor;
-
-            // Target Audio Timestamp at Cursor
             const targetTime = (playbackPosition + timelineOffsetSec) + (x - playX) / ppm;
-            // newPos = targetTime - offset (subtract previously added offset)
             const newPos = Math.max(0, targetTime - timelineOffsetSec);
 
+            // Alt+drag = Set loop range
+            if (e.altKey) {
+                modeRef.current = 'set_loop';
+                audioEngine.updateState({
+                    loopEnabled: true,
+                    loopStart: newPos,
+                    loopEnd: newPos // Will be updated on move
+                });
+                startStateRef.current.playbackPosition = newPos; // Store loop start
+                setCursor('col-resize');
+                return;
+            }
+
+            modeRef.current = 'scrub';
             audioEngine.updateState({ playbackPosition: newPos });
-
-            // Save Anchor for Dragging
             startStateRef.current.playbackPosition = newPos;
-
-            audioEngine.startSeek(); // Start Muted Scrub
+            audioEngine.startSeek();
             setCursor('ew-resize');
             return;
         }
@@ -358,6 +365,20 @@ export function CanvasView() {
             const newPos = Math.max(0, startStateRef.current.playbackPosition + dt);
 
             audioEngine.updateState({ playbackPosition: newPos });
+            return;
+        }
+
+        // SET_LOOP (Alt+drag on ruler)
+        if (modeRef.current === 'set_loop') {
+            const ppm = pxPerSec / tempoFactor;
+            const playX = getPlayX(canvas.width);
+            const eff = audioEngine.state.playbackPosition + audioEngine.state.timelineOffsetSec;
+            const currentTime = eff + (x - playX) / ppm;
+
+            const loopStart = startStateRef.current.playbackPosition;
+            const loopEnd = Math.max(loopStart + 0.5, currentTime); // Min 0.5s loop
+
+            audioEngine.updateState({ loopEnd });
             return;
         }
         // PAN (Now behaves as Scrub/Move Playhead)
