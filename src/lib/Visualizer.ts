@@ -75,6 +75,101 @@ export class Visualizer {
         }
     }
 
+    private drawVibratoIndicators(
+        ctx: CanvasRenderingContext2D,
+        pts: { t: number; midi: number; conf: number; freq: number }[],
+        _state: AudioEngineState,
+        playX: number,
+        pxSemi: number,
+        vmin: number,
+        h: number,
+        w: number,
+        eff: number,
+        pxPerSec: number,
+        tempoFactor: number
+    ) {
+        // Detect vibrato patterns: oscillating pitch with frequency 4-8 Hz and amplitude 0.2-1 semitones
+        const minVibratoFreq = 4; // Hz
+        const maxVibratoFreq = 8; // Hz
+        const minVibratoAmp = 0.15; // semitones
+        const maxVibratoAmp = 1.5; // semitones
+        const windowSize = 15; // samples to analyze
+
+        if (pts.length < windowSize * 2) return;
+
+        ctx.save();
+
+        // Analyze pitch oscillation in sliding windows
+        for (let i = windowSize; i < pts.length - windowSize; i++) {
+            const window = pts.slice(i - windowSize, i + windowSize);
+
+            // Calculate mean pitch
+            const meanMidi = window.reduce((sum, p) => sum + p.midi, 0) / window.length;
+
+            // Calculate deviations from mean
+            const deviations = window.map(p => p.midi - meanMidi);
+
+            // Count zero crossings (oscillation indicator)
+            let zeroCrossings = 0;
+            for (let j = 1; j < deviations.length; j++) {
+                if (deviations[j] * deviations[j - 1] < 0) zeroCrossings++;
+            }
+
+            // Calculate amplitude (peak-to-peak / 2)
+            const maxDev = Math.max(...deviations);
+            const minDev = Math.min(...deviations);
+            const amplitude = (maxDev - minDev) / 2;
+
+            // Estimate frequency from zero crossings
+            const windowDuration = window[window.length - 1].t - window[0].t;
+            const estimatedFreq = windowDuration > 0 ? zeroCrossings / (2 * windowDuration) : 0;
+
+            // Check if this is vibrato
+            const isVibrato =
+                estimatedFreq >= minVibratoFreq &&
+                estimatedFreq <= maxVibratoFreq &&
+                amplitude >= minVibratoAmp &&
+                amplitude <= maxVibratoAmp;
+
+            if (isVibrato && i % 10 === 0) { // Draw every 10th point to avoid clutter
+                const p = pts[i];
+                const x = playX + ((p.t - eff) * pxPerSec / tempoFactor);
+                const y = h - (meanMidi - vmin + 1) * pxSemi;
+
+                if (x >= 0 && x <= w) {
+                    // Draw vibrato wave indicator
+                    const waveWidth = 20;
+                    const waveHeight = amplitude * pxSemi * 0.5;
+
+                    ctx.beginPath();
+                    ctx.strokeStyle = '#FF69B4'; // Hot pink
+                    ctx.lineWidth = 2;
+                    ctx.globalAlpha = 0.7;
+
+                    // Draw small sine wave
+                    for (let wx = -waveWidth / 2; wx <= waveWidth / 2; wx += 2) {
+                        const wy = Math.sin(wx * 0.5) * waveHeight;
+                        if (wx === -waveWidth / 2) {
+                            ctx.moveTo(x + wx, y + wy);
+                        } else {
+                            ctx.lineTo(x + wx, y + wy);
+                        }
+                    }
+                    ctx.stroke();
+
+                    // Draw small circle at center
+                    ctx.beginPath();
+                    ctx.arc(x, y, 3, 0, Math.PI * 2);
+                    ctx.fillStyle = '#FF69B4';
+                    ctx.fill();
+                }
+            }
+        }
+
+        ctx.restore();
+    }
+
+
     draw(state: AudioEngineState) {
         if (!this.ctx) return;
         const { width, height } = this.canvas;
@@ -491,6 +586,11 @@ export class Visualizer {
                     ctx.stroke();
                     ctx.restore();
                 }
+            }
+
+            // Vibrato Detection and Visualization
+            if (pts.length > 20) {
+                this.drawVibratoIndicators(ctx, pts, state, playX, pxSemi, vmin, h, w, eff, pxPerSec, tempoFactor);
             }
         }
 
