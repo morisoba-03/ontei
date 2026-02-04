@@ -101,7 +101,11 @@ export function Controls({ onOpenSettings, onOpenPractice, onOpenHistory, onReco
     };
 
     return (
-        <div id="bottom-controls-panel" className="fixed bottom-0 left-0 right-0 bg-neutral-900 border-t border-white/10 p-4 pb-safe z-50">
+        <div
+            id="bottom-controls-panel"
+            className="fixed bottom-0 left-0 right-0 bg-neutral-900 border-t border-white/10 p-4 z-50 shadow-2xl"
+            style={{ paddingBottom: 'max(1rem, env(safe-area-inset-bottom))' }}
+        >
             <div className="max-w-4xl mx-auto flex items-center justify-between gap-4 overflow-x-auto no-scrollbar">
 
                 {/* Left: Playback & Recording */}
