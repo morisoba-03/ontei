@@ -8,6 +8,8 @@ import { ScoreResultModal } from './components/ScoreResultModal';
 import { HistoryPanel } from './components/HistoryPanel';
 import { RecordingPlayer } from './components/RecordingPlayer';
 import { ResetConfirmModal } from './components/ResetConfirmModal';
+import { ToastContainer } from './components/Toast';
+import { PitchIndicator } from './components/PitchIndicator';
 import { Trophy, Trash2 } from 'lucide-react';
 
 
@@ -146,6 +148,9 @@ function App() {
       <div className="flex-1 relative min-h-0">
         <CanvasView />
 
+        {/* Real-time Pitch Indicator */}
+        <PitchIndicator />
+
         {/* Overlays */}
         {showSettings && <SettingsPanel onClose={() => setShowSettings(false)} />}
         {showPractice && <PracticeControlPanel audioEngine={engine} isPracticing={state.isPracticing} onClose={() => {
@@ -222,6 +227,9 @@ function App() {
 
         />
       </div>
+
+      {/* Toast Notifications */}
+      <ToastContainer />
     </div>
   )
 }
