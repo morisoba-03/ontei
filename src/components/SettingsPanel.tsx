@@ -18,8 +18,8 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
 
     return (
         <>
-            <div className="absolute top-14 right-2 md:right-4 z-50 w-[95vw] md:w-80 max-w-[95vw] md:max-w-none bg-black/90 backdrop-blur-md rounded-2xl border border-white/10 shadow-2xl overflow-hidden text-white/90 animate-in fade-in slide-in-from-right-4">
-                <div className="flex items-center justify-between p-4 border-b border-white/10 bg-white/5">
+            <div className="absolute top-14 right-2 md:right-4 z-[60] w-[95vw] md:w-80 max-w-[95vw] md:max-w-none bg-black/90 backdrop-blur-md rounded-2xl border border-white/10 shadow-2xl overflow-hidden text-white/90 animate-in fade-in slide-in-from-right-4 flex flex-col max-h-[calc(100dvh-8rem)]">
+                <div className="flex items-center justify-between p-4 border-b border-white/10 bg-white/5 shrink-0">
                     <h3 className="font-bold flex items-center gap-2">
                         <span className="w-2 h-6 bg-blue-500 rounded-full" />
                         設定
@@ -38,7 +38,7 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
                     </div>
                 </div>
 
-                <div className="p-5 space-y-6 max-h-[75vh] overflow-y-auto overscroll-contain">
+                <div className="p-5 space-y-6 overflow-y-auto overscroll-contain flex-1 min-h-0">
 
                     {/* Display Settings */}
                     <div className="bg-white/5 rounded-lg overflow-hidden border border-white/5">
@@ -242,7 +242,7 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
 
                 </div>
 
-                <div className="pt-4 pb-4 text-center">
+                <div className="pt-4 pb-4 text-center shrink-0">
                     <p className="text-[10px] text-white/20">Ontei Web - Refactor</p>
                 </div>
             </div>

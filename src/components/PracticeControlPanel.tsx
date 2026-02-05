@@ -63,9 +63,9 @@ export const PracticeControlPanel: React.FC<Props> = ({ audioEngine, isPracticin
     };
 
     return (
-        <div className="absolute top-20 right-4 z-40 w-80 bg-black/90 backdrop-blur-md rounded-2xl border border-white/10 shadow-2xl overflow-hidden text-white/90 animate-in fade-in slide-in-from-right-4">
+        <div className="absolute top-20 right-4 z-[60] w-80 bg-black/90 backdrop-blur-md rounded-2xl border border-white/10 shadow-2xl overflow-hidden text-white/90 animate-in fade-in slide-in-from-right-4 flex flex-col max-h-[calc(100dvh-10rem)]">
             {/* Header */}
-            <div className="flex items-center justify-between p-4 border-b border-white/10 bg-white/5">
+            <div className="flex items-center justify-between p-4 border-b border-white/10 bg-white/5 shrink-0">
                 <h3 className="font-bold flex items-center gap-2">
                     <span className="p-1 rounded bg-green-500/20 text-green-400">
                         <Activity size={16} />
@@ -96,7 +96,7 @@ export const PracticeControlPanel: React.FC<Props> = ({ audioEngine, isPracticin
             </div>
 
             {/* Content */}
-            <div className="p-5 space-y-6 max-h-[70vh] overflow-y-auto">
+            <div className="p-5 space-y-6 overflow-y-auto flex-1 min-h-0">
                 <div className="space-y-2">
                     <p className="text-sm text-white/60 leading-relaxed">
                         ランダムなパターントレーニングを行います。
@@ -297,7 +297,7 @@ export const PracticeControlPanel: React.FC<Props> = ({ audioEngine, isPracticin
                     </div>
                 )}
 
-                <div className="pt-2 text-[10px] text-center text-white/20 border-t border-white/5">
+                <div className="pt-2 text-[10px] text-center text-white/20 border-t border-white/5 shrink-0">
                     Continuous Practice Generator v1.1
                 </div>
             </div>
