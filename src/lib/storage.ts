@@ -27,6 +27,15 @@ export const storage = {
         return result ?? null;
     },
 
+    async saveBacking(data: ArrayBuffer) {
+        return this._put('lastBacking', data);
+    },
+
+    async loadBacking(): Promise<ArrayBuffer | null> {
+        const result = await this._get('lastBacking');
+        return result ?? null;
+    },
+
     async _put(key: string, value: ArrayBuffer) {
         return new Promise<void>((resolve, reject) => {
             const request = indexedDB.open(DB_NAME, DB_VERSION);

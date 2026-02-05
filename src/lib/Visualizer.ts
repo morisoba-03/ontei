@@ -846,6 +846,27 @@ export class Visualizer {
         return { time: roundTime, midi: roundMidi, exactTime, exactMidi };
     }
 
+    getLoopHandleHit(x: number, y: number, state: AudioEngineState): 'start' | 'end' | null {
+        if (!state.loopEnabled || y > 30) return null; // Handles are top 30px
+
+        const { width } = this.canvas;
+        const { timelineOffsetSec, playbackPosition, pxPerSec, tempoFactor } = state;
+        const playX = getPlayX(width);
+        const eff = playbackPosition + timelineOffsetSec;
+
+        const xStart = playX + (state.loopStart - eff) * pxPerSec / tempoFactor;
+        const xEnd = playX + (state.loopEnd - eff) * pxPerSec / tempoFactor;
+
+        // Hit tolerance
+        const TOL = 10;
+
+        // Priority to END handle if close (to resize loop easily)
+        if (Math.abs(x - xEnd) < TOL) return 'end';
+        if (Math.abs(x - xStart) < TOL) return 'start';
+
+        return null;
+    }
+
     drawBpmMarkers(state: AudioEngineState) {
         if (!this.ctx || !state.tempoMap || state.tempoMap.length === 0) return;
         const { width, height } = this.canvas;
@@ -927,6 +948,32 @@ export class Visualizer {
                 this.ctx.font = 'bold 10px sans-serif';
                 this.ctx.fillStyle = 'rgba(0, 200, 100, 0.9)';
                 this.ctx.fillText('LOOP', left + 5, 12);
+
+                // Draw Handles (Triangles at top)
+                const drawHandle = (x: number, isStart: boolean) => {
+                    if (x < -10 || x > width + 10) return;
+                    this.ctx.beginPath();
+                    this.ctx.fillStyle = '#00E676';
+                    this.ctx.strokeStyle = '#004D40';
+                    this.ctx.lineWidth = 1;
+                    if (isStart) {
+                        // Right-pointing triangle or simple bracket
+                        this.ctx.moveTo(x, 0);
+                        this.ctx.lineTo(x + 10, 0);
+                        this.ctx.lineTo(x, 15);
+                    } else {
+                        // Left-pointing
+                        this.ctx.moveTo(x, 0);
+                        this.ctx.lineTo(x - 10, 0);
+                        this.ctx.lineTo(x, 15);
+                    }
+                    this.ctx.fill();
+                    this.ctx.stroke();
+                };
+
+                drawHandle(x1, true);
+                drawHandle(x2, false);
+
                 this.ctx.restore();
             }
         } else if (isPartial) {
