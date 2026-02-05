@@ -22,7 +22,8 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
                 <div className="flex items-center justify-between p-4 border-b border-white/10 bg-white/5 shrink-0">
                     <h3 className="font-bold flex items-center gap-2">
                         <span className="w-2 h-6 bg-blue-500 rounded-full" />
-                        設定
+                        <span>設定</span>
+                        <span className="text-xs font-normal text-white/30 bg-white/10 px-1.5 py-0.5 rounded ml-2">v1.2.0</span>
                     </h3>
                     <div className="flex items-center gap-1">
                         <button
