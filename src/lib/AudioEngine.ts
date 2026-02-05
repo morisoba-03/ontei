@@ -166,7 +166,8 @@ export class AudioEngine {
             transposeOffset: 0,
             isParticlesEnabled: true,
             noteNotation: 'alphabet',
-            metronomeMode: 'off'
+            metronomeMode: 'off',
+            inputLatency: 0.12 // 120ms default latency compensation
         };
         this.loadSettings();
         // Start loading piano samples immediately
@@ -336,7 +337,7 @@ export class AudioEngine {
             }
 
             this.state.pitchHistory.push({
-                time: now - vOff,
+                time: now - vOff - (this.state.inputLatency || 0),
                 visOff: vOff,
                 freq: freq,
                 conf: conf
@@ -751,8 +752,13 @@ export class AudioEngine {
             'verticalZoom', 'pxPerSec', 'noteNotation',
             'tempoFactor', 'guideOctaveOffset', 'transposeOffset',
             'guideVolume', 'accompVolume', 'gateThreshold', 'toleranceCents',
-            'isParticlesEnabled',
+            'guideVolume', 'accompVolume', 'gateThreshold', 'toleranceCents',
+            'isParticlesEnabled', 'inputLatency'
         ];
+
+        if (updates.isBackingSoundEnabled !== undefined) {
+            this.syncBackingTrack();
+        }
 
         if (Object.keys(updates).some(k => persistentKeys.includes(k as typeof persistentKeys[number]))) {
             this.saveSettings();
@@ -812,16 +818,18 @@ export class AudioEngine {
         }
 
         // Scheduler
-        if (this.state.isPracticing) {
+        if (this.state.isPracticing && this.state.isGuideSoundEnabled) {
             this.schedulePracticeNotes();
             this.updatePracticeQueue(); // Check if we need more patterns
+        } else if (this.state.isPracticing) {
+            this.updatePracticeQueue(); // Still generate queue even if sound is off
         }
 
         if (this.state.isGuideSoundEnabled && (this.state.melodyTrackIndex !== -1 || this.state.midiGhostNotes.length > 0)) {
             this.scheduleGuideNotes();
         }
 
-        if (this.state.isPlaying && this.backingMidiNotes.length > 0) {
+        if (this.state.isPlaying && this.state.isBackingSoundEnabled && this.backingMidiNotes.length > 0) {
             this.scheduleBackingMidiNotes();
         }
 
