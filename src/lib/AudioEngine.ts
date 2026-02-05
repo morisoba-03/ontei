@@ -1,4 +1,3 @@
-
 import type { AudioEngineState, Note, Track, GhostNote, PracticeConfig } from './types';
 import { ScoreAnalyzer } from './ScoreAnalyzer';
 import { Midi } from '@tonejs/midi';
@@ -22,6 +21,10 @@ export class AudioEngine {
     visualizer: Visualizer | null = null;
     pitchAnalyzer: PitchAnalyzer;
     scoreAnalyzer: import('./ScoreAnalyzer').ScoreAnalyzer;
+
+    // Sampler
+    pianoBuffers: Record<string, AudioBuffer> = {};
+    pianoLoadPromise: Promise<void> | null = null;
 
     // Audio Context & Nodes
     audioCtx: AudioContext | null = null;
@@ -62,6 +65,8 @@ export class AudioEngine {
 
     // Practice Backup
     private originalGhostNotes: GhostNote[] | null = null;
+    private backingMidiNotes: GhostNote[] = []; // Stores backing track notes
+    private nextBackingNoteIndex: number = 0;
 
     // Practice
     nextPracticeTime: number = 0;
@@ -164,14 +169,45 @@ export class AudioEngine {
             metronomeMode: 'off'
         };
         this.loadSettings();
+        // Start loading piano samples immediately
+        this.loadPianoSamples();
+    }
+
+    async loadPianoSamples() {
+        if (!window.AudioContext && !window.webkitAudioContext) return;
+
+        // Wait for user interaction to init context? No, just load buffers.
+        // We need a temporary context if main one isn't ready, or just wait.
+        // Actually, we can decode without a running context.
+        const Ctx = window.AudioContext || window.webkitAudioContext;
+        const tempCtx = new Ctx();
+
+        const samples = {
+            'C3': '/samples/piano/C3.mp3', // MIDI 48
+            'C4': '/samples/piano/C4.mp3', // MIDI 60
+            'C5': '/samples/piano/C5.mp3', // MIDI 72
+        };
+
+        const promises = Object.entries(samples).map(async ([note, url]) => {
+            try {
+                const res = await fetch(url);
+                const arrayBuffer = await res.arrayBuffer();
+                const audioBuffer = await tempCtx.decodeAudioData(arrayBuffer);
+                this.pianoBuffers[note] = audioBuffer;
+            } catch (e) {
+                console.error(`Failed to load sample ${note}`, e);
+            }
+        });
+
+        await Promise.all(promises);
+        console.log('[AudioEngine] Piano samples loaded');
+        tempCtx.close();
     }
 
     setCanvas(canvas: HTMLCanvasElement) {
         this.visualizer = new Visualizer(canvas);
         this.draw();
     }
-
-    // ... (omitted)
 
     setTool(tool: 'view' | 'select' | 'pencil' | 'eraser') {
         this.state.editTool = tool;
@@ -304,7 +340,6 @@ export class AudioEngine {
     }
 
     // Practice State Methods
-    // Practice State Methods
     async startPractice(config: PracticeConfig = { mode: 'Mix' }) {
         await this.ensureAudio(); // Ensure context is running
 
@@ -420,6 +455,10 @@ export class AudioEngine {
                 this.state.scoreResult = null;
             }
         }
+
+        this.backingMidiNotes = []; // Clear backing midi
+        this.nextBackingNoteIndex = 0;
+
 
         this.practiceQueue = [];
         this.nextNoteIndexToSchedule = 0;
@@ -563,9 +602,7 @@ export class AudioEngine {
             this.nextMetronomeTime = 0; // Force metronome realignment
         }
 
-        // Sync Backing
-        // Only sync if NOT scrubbing (seeking continuously). 
-        // We sync on endSeek() instead to avoid rapid restart stutter.
+        // Sync Backing (Audio)
         if (this.state.isPlaying && !this._isSeeking) {
             this.syncBackingTrack();
         }
@@ -578,8 +615,14 @@ export class AudioEngine {
                 idx++;
             }
             this.nextGuideNoteIndex = idx;
-            // console.log(`[AudioEngine] Seek Index: ${idx}`);
         }
+
+        // Sync Backing MIDI Index
+        let bIdx = 0;
+        while (bIdx < this.backingMidiNotes.length && this.backingMidiNotes[bIdx].time < newTime) {
+            bIdx++;
+        }
+        this.nextBackingNoteIndex = bIdx;
 
         // Trim Pitch History (Fix for green line crumbling on rewind)
         // User Request: Preserve pitch history on rewind
@@ -757,6 +800,10 @@ export class AudioEngine {
             this.scheduleGuideNotes();
         }
 
+        if (this.state.isPlaying && this.backingMidiNotes.length > 0) {
+            this.scheduleBackingMidiNotes();
+        }
+
         this.scheduleMetronome();
 
         this.draw();
@@ -784,9 +831,9 @@ export class AudioEngine {
 
             let playSound = false;
 
-            if (this.state.metronomeMode === 'measure') {
-                if (isMeasureStart) playSound = true;
-            } else if (this.state.metronomeMode === 'beat') {
+            if (this.state.metronomeMode === 'on') {
+                playSound = true;
+            } else if (this.state.metronomeMode === 'rec_only' && (this.isRecording || this.state.isPracticing)) {
                 playSound = true;
             }
 
@@ -803,87 +850,49 @@ export class AudioEngine {
         const osc = this.audioCtx.createOscillator();
         const gain = this.audioCtx.createGain();
 
+        osc.frequency.setValueAtTime(isHigh ? 1600 : 1200, time);
+        osc.type = 'sine';
+
+        gain.gain.setValueAtTime(0, time);
+        gain.gain.linearRampToValueAtTime(0.3, time + 0.005);
+        gain.gain.exponentialRampToValueAtTime(0.01, time + 0.1);
+
         osc.connect(gain);
         gain.connect(this.masterGain);
 
-        osc.type = 'triangle';
-        osc.frequency.value = isHigh ? 1000 : 800; // High for Bar, Low for Beat
-
-        gain.gain.setValueAtTime(0.3, time); // Volume
-        gain.gain.exponentialRampToValueAtTime(0.001, time + 0.05);
-
         osc.start(time);
-        osc.stop(time + 0.05);
+        osc.stop(time + 0.1);
+
+        setTimeout(() => {
+            osc.disconnect();
+            gain.disconnect();
+        }, 200);
     }
 
     scheduleGuideNotes() {
         if (!this.audioCtx) return;
-        const lookahead = 0.1;
-        const currentTime = this.state.playbackPosition;
 
-        // Determine source of notes: Current Track or Ghost Notes
-        let notes: Note[] | GhostNote[] = [];
-        let isGhost = false;
+        // Simple scheduling: Look ahead and schedule notes
+        const lookahead = 0.1; // 100ms
+        const currentTime = this.state.playbackPosition; // app time
+        const notes = this.state.melodyTrackIndex !== -1 && this.state.currentTracks[this.state.melodyTrackIndex]
+            ? this.state.currentTracks[this.state.melodyTrackIndex].notes
+            : [];
 
-        const track = this.state.melodyTrackIndex !== -1 ? this.state.currentTracks[this.state.melodyTrackIndex] : null;
-
-        if (track && track.type !== 'audio') {
-            notes = track.notes;
-        } else if (this.state.midiGhostNotes.length > 0) {
-            notes = this.state.midiGhostNotes;
-            isGhost = true;
-        } else {
-            return;
-        }
-
+        // We need a stable index for playback.
+        // For now, simpler: iter from current index
         while (this.nextGuideNoteIndex < notes.length) {
             const note = notes[this.nextGuideNoteIndex];
-
-            // In Practice Mode, we do NOT want to play the 'response' notes (user's turn) as guide sound
-            // The 'call' notes are handled by schedulePracticeNotes (or here, if we unify)
-            // But let's ensure we don't play 'resp' here.
-            if (isGhost && (note as GhostNote).role === 'resp') {
-                this.nextGuideNoteIndex++;
-                continue;
-            }
-
-            // If note ends before current time, skip (should have been skipped by onSeek, but double check)
-            if (note.time + note.duration < currentTime - 0.05) {
-                this.nextGuideNoteIndex++;
-                continue;
-            }
-
-            // If note starts way in future, done for now
-            if (note.time > currentTime + lookahead) {
-                break;
-            }
+            if (note.time > currentTime + lookahead) break;
 
             // Schedule
-            // Case 1: Note starts in future (normal) -> schedule at start
-            // Case 2: Note started in past but ends in future (overlap) -> schedule NOW, shorter duration
+            // If it's already past, don't schedule unless it's very recent?
+            // "when" in audioCtx time
+            const when = this.playbackStartTime + note.time;
 
-            const startOffset = Math.max(0, currentTime - note.time);
-            const remainingDur = note.duration - startOffset;
-
-            if (remainingDur > 0.05) { // Only play if significant
-                // If startOffset > 0, we are starting in middle.
-                // We schedule at audioCtx.currentTime (roughly)
-                // Actually 'when' should be consistent with timeline.
-                // when = playbackStartTime + note.time
-                // If note.time < currentTime, when < now.
-                // We want to start at MAX(when, now).
-
-                const when = Math.max(this.audioCtx.currentTime, this.playbackStartTime + note.time);
-                // Adjust duration: if we delayed start, duration implies endpoint is fixed.
-                // End time = playbackStartTime + note.time + note.duration
-                // duration = End time - when
-                const endAudioTime = this.playbackStartTime + note.time + note.duration;
-                const dur = endAudioTime - when;
-
-                if (dur > 0.03) {
-                    const offset = this.state.guideOctaveOffset * 12 + this.state.transposeOffset;
-                    this.scheduleNote(note.midi + offset, when, dur, startOffset > 0); // Pass 'isResume' flag to skip attack if needed
-                }
+            if (when >= this.audioCtx.currentTime - 0.05) {
+                const offset = this.state.guideOctaveOffset * 12 + this.state.transposeOffset;
+                this.scheduleNote(note.midi + offset, when, note.duration);
             }
 
             this.nextGuideNoteIndex++;
@@ -922,25 +931,52 @@ export class AudioEngine {
         }
     }
 
-    scheduleNote(midi: number, when: number, duration: number, isResume = false) {
+    scheduleBackingMidiNotes() {
+        if (!this.audioCtx) return;
+        const lookahead = 0.1;
+        const currentTime = this.state.playbackPosition;
+
+        while (this.nextBackingNoteIndex < this.backingMidiNotes.length) {
+            const note = this.backingMidiNotes[this.nextBackingNoteIndex];
+            if (note.time > currentTime + lookahead) break;
+
+            const when = this.playbackStartTime + note.time;
+            if (when >= this.audioCtx.currentTime - 0.05) {
+                // Simple backing sound (lower volume/different tone)
+                // Use volumeScale 0.3 for backing
+                this.scheduleNote(note.midi, when, Math.min(note.duration, 0.5), false, 0.3);
+            }
+            this.nextBackingNoteIndex++;
+        }
+    }
+
+    scheduleNote(midi: number, when: number, duration: number, isResume = false, volumeScale = 1.0) {
         if (!this.audioCtx || !this.masterGain) return;
 
+        // Use Sampler if available
+        if (Object.keys(this.pianoBuffers).length > 0) {
+            this.playSampledNote(midi, when, duration, isResume, volumeScale);
+            return;
+        }
+
+        // Fallback to Synth
         const osc = this.audioCtx.createOscillator();
         const gain = this.audioCtx.createGain();
 
-        // Synth Sound (e.g., Soft Square/Saw)
+        // Synth Sound
         osc.type = 'triangle'; // Clear tone
         const freq = 440 * Math.pow(2, (midi - 69) / 12);
         osc.frequency.value = freq;
 
+        const vol = this.state.guideVolume * volumeScale;
+
         // Envelope
         if (isResume) {
-            // Instant attack (pop protection) or quick fade in
             gain.gain.setValueAtTime(0, when);
-            gain.gain.linearRampToValueAtTime(0.4 * this.state.guideVolume, when + 0.05); // slightly slower attack to avoid click
+            gain.gain.linearRampToValueAtTime(0.4 * vol, when + 0.05);
         } else {
             gain.gain.setValueAtTime(0, when);
-            gain.gain.linearRampToValueAtTime(0.4 * this.state.guideVolume, when + 0.01);
+            gain.gain.linearRampToValueAtTime(0.4 * vol, when + 0.01);
         }
         gain.gain.exponentialRampToValueAtTime(0.01, when + duration - 0.01);
         gain.gain.setValueAtTime(0, when + duration);
@@ -956,6 +992,70 @@ export class AudioEngine {
             osc.disconnect();
             gain.disconnect();
         }, (when - this.audioCtx.currentTime + duration + 0.2) * 1000);
+    }
+
+    playSampledNote(midi: number, when: number, duration: number, isResume: boolean, volumeScale: number) {
+        if (!this.audioCtx || !this.masterGain) return;
+
+        // Find closest sample
+        // C3=48, C4=60, C5=72
+        const map: { midi: number, buffer: string }[] = [
+            { midi: 48, buffer: 'C3' },
+            { midi: 60, buffer: 'C4' },
+            { midi: 72, buffer: 'C5' }
+        ];
+
+        // Simple nearest neighbor search
+        let closest = map[0];
+        let minDiff = Math.abs(midi - closest.midi);
+
+        for (const m of map) {
+            const diff = Math.abs(midi - m.midi);
+            if (diff < minDiff) {
+                minDiff = diff;
+                closest = m;
+            }
+        }
+
+        const buffer = this.pianoBuffers[closest.buffer];
+        if (!buffer) return;
+
+        // Calc Playback Rate
+        // If sample is C4 (60) and we want D4 (62), we shift up 2 semitones
+        // rate = 2 ^ (semitones / 12)
+        const semitones = midi - closest.midi;
+        const rate = Math.pow(2, semitones / 12);
+
+        const source = this.audioCtx.createBufferSource();
+        source.buffer = buffer;
+        source.playbackRate.value = rate;
+
+        const gain = this.audioCtx.createGain();
+        const vol = this.state.guideVolume * 0.8 * volumeScale; // Normalize volume
+
+        // ADSR Envelope
+        const attackTime = isResume ? 0.05 : 0.02;
+        gain.gain.setValueAtTime(0, when);
+        gain.gain.linearRampToValueAtTime(vol, when + attackTime); // Fast attack
+
+        // Release/Fadeout
+        const releaseTime = 0.1;
+        const stopTime = when + duration;
+
+        gain.gain.setValueAtTime(vol, stopTime - releaseTime);
+        gain.gain.linearRampToValueAtTime(0, stopTime);
+
+        source.connect(gain);
+        gain.connect(this.masterGain);
+
+        source.start(when);
+        source.stop(stopTime + 0.1);
+
+        // Cleanup
+        setTimeout(() => {
+            source.disconnect();
+            gain.disconnect();
+        }, (stopTime - this.audioCtx.currentTime + 1) * 1000);
     }
 
     draw() {
@@ -1050,6 +1150,12 @@ export class AudioEngine {
         if (!this.audioCtx) await this.ensureAudio();
         if (!this.audioCtx) return;
 
+        // Use Piano Sampler if ready
+        if (Object.keys(this.pianoBuffers).length > 0) {
+            this.playSampledNote(midi, this.audioCtx.currentTime, 0.5, false, 1.0);
+            return;
+        }
+
         const osc = this.audioCtx.createOscillator();
         const gain = this.audioCtx.createGain();
         // Piano-ish synthesis (Triangle wave with specific envelope)
@@ -1123,6 +1229,49 @@ export class AudioEngine {
         });
 
         return candidates;
+    }
+
+    async loadMidiFromUrl(url: string) {
+        try {
+            const res = await fetch(url);
+            if (!res.ok) throw new Error(`Failed to fetch MIDI: ${res.statusText}`);
+            const buffer = await res.arrayBuffer();
+            return this.loadMidiFromBuffer(buffer);
+        } catch (e) {
+            console.error("loadMidiFromUrl failed", e);
+            throw e;
+        }
+    }
+
+    async loadBackingMidiFromUrl(url: string) {
+        try {
+            console.log(`[AudioEngine] Loading backing MIDI from ${url}`);
+            const res = await fetch(url);
+            if (!res.ok) throw new Error(`Failed to fetch Backing MIDI: ${res.statusText}`);
+            const buffer = await res.arrayBuffer();
+            const midi = new Midi(buffer);
+
+            // Extract all notes from all tracks
+            const allNotes: GhostNote[] = [];
+            midi.tracks.forEach(t => {
+                t.notes.forEach(n => {
+                    allNotes.push({
+                        midi: n.midi,
+                        time: n.time,
+                        duration: n.duration,
+                        role: 'call' // Dummy role
+                    });
+                });
+            });
+            // Sort
+            allNotes.sort((a, b) => a.time - b.time);
+            this.backingMidiNotes = allNotes;
+            this.nextBackingNoteIndex = 0;
+            console.log(`[AudioEngine] Loaded ${allNotes.length} backing notes.`);
+        } catch (e) {
+            console.error("loadBackingMidiFromUrl failed", e);
+            // Don't throw, just warn
+        }
     }
 
     // Recording
