@@ -229,9 +229,7 @@ function App() {
         )}
 
         {/* Score Result Modal */}
-        {showResult && state.scoreResult && (
-          <ScoreResultModal result={state.scoreResult} onClose={() => setShowResult(false)} />
-        )}
+
 
         {/* Result Button (Visible when stopped and result available) */}
         {/* Result Button Removed as per user request */}
