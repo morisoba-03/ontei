@@ -95,6 +95,7 @@ export interface AudioEngineState {
     midiTrackCandidates?: { id: number, name: string, instrument: string, noteCount: number, channel: number }[];
     noteNotation: 'alphabet' | 'katakana';
     metronomeMode: 'off' | 'on' | 'rec_only' | 'measure' | 'beat';
+    meterColor?: string;
 }
 
 export type ScaleType = 'Major' | 'NaturalMinor' | 'HarmonicMinor' | 'MelodicMinor' | 'MajorPentatonic' | 'MinorPentatonic' | 'Chromatic';
