@@ -96,6 +96,7 @@ export interface AudioEngineState {
     noteNotation: 'alphabet' | 'katakana';
     metronomeMode: 'off' | 'on' | 'rec_only' | 'measure' | 'beat';
     meterColor?: string;
+    inputLatency: number; // seconds
 }
 
 export type ScaleType = 'Major' | 'NaturalMinor' | 'HarmonicMinor' | 'MelodicMinor' | 'MajorPentatonic' | 'MinorPentatonic' | 'Chromatic';

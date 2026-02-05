@@ -224,6 +224,20 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
                                 />
                             </div>
 
+                            {/* Mic Latency */}
+                            <div className="space-y-2">
+                                <div className="flex justify-between text-sm items-center">
+                                    <span>マイク遅延補正</span>
+                                    <span className="font-mono text-pink-400 bg-pink-400/10 px-2 py-0.5 rounded">{(state.inputLatency * 1000).toFixed(0)} ms</span>
+                                </div>
+                                <input
+                                    type="range" min="0" max="500" step="10"
+                                    value={state.inputLatency * 1000}
+                                    onChange={(e) => update('inputLatency', parseFloat(e.target.value) / 1000)}
+                                    className="w-full h-2 bg-white/20 rounded-full appearance-none cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-4 [&::-webkit-slider-thumb]:h-4 [&::-webkit-slider-thumb]:bg-pink-500 [&::-webkit-slider-thumb]:rounded-full hover:[&::-webkit-slider-thumb]:scale-110 transition-all"
+                                />
+                            </div>
+
                             {/* Tolerance */}
                             <div className="space-y-2">
                                 <div className="flex justify-between text-sm items-center">
