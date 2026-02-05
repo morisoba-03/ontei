@@ -289,7 +289,7 @@ export class AudioEngine {
             const note = this.state.midiGhostNotes.find(n => eff >= n.time && eff <= n.time + n.duration);
             if (note) {
                 // MIDI to Freq (Apply Octave Offset)
-                const offset = this.state.guideOctaveOffset * 12;
+                const offset = (this.state.guideOctaveOffset * 12) + this.state.transposeOffset;
                 guideFreq = 440 * Math.pow(2, (note.midi + offset - 69) / 12);
             }
         }
@@ -299,6 +299,17 @@ export class AudioEngine {
             guideFreq: guideFreq
         });
         const { freq, conf } = result;
+
+        // Update Meter Color
+        let meterColor = '#00FFFF'; // Default Cyan
+        if (guideFreq > 0 && freq > 0 && conf > 0.3) {
+            const diffCents = 1200 * Math.log2(freq / guideFreq);
+            // Check if within tolerance (exact pitch match)
+            if (Math.abs(diffCents) <= (this.state.toleranceCents || 50)) {
+                meterColor = '#00FF00'; // Green
+            }
+        }
+        this.state.meterColor = meterColor;
 
         // Update Real-time State (for Cursor)
         this.state.currentMicPitch = freq;

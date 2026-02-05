@@ -607,9 +607,9 @@ export class Visualizer {
                 ctx.save();
                 ctx.beginPath();
                 ctx.arc(playX, y, 5, 0, Math.PI * 2);
-                ctx.fillStyle = '#00FFFF'; // Cyan for cursor
+                ctx.fillStyle = state.meterColor || '#00FFFF'; // Cyan or Green
                 ctx.shadowBlur = 15;
-                ctx.shadowColor = '#00FFFF';
+                ctx.shadowColor = state.meterColor || '#00FFFF';
                 ctx.strokeStyle = '#fff';
 
                 // Pulsing effect?
