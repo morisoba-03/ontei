@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Play, Square, Mic, MousePointer2, Hand, Pencil, Eraser, Settings, Activity, Clock, Repeat, SkipBack, Music2, Volume2 } from 'lucide-react';
+import { Play, Square, Mic, MousePointer2, Hand, Pencil, Eraser, Settings, Activity, Clock, Repeat, SkipBack, Music2, Volume2, X, Plus, Minus } from 'lucide-react';
 import { audioEngine } from '../lib/AudioEngine';
 import { MidiTrackSelector } from './MidiTrackSelector';
 import type { MidiTrackInfo } from './MidiTrackSelector';
@@ -204,6 +204,33 @@ export function Controls({ onOpenSettings, onOpenPractice, onOpenHistory, onReco
                     <Volume2 className="w-5 h-5" />
                 </button>
 
+                {/* Tempo Control (Simple +/-) */}
+                <div className="flex items-center bg-white/5 border border-white/10 rounded-lg p-0.5 shrink-0 hidden md:flex">
+                    <button
+                        onClick={() => {
+                            const current = typeof audioEngine.state.tempoFactor === 'number' ? audioEngine.state.tempoFactor : 1.0;
+                            audioEngine.updateState({ tempoFactor: Math.max(0.1, current - 0.01) });
+                        }}
+                        className="p-2 hover:bg-white/10 rounded-md text-white/50 hover:text-white transition-colors"
+                        title="速度ダウン (-1%)"
+                    >
+                        <Minus className="w-4 h-4" />
+                    </button>
+                    <div className="px-1 text-xs font-mono text-white/70 min-w-[3em] text-center">
+                        {Math.round((audioEngine.state.tempoFactor || 1) * 100)}%
+                    </div>
+                    <button
+                        onClick={() => {
+                            const current = typeof audioEngine.state.tempoFactor === 'number' ? audioEngine.state.tempoFactor : 1.0;
+                            audioEngine.updateState({ tempoFactor: Math.min(2.0, current + 0.01) });
+                        }}
+                        className="p-2 hover:bg-white/10 rounded-md text-white/50 hover:text-white transition-colors"
+                        title="速度アップ (+1%)"
+                    >
+                        <Plus className="w-4 h-4" />
+                    </button>
+                </div>
+
                 {/* Loop Toggle */}
                 <button
                     onClick={() => {
@@ -214,14 +241,14 @@ export function Controls({ onOpenSettings, onOpenPractice, onOpenHistory, onReco
                             audioEngine.updateState({
                                 loopEnabled: true,
                                 loopStart: start,
-                                loopEnd: start + 10
+                                loopEnd: start + 4
                             });
                         } else {
                             audioEngine.updateState({ loopEnabled: newLoopEnabled });
                         }
                     }}
                     className={cn(
-                        "p-2.5 rounded-lg border transition-all shrink-0",
+                        "p-2.5 rounded-l-lg border-y border-l transition-all shrink-0",
                         loopEnabled
                             ? "bg-orange-500/20 border-orange-500/40 text-orange-400"
                             : "bg-white/5 border-white/10 text-white/50 hover:text-white hover:bg-white/10"
@@ -229,6 +256,26 @@ export function Controls({ onOpenSettings, onOpenPractice, onOpenHistory, onReco
                     title={loopEnabled ? "ループOFF" : "ループON"}
                 >
                     <Repeat className="w-5 h-5" />
+                </button>
+                {/* Loop Reset Button */}
+                <button
+                    onClick={() => {
+                        audioEngine.updateState({
+                            loopEnabled: false,
+                            loopStart: 0,
+                            loopEnd: 0
+                        });
+                    }}
+                    className={cn(
+                        "p-2.5 rounded-r-lg border transition-all shrink-0 -ml-px",
+                        "bg-white/5 border-white/10 text-white/50 hover:text-white hover:bg-white/10"
+                    )}
+                    title="ループ解除・リセット"
+                >
+                    <div className="relative w-5 h-5 flex items-center justify-center">
+                        <Repeat className="w-5 h-5 opacity-30" />
+                        <X className="w-3 h-3 absolute" />
+                    </div>
                 </button>
 
                 {/* Center: Tools */}
