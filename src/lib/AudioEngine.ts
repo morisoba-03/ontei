@@ -183,9 +183,9 @@ export class AudioEngine {
         const tempCtx = new Ctx();
 
         const samples = {
-            'C3': '/samples/piano/C3.mp3', // MIDI 48
-            'C4': '/samples/piano/C4.mp3', // MIDI 60
-            'C5': '/samples/piano/C5.mp3', // MIDI 72
+            'C3': 'samples/piano/C3.mp3', // MIDI 48
+            'C4': 'samples/piano/C4.mp3', // MIDI 60
+            'C5': 'samples/piano/C5.mp3', // MIDI 72
         };
 
         const promises = Object.entries(samples).map(async ([note, url]) => {
@@ -1244,11 +1244,12 @@ export class AudioEngine {
     async loadMidiFromUrl(url: string) {
         try {
             const res = await fetch(url);
-            if (!res.ok) throw new Error(`Failed to fetch MIDI: ${res.statusText}`);
+            if (!res.ok) throw new Error(`Failed to fetch MIDI: ${res.statusText} (${url})`);
             const buffer = await res.arrayBuffer();
             return this.loadMidiFromBuffer(buffer);
         } catch (e) {
             console.error("loadMidiFromUrl failed", e);
+            alert(`MIDIファイルの読み込みに失敗しました: ${url}\n${e}`);
             throw e;
         }
     }
@@ -1280,7 +1281,7 @@ export class AudioEngine {
             console.log(`[AudioEngine] Loaded ${allNotes.length} backing notes.`);
         } catch (e) {
             console.error("loadBackingMidiFromUrl failed", e);
-            // Don't throw, just warn
+            alert(`伴奏MIDIの読み込みに失敗しました: ${url}\n${e}`);
         }
     }
 
