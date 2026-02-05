@@ -87,7 +87,7 @@ export function CanvasView() {
                 const rect = canvas.getBoundingClientRect();
                 const centerXOnCanvas = lastTouchCenterX - rect.left;
                 const playX = getPlayX(canvas.width);
-                const ppm = audioEngine.state.pxPerSec / audioEngine.state.tempoFactor;
+                const ppm = audioEngine.state.pxPerSec;
                 const eff = audioEngine.state.playbackPosition + audioEngine.state.timelineOffsetSec;
                 anchorTime = eff + (centerXOnCanvas - playX) / ppm;
 
@@ -111,7 +111,7 @@ export function CanvasView() {
                 if (Math.abs(scale - 1) > 0.01) {
                     const oldPxPerSec = audioEngine.state.pxPerSec;
                     const newPxPerSec = Math.max(20, Math.min(800, oldPxPerSec * scale));
-                    const newPpm = newPxPerSec / audioEngine.state.tempoFactor;
+                    const newPpm = newPxPerSec;
 
                     // Calculate new playback position to keep anchorTime at the same screen position
                     // anchorTime should appear at centerXOnCanvas
@@ -128,7 +128,7 @@ export function CanvasView() {
             // Two-finger horizontal swipe (pan/seek)
             const deltaX = currentCenterX - lastTouchCenterX;
             if (Math.abs(deltaX) > 2) {
-                const ppm = audioEngine.state.pxPerSec / audioEngine.state.tempoFactor;
+                const ppm = audioEngine.state.pxPerSec;
                 const dt = -deltaX / ppm;
                 const newPos = Math.max(0, audioEngine.state.playbackPosition + dt);
                 audioEngine.updateState({ playbackPosition: newPos });
@@ -177,13 +177,13 @@ export function CanvasView() {
         canvas.setPointerCapture(e.pointerId);
         startPosRef.current = { x, y };
 
-        const { editTool, timelineOffsetSec, verticalOffset, selectedNote, playbackPosition, pxPerSec, tempoFactor, guideOctaveOffset } = audioEngine.state;
+        const { editTool, timelineOffsetSec, verticalOffset, selectedNote, playbackPosition, pxPerSec, guideOctaveOffset } = audioEngine.state;
         const offset = guideOctaveOffset * 12;
 
         // --- RULER SEEK (Top 30px) ---
         if (y < 30) {
             const playX = getPlayX(canvas.width);
-            const ppm = pxPerSec / tempoFactor;
+            const ppm = pxPerSec;
             const targetTime = (playbackPosition + timelineOffsetSec) + (x - playX) / ppm;
             const newPos = Math.max(0, targetTime - timelineOffsetSec);
 
@@ -377,11 +377,11 @@ export function CanvasView() {
         const dx = x - startPosRef.current.x;
         const dy = y - startPosRef.current.y;
 
-        const { pxPerSec, tempoFactor } = audioEngine.state;
+        const { pxPerSec, verticalZoom } = audioEngine.state;
 
         // SCRUB
         if (modeRef.current === 'scrub') {
-            const ppm = pxPerSec / tempoFactor;
+            const ppm = pxPerSec;
             // Anchor-based Drag:
             // Calculate Delta Time from Drag Distance (dx)
             // dx is (x - startX).
@@ -399,7 +399,7 @@ export function CanvasView() {
 
         // SET_LOOP (Alt+drag on ruler)
         if (modeRef.current === 'set_loop') {
-            const ppm = pxPerSec / tempoFactor;
+            const ppm = pxPerSec;
             const playX = getPlayX(canvas.width);
             const eff = audioEngine.state.playbackPosition + audioEngine.state.timelineOffsetSec;
             const currentTime = eff + (x - playX) / ppm;
@@ -412,14 +412,29 @@ export function CanvasView() {
         }
         // PAN (Now behaves as Scrub/Move Playhead)
         if (modeRef.current === 'pan') {
-            const ppm = pxPerSec / tempoFactor;
+            const ppm = pxPerSec;
             const dt = -dx / ppm;
             const newPos = Math.max(0, startStateRef.current.playbackPosition + dt);
+
+            // Paper-like drag: 1px drag = 1px content move
+            // verticalOffset is % (0-100) of scrollable range.
+            // Scrollable range = Total Range - Visible Range.
+            // Assumption: Total Range is ~96 semitones (based on visualizer constants 36 to 132).
+            const visibleSemitones = verticalZoom * 12;
+            const totalSemitones = 96;
+            const scrollableSemitones = Math.max(1, totalSemitones - visibleSemitones);
+
+            // dy pixels -> how many semitones?
+            // pixels/semitone = rect.height / visibleSemitones
+            const semitonesMoved = dy * (visibleSemitones / rect.height);
+
+            // Convert to % of scrollable range
+            const dOffsetPercent = (semitonesMoved / scrollableSemitones) * 100;
 
             audioEngine.updateState({
                 playbackPosition: newPos,
                 timelineOffsetSec: 0,
-                verticalOffset: startStateRef.current.vOffset + dy / 5
+                verticalOffset: startStateRef.current.vOffset + dOffsetPercent
             });
             return;
         }

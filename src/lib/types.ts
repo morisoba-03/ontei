@@ -94,7 +94,7 @@ export interface AudioEngineState {
     isParticlesEnabled: boolean;
     midiTrackCandidates?: { id: number, name: string, instrument: string, noteCount: number, channel: number }[];
     noteNotation: 'alphabet' | 'katakana';
-    metronomeMode: 'off' | 'measure' | 'beat';
+    metronomeMode: 'off' | 'on' | 'rec_only' | 'measure' | 'beat';
 }
 
 export type ScaleType = 'Major' | 'NaturalMinor' | 'HarmonicMinor' | 'MelodicMinor' | 'MajorPentatonic' | 'MinorPentatonic' | 'Chromatic';
