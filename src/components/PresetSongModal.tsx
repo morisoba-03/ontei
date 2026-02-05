@@ -44,7 +44,7 @@ export function PresetSongModal({ open, onClose }: PresetSongModalProps) {
                         // Find first track with notes
                         const track = candidates.find(t => t.noteCount > 0);
                         if (track) {
-                            audioEngine.importMidiTrack(track.id);
+                            audioEngine.importMidiTrack(track.id, song.transpose || 0);
                         }
                     }
                 }
