@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Play, Square, Mic, MousePointer2, Hand, Pencil, Eraser, Settings, Activity, Clock, Repeat } from 'lucide-react';
+import { Play, Square, Mic, MousePointer2, Hand, Pencil, Eraser, Settings, Activity, Clock, Repeat, SkipBack } from 'lucide-react';
 import { audioEngine } from '../lib/AudioEngine';
 import { MidiTrackSelector } from './MidiTrackSelector';
 import type { MidiTrackInfo } from './MidiTrackSelector';
@@ -112,6 +112,22 @@ export function Controls({ onOpenSettings, onOpenPractice, onOpenHistory, onReco
 
                 {/* Left: Playback & Recording */}
                 <div className="flex items-center gap-2 shrink-0">
+                    <button
+                        onClick={() => {
+                            audioEngine.onSeek(0);
+                            // If not playing, maybe we want to just reset position? 
+                            // onSeek(0) does reset position. 
+                            audioEngine.updateState({ playbackPosition: 0 });
+                        }}
+                        className={cn(
+                            "w-10 h-10 rounded-full flex items-center justify-center transition-all border",
+                            "bg-white/5 border-white/10 text-white/70 hover:text-white hover:bg-white/10"
+                        )}
+                        title="Rewind to Start"
+                    >
+                        <SkipBack className="w-5 h-5 fill-current" />
+                    </button>
+
                     <button
                         onClick={togglePlay}
                         className={cn(

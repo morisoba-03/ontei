@@ -624,6 +624,16 @@ export class AudioEngine {
         }
         this.nextBackingNoteIndex = bIdx;
 
+        // Sync Practice/Ghost Note Index
+        let pIdx = 0;
+        const pNotes = this.state.midiGhostNotes;
+        if (pNotes && pNotes.length > 0) {
+            while (pIdx < pNotes.length && pNotes[pIdx].time + pNotes[pIdx].duration < newTime) {
+                pIdx++;
+            }
+        }
+        this.nextNoteIndexToSchedule = pIdx;
+
         // Trim Pitch History (Fix for green line crumbling on rewind)
         // User Request: Preserve pitch history on rewind
         // if (this.state.pitchHistory.length > 0) {
