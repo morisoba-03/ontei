@@ -512,6 +512,9 @@ export class Visualizer {
                 pts.push({ t, midi, conf: p.conf, freq: p.freq });
             }
 
+            // Sort points by time to prevent zigzag lines when history is out of order (e.g. loops)
+            pts.sort((a, b) => a.t - b.t);
+
             if (micRenderMode === 'dot') {
                 ctx.save();
                 for (const p of pts) {
