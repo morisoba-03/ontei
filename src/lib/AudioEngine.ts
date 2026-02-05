@@ -44,6 +44,7 @@ export class AudioEngine {
     playbackStartTime: number = 0;
     playbackStartPerf: number = 0;
     reqFrameId: number | null = null;
+    private lastFrameTime: number = 0;
 
     // Config
     analysisRate: number = 20;
@@ -532,6 +533,7 @@ export class AudioEngine {
         this.scoreAnalyzer.reset();
 
         this.playbackStartTime = this.audioCtx.currentTime - this.state.playbackPosition;
+        this.lastFrameTime = this.audioCtx.currentTime;
         this.playbackStartPerf = performance.now();
 
         // Reset Guide Scheduler
@@ -601,6 +603,9 @@ export class AudioEngine {
         if (offset < this.backingBuffer.duration) {
             this.backingSource = this.audioCtx.createBufferSource();
             this.backingSource.buffer = this.backingBuffer;
+            try {
+                this.backingSource.playbackRate.value = this.state.tempoFactor;
+            } catch { /* ignore */ }
             this.backingSource.connect(this.masterGain!);
             this.backingSource.start(0, offset);
         }
@@ -612,7 +617,10 @@ export class AudioEngine {
         // Update anchor
         if (this.audioCtx) {
             this.playbackStartTime = this.audioCtx.currentTime - newTime;
-            this.nextMetronomeTime = 0; // Force metronome realignment
+            this.lastFrameTime = this.audioCtx.currentTime;
+            // Sync metronome to next beat in track time
+            const beatDur = 60 / (this.state.bpm || 120);
+            this.nextMetronomeTime = Math.ceil(newTime / beatDur) * beatDur;
         }
 
         // Sync Backing (Audio)
@@ -690,7 +698,7 @@ export class AudioEngine {
                 // Only merge known persistent keys to avoid state corruption
                 const persistentKeys: (keyof AudioEngineState)[] = [
                     'verticalZoom', 'pxPerSec', 'noteNotation',
-                    'tempoFactor', 'guideOctaveOffset', 'transposeOffset',
+                    'guideOctaveOffset',
                     'guideVolume', 'accompVolume', 'gateThreshold', 'toleranceCents',
                     'isParticlesEnabled',
                 ];
@@ -714,7 +722,7 @@ export class AudioEngine {
         try {
             const persistentKeys: (keyof AudioEngineState)[] = [
                 'verticalZoom', 'pxPerSec', 'noteNotation',
-                'tempoFactor', 'guideOctaveOffset', 'transposeOffset',
+                'guideOctaveOffset',
                 'guideVolume', 'accompVolume', 'gateThreshold', 'toleranceCents',
                 'isParticlesEnabled',
             ];
@@ -747,14 +755,19 @@ export class AudioEngine {
             this.syncBackingTrack();
         }
 
+        if (updates.tempoFactor !== undefined) {
+            if (this.backingSource) {
+                this.backingSource.playbackRate.setValueAtTime(updates.tempoFactor, this.audioCtx?.currentTime || 0);
+            }
+        }
+
         // Auto-save on relevant changes
         // Simple check: if any persistent key is in updates, trigger save
         const persistentKeys: (keyof AudioEngineState)[] = [
             'verticalZoom', 'pxPerSec', 'noteNotation',
-            'tempoFactor', 'guideOctaveOffset', 'transposeOffset',
+            'guideOctaveOffset',
             'guideVolume', 'accompVolume', 'gateThreshold', 'toleranceCents',
-            'guideVolume', 'accompVolume', 'gateThreshold', 'toleranceCents',
-            'isParticlesEnabled', 'inputLatency'
+            'isParticlesEnabled',
         ];
 
         if (updates.isBackingSoundEnabled !== undefined) {
@@ -776,7 +789,13 @@ export class AudioEngine {
 
         // Update Position
         if (this.audioCtx) {
-            this.state.playbackPosition = this.audioCtx.currentTime - this.playbackStartTime;
+            const now = this.audioCtx.currentTime;
+            const dt = now - this.lastFrameTime;
+            this.lastFrameTime = now;
+
+            if (dt < 0.5) { // Skip large gaps
+                this.state.playbackPosition += dt * this.state.tempoFactor;
+            }
         }
 
         // Loop Practice: Auto-rewind if past loop end
@@ -843,20 +862,18 @@ export class AudioEngine {
     private scheduleMetronome() {
         if (this.state.metronomeMode === 'off' || !this.audioCtx) return;
 
-        // Ensure nextMetronomeTime is valid
-        if (this.nextMetronomeTime < this.audioCtx.currentTime - 0.2) {
-            this.nextMetronomeTime = this.audioCtx.currentTime + 0.1;
+        const currentPos = this.state.playbackPosition;
+        const beatDuration = 60 / (this.state.bpm || 120);
+
+        // Ensure nextMetronomeTime is valid (track time)
+        if (this.nextMetronomeTime < currentPos - 0.2) {
+            this.nextMetronomeTime = Math.ceil(currentPos / beatDuration) * beatDuration;
         }
 
-        const beatDuration = 60 / (this.state.bpm || 120);
-        const lookahead = 0.5;
+        const lookahead = 0.2; // Short lookahead
 
-        while (this.nextMetronomeTime < this.audioCtx.currentTime + lookahead) {
-            // Determine if this beat is start of measure (Beat 0 of 0-3)
-            // We use relative time from playback start for grid alignment
-            const timeFromStart = this.nextMetronomeTime - this.playbackStartTime;
-            // Add slight epsilon for float precision
-            const beatIndex = Math.round(timeFromStart / beatDuration);
+        while (this.nextMetronomeTime < currentPos + lookahead) {
+            const beatIndex = Math.round(this.nextMetronomeTime / beatDuration);
             const isMeasureStart = beatIndex % 4 === 0;
 
             let playSound = false;
@@ -868,7 +885,10 @@ export class AudioEngine {
             }
 
             if (playSound) {
-                this.playClick(this.nextMetronomeTime, isMeasureStart);
+                const when = this.audioCtx.currentTime + (this.nextMetronomeTime - currentPos) / this.state.tempoFactor;
+                if (when >= this.audioCtx.currentTime) {
+                    this.playClick(when, isMeasureStart);
+                }
             }
 
             this.nextMetronomeTime += beatDuration;
@@ -918,11 +938,11 @@ export class AudioEngine {
             // Schedule
             // If it's already past, don't schedule unless it's very recent?
             // "when" in audioCtx time
-            const when = this.playbackStartTime + note.time;
+            const when = this.audioCtx.currentTime + (note.time - currentTime) / this.state.tempoFactor;
 
             if (when >= this.audioCtx.currentTime - 0.05) {
                 const offset = this.state.guideOctaveOffset * 12 + this.state.transposeOffset;
-                this.scheduleNote(note.midi + offset, when, note.duration);
+                this.scheduleNote(note.midi + offset, when, note.duration / this.state.tempoFactor);
             }
 
             this.nextGuideNoteIndex++;
@@ -948,12 +968,12 @@ export class AudioEngine {
                 // Calculate Exact Audio Time
                 // Note Time is relative to playbackStartTime (0 at start)
                 // AudioContext Time = playbackStartTime + note.time
-                const when = this.playbackStartTime + note.time;
+                const when = this.audioCtx.currentTime + (note.time - currentTime) / this.state.tempoFactor;
 
                 // Only schedule if it's in the near future (not way in past if we lagged)
                 if (when >= this.audioCtx.currentTime - 0.05) {
-                    const offset = this.state.guideOctaveOffset * 12;
-                    this.scheduleNote(note.midi + offset, when, note.duration);
+                    const offset = this.state.guideOctaveOffset * 12 + this.state.transposeOffset;
+                    this.scheduleNote(note.midi + offset, when, note.duration / this.state.tempoFactor);
                 }
             }
 
@@ -970,11 +990,11 @@ export class AudioEngine {
             const note = this.backingMidiNotes[this.nextBackingNoteIndex];
             if (note.time > currentTime + lookahead) break;
 
-            const when = this.playbackStartTime + note.time;
+            const when = this.audioCtx.currentTime + (note.time - currentTime) / this.state.tempoFactor;
             if (when >= this.audioCtx.currentTime - 0.05) {
                 // Simple backing sound (lower volume/different tone)
                 // Use volumeScale 0.3 for backing
-                this.scheduleNote(note.midi, when, Math.min(note.duration, 0.5), false, 0.3);
+                this.scheduleNote(note.midi, when, Math.min(note.duration, 0.5) / this.state.tempoFactor, false, 0.3);
             }
             this.nextBackingNoteIndex++;
         }
@@ -1058,7 +1078,7 @@ export class AudioEngine {
 
         const source = this.audioCtx.createBufferSource();
         source.buffer = buffer;
-        source.playbackRate.value = rate;
+        source.playbackRate.value = rate * this.state.tempoFactor;
 
         const gain = this.audioCtx.createGain();
         const vol = this.state.guideVolume * 0.8 * volumeScale; // Normalize volume
