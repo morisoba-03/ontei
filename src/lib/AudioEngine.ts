@@ -1374,7 +1374,7 @@ export class AudioEngine {
         this.updateState({ phrases });
     }
 
-    importMidiTrack(trackIndex: number) {
+    importMidiTrack(trackIndex: number, transpose: number = 0) {
         if (!this.loadedMidi) return;
 
         // Safety Check
@@ -1400,7 +1400,7 @@ export class AudioEngine {
         this.state.tempoMap = tempos;
 
         const ghostNotes: GhostNote[] = track.notes.map(n => ({
-            midi: n.midi,
+            midi: n.midi + transpose,
             time: n.time,
             duration: n.duration,
             role: 'call'

@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Play, Square, Mic, MousePointer2, Hand, Pencil, Eraser, Settings, Activity, Clock, Repeat, SkipBack } from 'lucide-react';
+import { Play, Square, Mic, MousePointer2, Hand, Pencil, Eraser, Settings, Activity, Clock, Repeat, SkipBack, Music2, Volume2 } from 'lucide-react';
 import { audioEngine } from '../lib/AudioEngine';
 import { MidiTrackSelector } from './MidiTrackSelector';
 import type { MidiTrackInfo } from './MidiTrackSelector';
@@ -23,6 +23,8 @@ export function Controls({ onOpenSettings, onOpenPractice, onOpenHistory, onReco
     const [loopEnabled, setLoopEnabled] = useState(audioEngine.state.loopEnabled);
     const [midiTracks, setMidiTracks] = useState<MidiTrackInfo[]>([]);
     const [showMidiSelector, setShowMidiSelector] = useState(false);
+    const [isGuideOn, setIsGuideOn] = useState(audioEngine.state.isGuideSoundEnabled);
+    const [isBackingOn, setIsBackingOn] = useState(audioEngine.state.isBackingSoundEnabled);
 
     useEffect(() => {
 
@@ -32,6 +34,8 @@ export function Controls({ onOpenSettings, onOpenPractice, onOpenHistory, onReco
             setIsRecording(audioEngine.isRecording);
             setEditTool(audioEngine.state.editTool);
             setLoopEnabled(audioEngine.state.loopEnabled);
+            setIsGuideOn(audioEngine.state.isGuideSoundEnabled);
+            setIsBackingOn(audioEngine.state.isBackingSoundEnabled);
 
             // Check for MIDI candidates to import
             const candidates = audioEngine.state.midiTrackCandidates;
@@ -123,7 +127,7 @@ export function Controls({ onOpenSettings, onOpenPractice, onOpenHistory, onReco
                             "w-10 h-10 rounded-full flex items-center justify-center transition-all border",
                             "bg-white/5 border-white/10 text-white/70 hover:text-white hover:bg-white/10"
                         )}
-                        title="Rewind to Start"
+                        title="最初に戻る"
                     >
                         <SkipBack className="w-5 h-5 fill-current" />
                     </button>
@@ -136,7 +140,7 @@ export function Controls({ onOpenSettings, onOpenPractice, onOpenHistory, onReco
                                 ? "bg-red-500/20 text-red-500 hover:bg-red-500/30"
                                 : "bg-blue-600 hover:bg-blue-500 text-white shadow-lg shadow-blue-500/20"
                         )}
-                        title={isPlaying ? "Stop (Space)" : "Play (Space)"}
+                        title={isPlaying ? "停止 (Space)" : "再生 (Space)"}
                     >
                         {isPlaying ? <Square className="w-5 h-5 fill-current" /> : <Play className="w-5 h-5 fill-current translate-x-0.5" />}
                     </button>
@@ -149,7 +153,7 @@ export function Controls({ onOpenSettings, onOpenPractice, onOpenHistory, onReco
                                 ? "bg-red-500 text-white border-red-500 shadow-red-500/20 animate-pulse"
                                 : "bg-white/5 border-white/10 text-white/70 hover:text-white hover:bg-white/10"
                         )}
-                        title="Toggle Microphone"
+                        title="マイク入力切替"
                     >
                         <Mic className="w-5 h-5" />
                     </button>
@@ -162,7 +166,7 @@ export function Controls({ onOpenSettings, onOpenPractice, onOpenHistory, onReco
                                 ? "bg-red-600 text-white border-red-600 shadow-lg shadow-red-600/30"
                                 : "bg-white/5 border-white/10 text-white/70 hover:text-white hover:bg-white/10"
                         )}
-                        title={isRecording ? "Stop Recording" : "Start Recording"}
+                        title={isRecording ? "録音停止" : "録音開始"}
                     >
                         <div className={cn(
                             "w-4 h-4 rounded-full transition-all",
@@ -172,6 +176,33 @@ export function Controls({ onOpenSettings, onOpenPractice, onOpenHistory, onReco
                 </div>
 
                 <div className="w-px h-8 bg-white/10 shrink-0 hidden sm:block" />
+
+                {/* Guide & Backing Toggles */}
+                <button
+                    onClick={() => audioEngine.updateState({ isGuideSoundEnabled: !isGuideOn })}
+                    className={cn(
+                        "p-2.5 rounded-lg border transition-all shrink-0",
+                        isGuideOn
+                            ? "bg-purple-500/20 border-purple-500/40 text-purple-400"
+                            : "bg-white/5 border-white/10 text-white/50 hover:text-white hover:bg-white/10"
+                    )}
+                    title={isGuideOn ? "ガイド音ON" : "ガイド音OFF"}
+                >
+                    <Music2 className="w-5 h-5" />
+                </button>
+
+                <button
+                    onClick={() => audioEngine.updateState({ isBackingSoundEnabled: !isBackingOn })}
+                    className={cn(
+                        "p-2.5 rounded-lg border transition-all shrink-0",
+                        isBackingOn
+                            ? "bg-indigo-500/20 border-indigo-500/40 text-indigo-400"
+                            : "bg-white/5 border-white/10 text-white/50 hover:text-white hover:bg-white/10"
+                    )}
+                    title={isBackingOn ? "伴奏ON" : "伴奏OFF"}
+                >
+                    <Volume2 className="w-5 h-5" />
+                </button>
 
                 {/* Loop Toggle */}
                 <button
@@ -203,10 +234,10 @@ export function Controls({ onOpenSettings, onOpenPractice, onOpenHistory, onReco
                 {/* Center: Tools */}
                 <div className="flex items-center bg-white/5 rounded-full p-1 gap-1 shrink-0">
                     {[
-                        { id: 'select', icon: MousePointer2, label: 'Select' },
-                        { id: 'view', icon: Hand, label: 'Pan' },
-                        { id: 'pencil', icon: Pencil, label: 'Draw' },
-                        { id: 'eraser', icon: Eraser, label: 'Erase' }
+                        { id: 'select', icon: MousePointer2, label: '選択' },
+                        { id: 'view', icon: Hand, label: '移動' },
+                        { id: 'pencil', icon: Pencil, label: 'ペン' },
+                        { id: 'eraser', icon: Eraser, label: '消しゴム' }
                     ].map(tool => (
                         <button
                             key={tool.id}
@@ -232,7 +263,7 @@ export function Controls({ onOpenSettings, onOpenPractice, onOpenHistory, onReco
                         <button
                             onClick={onOpenPractice}
                             className="p-2.5 rounded-lg border border-white/10 bg-white/5 text-white/70 hover:text-white hover:bg-white/10 transition-all"
-                            title="Practice Tools"
+                            title="練習メニュー"
                         >
                             <Activity className="w-5 h-5" />
                         </button>
@@ -242,7 +273,7 @@ export function Controls({ onOpenSettings, onOpenPractice, onOpenHistory, onReco
                         <button
                             onClick={onOpenHistory}
                             className="p-2.5 rounded-lg border border-white/10 bg-white/5 text-white/70 hover:text-white hover:bg-white/10 transition-all"
-                            title="History & Analytics"
+                            title="履歴と分析"
                         >
                             <Clock className="w-5 h-5" />
                         </button>
@@ -251,7 +282,7 @@ export function Controls({ onOpenSettings, onOpenPractice, onOpenHistory, onReco
                     <button
                         onClick={onOpenSettings}
                         className="p-2.5 rounded-lg border border-white/10 bg-white/5 text-white/70 hover:text-white hover:bg-white/10 transition-all"
-                        title="Settings"
+                        title="設定"
                     >
                         <Settings className="w-5 h-5" />
                     </button>
