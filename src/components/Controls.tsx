@@ -181,7 +181,7 @@ export function Controls({ onOpenSettings, onOpenPractice, onOpenHistory, onReco
                 <button
                     onClick={() => audioEngine.updateState({ isGuideSoundEnabled: !isGuideOn })}
                     className={cn(
-                        "p-2.5 rounded-lg border transition-all shrink-0",
+                        "p-1.5 md:p-2.5 rounded-lg border transition-all shrink-0",
                         isGuideOn
                             ? "bg-purple-500/20 border-purple-500/40 text-purple-400"
                             : "bg-white/5 border-white/10 text-white/50 hover:text-white hover:bg-white/10"
@@ -194,7 +194,7 @@ export function Controls({ onOpenSettings, onOpenPractice, onOpenHistory, onReco
                 <button
                     onClick={() => audioEngine.updateState({ isBackingSoundEnabled: !isBackingOn })}
                     className={cn(
-                        "p-2.5 rounded-lg border transition-all shrink-0",
+                        "p-1.5 md:p-2.5 rounded-lg border transition-all shrink-0",
                         isBackingOn
                             ? "bg-indigo-500/20 border-indigo-500/40 text-indigo-400"
                             : "bg-white/5 border-white/10 text-white/50 hover:text-white hover:bg-white/10"
@@ -205,13 +205,14 @@ export function Controls({ onOpenSettings, onOpenPractice, onOpenHistory, onReco
                 </button>
 
                 {/* Tempo Control (Simple +/-) */}
-                <div className="flex items-center bg-white/5 border border-white/10 rounded-lg p-0.5 shrink-0 hidden md:flex">
+                {/* Tempo Control (Simple +/-) */}
+                <div className="flex items-center bg-white/5 border border-white/10 rounded-lg p-0.5 shrink-0">
                     <button
                         onClick={() => {
                             const current = typeof audioEngine.state.tempoFactor === 'number' ? audioEngine.state.tempoFactor : 1.0;
                             audioEngine.updateState({ tempoFactor: Math.max(0.1, current - 0.01) });
                         }}
-                        className="p-2 hover:bg-white/10 rounded-md text-white/50 hover:text-white transition-colors"
+                        className="p-1.5 md:p-2 hover:bg-white/10 rounded-md text-white/50 hover:text-white transition-colors"
                         title="速度ダウン (-1%)"
                     >
                         <Minus className="w-4 h-4" />
@@ -224,7 +225,7 @@ export function Controls({ onOpenSettings, onOpenPractice, onOpenHistory, onReco
                             const current = typeof audioEngine.state.tempoFactor === 'number' ? audioEngine.state.tempoFactor : 1.0;
                             audioEngine.updateState({ tempoFactor: Math.min(2.0, current + 0.01) });
                         }}
-                        className="p-2 hover:bg-white/10 rounded-md text-white/50 hover:text-white transition-colors"
+                        className="p-1.5 md:p-2 hover:bg-white/10 rounded-md text-white/50 hover:text-white transition-colors"
                         title="速度アップ (+1%)"
                     >
                         <Plus className="w-4 h-4" />
@@ -248,7 +249,7 @@ export function Controls({ onOpenSettings, onOpenPractice, onOpenHistory, onReco
                         }
                     }}
                     className={cn(
-                        "p-2.5 rounded-l-lg border-y border-l transition-all shrink-0",
+                        "p-1.5 md:p-2.5 rounded-l-lg border-y border-l transition-all shrink-0",
                         loopEnabled
                             ? "bg-orange-500/20 border-orange-500/40 text-orange-400"
                             : "bg-white/5 border-white/10 text-white/50 hover:text-white hover:bg-white/10"
@@ -267,7 +268,7 @@ export function Controls({ onOpenSettings, onOpenPractice, onOpenHistory, onReco
                         });
                     }}
                     className={cn(
-                        "p-2.5 rounded-r-lg border transition-all shrink-0 -ml-px",
+                        "p-1.5 md:p-2.5 rounded-r-lg border transition-all shrink-0 -ml-px",
                         "bg-white/5 border-white/10 text-white/50 hover:text-white hover:bg-white/10"
                     )}
                     title="ループ解除・リセット"
