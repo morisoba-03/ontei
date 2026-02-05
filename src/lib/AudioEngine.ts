@@ -15,6 +15,7 @@ import { PitchAnalyzer } from './PitchAnalyzer';
 import { Visualizer } from './Visualizer';
 import { extractMelodyNotesFromBuffer } from './MelodyExtractor';
 import { PracticePatternGenerator } from './PracticePatternGenerator';
+import { toast } from '../components/Toast';
 
 export class AudioEngine {
     state: AudioEngineState;
@@ -1145,7 +1146,7 @@ export class AudioEngine {
 
         } catch (e) {
             console.error("Load Audio Failed", e);
-            alert("音声ファイルの読み込みに失敗しました");
+            toast.error("音声ファイルの読み込みに失敗しました");
         } finally {
             this.updateState({ loadingProgress: null });
             this.draw();
@@ -1268,7 +1269,7 @@ export class AudioEngine {
             return this.loadMidiFromBuffer(buffer);
         } catch (e) {
             console.error("loadMidiFromUrl failed", e);
-            alert(`MIDIファイルの読み込みに失敗しました: ${url}\n${e}`);
+            toast.error(`MIDIファイルの読み込みに失敗しました: ${url}`);
             throw e;
         }
     }
@@ -1300,7 +1301,7 @@ export class AudioEngine {
             console.log(`[AudioEngine] Loaded ${allNotes.length} backing notes.`);
         } catch (e) {
             console.error("loadBackingMidiFromUrl failed", e);
-            alert(`伴奏MIDIの読み込みに失敗しました: ${url}\n${e}`);
+            toast.error(`伴奏MIDIの読み込みに失敗しました: ${url}`);
         }
     }
 
@@ -1486,6 +1487,14 @@ export class AudioEngine {
 
         try {
             const buffer = await file.arrayBuffer();
+
+            // Save to storage
+            try {
+                await storage.saveBacking(buffer);
+            } catch (e) {
+                console.warn('[AudioEngine] Failed to save backing to storage', e);
+            }
+
             const audioBuffer = await this.audioCtx.decodeAudioData(buffer);
             this.backingBuffer = audioBuffer;
             this.state.isBackingSoundEnabled = true;
@@ -1493,6 +1502,7 @@ export class AudioEngine {
             this.notify();
         } catch (e) {
             console.error("Failed to load backing file:", e);
+            toast.error("伴奏ファイルの読み込みに失敗しました");
         }
     }
 
@@ -1513,6 +1523,21 @@ export class AudioEngine {
                     // If multiple tracks, user will need to select (modal will show)
                 }
             }
+
+            // Restore Backing Audio
+            const backingData = await storage.loadBacking();
+            if (backingData && this.audioCtx) {
+                try {
+                    // Start decoding
+                    const audioBuffer = await this.audioCtx.decodeAudioData(backingData);
+                    this.backingBuffer = audioBuffer;
+                    this.state.isBackingSoundEnabled = true;
+                    console.log('[AudioEngine] Restored backing track from storage');
+                } catch (e) {
+                    console.warn('[AudioEngine] Failed to decode restored backing track', e);
+                }
+            }
+
         } catch (e) {
             console.warn('[AudioEngine] Failed to restore from storage', e);
         }
@@ -1538,6 +1563,7 @@ export class AudioEngine {
 
             // Clear storage
             storage.saveMidi(new ArrayBuffer(0)).catch(() => { });
+            storage.saveBacking(new ArrayBuffer(0)).catch(() => { });
 
             console.log('[AudioEngine] Session fully reset');
         } else {
