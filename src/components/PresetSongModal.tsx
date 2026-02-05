@@ -45,6 +45,7 @@ export function PresetSongModal({ open, onClose }: PresetSongModalProps) {
                         const track = candidates.find(t => t.noteCount > 0);
                         if (track) {
                             audioEngine.importMidiTrack(track.id, song.transpose || 0);
+                            audioEngine.updateState({ guideOctaveOffset: 0 }); // Reset for consistency
                         }
                     }
                 }
@@ -53,7 +54,8 @@ export function PresetSongModal({ open, onClose }: PresetSongModalProps) {
                 audioEngine.updateState({
                     midiGhostNotes: [...song.notes],
                     playbackPosition: 0,
-                    scoreResult: null
+                    scoreResult: null,
+                    guideOctaveOffset: 0 // Reset for consistent mobile/PC view
                 });
             }
 

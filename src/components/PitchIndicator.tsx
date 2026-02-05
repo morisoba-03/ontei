@@ -14,7 +14,7 @@ export function PitchIndicator() {
         const update = () => {
             const state = audioEngine.state;
             const currentPitch = state.currentMicPitch || 0;
-            const conf = state.currentMicConf || 0;
+            // const conf = state.currentMicConf || 0;
 
             // Find current guide note
             let targetPitch = 0;
@@ -38,7 +38,7 @@ export function PitchIndicator() {
                 currentPitch,
                 targetPitch,
                 cents,
-                isActive: state.isPlaying && conf > 0.5 && currentPitch > 0
+                isActive: state.isPlaying && (currentPitch > 0 || !!ghostNote)
             });
         };
 
@@ -67,16 +67,18 @@ export function PitchIndicator() {
                     {/* Good zone */}
                     <div className="absolute left-[40%] right-[40%] top-0 bottom-0 bg-emerald-500/20" />
 
-                    {/* Indicator */}
-                    <div
-                        className={cn(
-                            "absolute top-0 bottom-0 w-2 rounded-full transition-all duration-75 -translate-x-1/2",
-                            isGood ? "bg-emerald-400 shadow-lg shadow-emerald-400/50" :
-                                isOk ? "bg-yellow-400 shadow-lg shadow-yellow-400/50" :
-                                    "bg-red-400 shadow-lg shadow-red-400/50"
-                        )}
-                        style={{ left: `${barPosition}%` }}
-                    />
+                    {/* Indicator (Only show if we have current pitch) */}
+                    {pitchData.currentPitch > 0 && (
+                        <div
+                            className={cn(
+                                "absolute top-0 bottom-0 w-2 rounded-full transition-all duration-75 -translate-x-1/2",
+                                isGood ? "bg-emerald-400 shadow-lg shadow-emerald-400/50" :
+                                    isOk ? "bg-yellow-400 shadow-lg shadow-yellow-400/50" :
+                                        "bg-red-400 shadow-lg shadow-red-400/50"
+                            )}
+                            style={{ left: `${barPosition}%` }}
+                        />
+                    )}
                 </div>
 
                 {/* Labels */}
@@ -95,14 +97,18 @@ export function PitchIndicator() {
 
                 {/* Feedback text */}
                 <div className={cn(
-                    "text-center text-xs font-medium mt-1",
-                    isGood ? "text-emerald-400" :
-                        isOk ? "text-yellow-400" :
-                            "text-red-400"
+                    "text-center text-xs font-medium mt-1 min-h-[1.5em]",
+                    pitchData.currentPitch > 0 ? (
+                        isGood ? "text-emerald-400" :
+                            isOk ? "text-yellow-400" :
+                                "text-red-400"
+                    ) : "text-white/30"
                 )}>
-                    {isGood ? "🎯 Perfect!" :
-                        isOk ? (pitchData.cents > 0 ? "少し高い" : "少し低い") :
-                            (pitchData.cents > 0 ? "高すぎ！" : "低すぎ！")}
+                    {pitchData.currentPitch > 0 ? (
+                        isGood ? "🎯 Perfect!" :
+                            isOk ? (pitchData.cents > 0 ? "少し高い" : "少し低い") :
+                                (pitchData.cents > 0 ? "高すぎ！" : "低すぎ！")
+                    ) : "待機中..."}
                 </div>
             </div>
         </div>
