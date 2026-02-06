@@ -128,6 +128,16 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
                                 />
                             </div>
 
+                            <div className="flex items-center justify-between text-sm pt-2">
+                                <span>カウントイン (再生前1小節)</span>
+                                <button
+                                    onClick={() => update('countIn', !state.countIn)}
+                                    className={`w-10 h-5 rounded-full transition-colors relative ${state.countIn ? 'bg-orange-500' : 'bg-white/10'}`}
+                                >
+                                    <span className={`absolute top-0.5 w-4 h-4 bg-white rounded-full transition-transform duration-200 ${state.countIn ? 'left-5.5' : 'left-0.5'}`} />
+                                </button>
+                            </div>
+
                             <div className="space-y-2">
                                 <div className="flex justify-between text-sm items-center">
                                     <span>ガイド音程シフト</span>
