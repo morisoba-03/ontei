@@ -36,7 +36,15 @@ export const storage = {
         return result ?? null;
     },
 
-    async _put(key: string, value: ArrayBuffer) {
+    async saveUserPresets(presets: any[]) {
+        return this._put('user_presets', presets);
+    },
+
+    async loadUserPresets(): Promise<any[]> {
+        return (await this._get('user_presets')) || [];
+    },
+
+    async _put(key: string, value: any) {
         return new Promise<void>((resolve, reject) => {
             const request = indexedDB.open(DB_NAME, DB_VERSION);
             request.onsuccess = () => {
@@ -51,7 +59,7 @@ export const storage = {
         });
     },
 
-    async _get(key: string): Promise<ArrayBuffer | undefined> {
+    async _get(key: string): Promise<any | undefined> {
         return new Promise((resolve, reject) => {
             const request = indexedDB.open(DB_NAME, DB_VERSION);
             request.onsuccess = () => {

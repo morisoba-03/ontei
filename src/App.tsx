@@ -12,6 +12,7 @@ import { ToastContainer } from './components/Toast';
 import { PitchIndicator } from './components/PitchIndicator';
 import { StatsDashboard } from './components/StatsDashboard';
 import { PresetSongModal } from './components/PresetSongModal';
+import { SaveSongModal } from './components/SaveSongModal';
 import { Trophy, Trash2, BarChart3, BookOpen } from 'lucide-react';
 
 
@@ -24,6 +25,7 @@ function App() {
   const [showReset, setShowReset] = useState(false);
   const [showStats, setShowStats] = useState(false);
   const [showPresets, setShowPresets] = useState(false);
+  const [showSaveModal, setShowSaveModal] = useState(false);
   const [recordingBlob, setRecordingBlob] = useState<Blob | null>(null);
   const [state, setState] = useState(audioEngine.state);
 
@@ -96,16 +98,7 @@ function App() {
 
           {/* Save Session */}
           <button
-            onClick={() => {
-              const sessionData = audioEngine.exportSession();
-              const blob = new Blob([sessionData], { type: 'application/json' });
-              const url = URL.createObjectURL(blob);
-              const a = document.createElement('a');
-              a.href = url;
-              a.download = `ontei-session-${new Date().toISOString().slice(0, 10)}.json`;
-              a.click();
-              URL.revokeObjectURL(url);
-            }}
+            onClick={() => setShowSaveModal(true)}
             className="h-8 w-24 rounded-full bg-green-500/20 text-green-300 text-xs hover:bg-green-500/30 transition-all border border-green-500/30 flex items-center justify-center gap-1.5 ml-2"
             title="現在の状態を保存"
           >
@@ -189,7 +182,9 @@ function App() {
           />
         )}
         <StatsDashboard open={showStats} onClose={() => setShowStats(false)} />
+
         <PresetSongModal open={showPresets} onClose={() => setShowPresets(false)} />
+        <SaveSongModal open={showSaveModal} onClose={() => setShowSaveModal(false)} />
         {recordingBlob && (
           <RecordingPlayer
             audioBlob={recordingBlob}
