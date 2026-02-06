@@ -97,6 +97,7 @@ export interface AudioEngineState {
     metronomeMode: 'off' | 'on' | 'rec_only' | 'measure' | 'beat';
     meterColor?: string;
     inputLatency: number; // seconds
+    countIn: boolean;
 }
 
 export type ScaleType = 'Major' | 'NaturalMinor' | 'HarmonicMinor' | 'MelodicMinor' | 'MajorPentatonic' | 'MinorPentatonic' | 'Chromatic';

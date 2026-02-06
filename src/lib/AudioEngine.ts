@@ -169,7 +169,8 @@ export class AudioEngine {
             isParticlesEnabled: true,
             noteNotation: 'alphabet',
             metronomeMode: 'off',
-            inputLatency: 0.12 // 120ms default latency compensation
+            inputLatency: 0.12, // 120ms default latency compensation
+            countIn: false
         };
         this.loadSettings();
         // Start loading piano samples immediately
@@ -234,6 +235,10 @@ export class AudioEngine {
             // Setup other nodes...
             this.melodyGain = this.audioCtx.createGain();
             this.melodyGain.connect(this.masterGain);
+
+            this.accompGain = this.audioCtx.createGain();
+            this.accompGain.connect(this.masterGain);
+            this.accompGain.gain.value = this.state.accompVolume;
         }
         if (this.audioCtx?.state === 'suspended') {
             await this.audioCtx.resume();
@@ -532,7 +537,12 @@ export class AudioEngine {
         this.state.scoreResult = null; // Clear previous score
         this.scoreAnalyzer.reset();
 
-        this.playbackStartTime = this.audioCtx.currentTime - this.state.playbackPosition;
+        if (this.state.countIn) {
+            const beatDur = 60 / (this.state.bpm || 120);
+            this.state.playbackPosition -= beatDur * 4;
+        }
+
+        this.playbackStartTime = this.audioCtx.currentTime - (this.state.playbackPosition / this.state.tempoFactor);
         this.lastFrameTime = this.audioCtx.currentTime;
         this.playbackStartPerf = performance.now();
 
@@ -599,15 +609,27 @@ export class AudioEngine {
 
         if (!this.state.isPlaying || !this.audioCtx || !this.backingBuffer || !this.state.isBackingSoundEnabled) return;
 
-        const offset = this.state.playbackPosition;
-        if (offset < this.backingBuffer.duration) {
-            this.backingSource = this.audioCtx.createBufferSource();
-            this.backingSource.buffer = this.backingBuffer;
-            try {
-                this.backingSource.playbackRate.value = this.state.tempoFactor;
-            } catch { /* ignore */ }
+        // Create new source
+        this.backingSource = this.audioCtx.createBufferSource();
+        this.backingSource.buffer = this.backingBuffer;
+        if (this.accompGain) {
+            this.backingSource.connect(this.accompGain);
+        } else {
             this.backingSource.connect(this.masterGain!);
-            this.backingSource.start(0, offset);
+        }
+        this.backingSource.playbackRate.value = this.state.tempoFactor;
+
+        let offset = this.state.playbackPosition;
+        let when = this.audioCtx.currentTime;
+
+        // Handle negative offset (pre-roll)
+        if (offset < 0) {
+            when += Math.abs(offset) / this.state.tempoFactor; // Schedule start in the future
+            offset = 0; // Start playback from the beginning of the buffer
+        }
+
+        if (offset < this.backingBuffer.duration) {
+            this.backingSource.start(when, offset);
         }
     }
 
@@ -761,13 +783,20 @@ export class AudioEngine {
             }
         }
 
+        if (updates.accompVolume !== undefined && this.accompGain) {
+            this.accompGain.gain.setTargetAtTime(updates.accompVolume, this.audioCtx?.currentTime || 0, 0.05);
+        }
+        if (updates.guideVolume !== undefined && this.melodyGain) {
+            this.melodyGain.gain.setTargetAtTime(updates.guideVolume, this.audioCtx?.currentTime || 0, 0.05);
+        }
+
         // Auto-save on relevant changes
         // Simple check: if any persistent key is in updates, trigger save
         const persistentKeys: (keyof AudioEngineState)[] = [
             'verticalZoom', 'pxPerSec', 'noteNotation',
             'guideOctaveOffset',
             'guideVolume', 'accompVolume', 'gateThreshold', 'toleranceCents',
-            'isParticlesEnabled',
+            'isParticlesEnabled', 'countIn'
         ];
 
         if (updates.isBackingSoundEnabled !== undefined) {
