@@ -507,6 +507,7 @@ export class Visualizer {
                 if (t > drawUntil) continue;
                 // if (isCallAt(t)) continue; // Allow drawing over guide notes
 
+                if (p.conf < 0.8) continue; // Filter low confidence
                 const midi = (69 + 12 * Math.log2(Math.max(1e-9, p.freq) / A4Frequency));
                 if (midi < vmin || midi > vmax) continue;
                 pts.push({ t, midi, conf: p.conf, freq: p.freq });
@@ -570,8 +571,9 @@ export class Visualizer {
                         if (i > 0) {
                             const prev = pts[i - 1];
                             const dt = p.t - prev.t;
-                            // If gap > 0.1s (approx 2-3 frames at 20fps analysis), break line
-                            if (dt > 0.12) {
+                            const dy = Math.abs(p.midi - prev.midi);
+                            // Break line if gap > 0.12s OR sudden jump > 5 semitones within short time
+                            if (dt > 0.12 || (dt < 0.1 && dy > 5)) {
                                 ctx.stroke();
                                 ctx.beginPath();
                                 ctx.strokeStyle = '#39FF14';
