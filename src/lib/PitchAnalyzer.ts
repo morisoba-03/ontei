@@ -16,6 +16,11 @@ export class PitchAnalyzer {
 
     constructor() { }
 
+    reset() {
+        this.lastStableFreq = 0;
+        this.consecutiveSilence = 0;
+    }
+
     analyze(buf: Float32Array, sampleRate: number, options: { viterbi?: boolean, guideFreq?: number, minRms?: number } = { viterbi: true }): PitchResult {
         // Initialize detector if buffer size changes
         if (!this.detector || this.inputLength !== buf.length) {

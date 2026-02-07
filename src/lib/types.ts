@@ -98,6 +98,7 @@ export interface AudioEngineState {
     meterColor?: string;
     inputLatency: number; // seconds
     countIn: boolean;
+    showPitchDeviation: boolean;
 }
 
 export type ScaleType = 'Major' | 'NaturalMinor' | 'HarmonicMinor' | 'MelodicMinor' | 'MajorPentatonic' | 'MinorPentatonic' | 'Chromatic';
