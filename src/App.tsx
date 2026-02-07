@@ -13,7 +13,7 @@ import { PitchIndicator } from './components/PitchIndicator';
 import { StatsDashboard } from './components/StatsDashboard';
 import { PresetSongModal } from './components/PresetSongModal';
 import { SaveSongModal } from './components/SaveSongModal';
-import { Trophy, Trash2, BarChart3, BookOpen } from 'lucide-react';
+import { Trophy, Trash2, BarChart3, BookOpen, FileMusic, FileAudio, Save, FolderOpen } from 'lucide-react';
 
 
 function App() {
@@ -43,7 +43,7 @@ function App() {
   return (
     <div className="w-screen h-[100dvh] bg-[#1a1a1a] text-white overflow-hidden flex flex-col">
       {/* Top Bar - Scrollable */}
-      <div className="h-12 border-b border-white/10 flex items-center px-2 md:px-4 bg-white/5 backdrop-blur-sm z-10 overflow-x-auto no-scrollbar gap-2">
+      <div className="h-14 border-b border-white/10 flex items-center px-2 md:px-4 bg-white/5 backdrop-blur-sm z-10 overflow-x-auto no-scrollbar gap-2">
         <h1 className="font-bold text-base md:text-lg tracking-tight bg-gradient-to-r from-blue-400 to-indigo-400 bg-clip-text text-transparent truncate max-w-[120px] md:max-w-none">
           Ontei <span className="hidden md:inline text-xs text-white/40 font-normal ml-2">Legacy Refactor</span>
         </h1>
@@ -54,10 +54,10 @@ function App() {
           {/* Import Guide (MIDI or Audio) */}
           <button
             onClick={() => document.getElementById('hidden-import-guide')?.click()}
-            className="h-8 w-24 rounded-full bg-blue-500/20 text-blue-300 text-xs hover:bg-blue-500/30 transition-all border border-blue-500/30 flex items-center justify-center gap-1.5"
+            className="h-11 w-12 md:w-14 rounded-lg bg-blue-500/20 text-blue-300 text-[9px] md:text-[10px] hover:bg-blue-500/30 transition-all border border-blue-500/30 flex flex-col items-center justify-center gap-0.5 leading-none p-1"
             title="ガイド(MIDI/音声)を読み込む"
           >
-            <span className="text-lg md:text-base">🎼</span> <span className="hidden md:inline">ガイド読込</span>
+            <FileMusic className="w-5 h-5" /> <span>ガイド</span>
           </button>
           <input
             type="file" accept=".mid,.midi,.mp3,.wav,.ogg,.m4a"
@@ -76,10 +76,10 @@ function App() {
           {/* Import Backing (Audio) */}
           <button
             onClick={() => document.getElementById('hidden-import-audio')?.click()}
-            className="h-8 w-24 rounded-full bg-purple-500/20 text-purple-300 text-xs hover:bg-purple-500/30 transition-all border border-purple-500/30 flex items-center justify-center gap-1.5"
+            className="h-11 w-12 md:w-14 rounded-lg bg-purple-500/20 text-purple-300 text-[9px] md:text-[10px] hover:bg-purple-500/30 transition-all border border-purple-500/30 flex flex-col items-center justify-center gap-0.5 leading-none p-1"
             title="伴奏(MP3/WAV)を読み込む"
           >
-            <span className="text-lg md:text-base">🎵</span> <span className="hidden md:inline">伴奏</span>
+            <FileAudio className="w-5 h-5" /> <span>伴奏</span>
           </button>
           <input
             type="file" accept=".mp3,.wav,.ogg,.m4a"
@@ -90,28 +90,28 @@ function App() {
           {/* Preset Songs */}
           <button
             onClick={() => setShowPresets(true)}
-            className="h-8 w-24 rounded-full bg-pink-500/20 text-pink-300 text-xs hover:bg-pink-500/30 transition-all border border-pink-500/30 flex items-center justify-center gap-1.5"
+            className="h-11 w-12 md:w-14 rounded-lg bg-pink-500/20 text-pink-300 text-[9px] md:text-[10px] hover:bg-pink-500/30 transition-all border border-pink-500/30 flex flex-col items-center justify-center gap-0.5 leading-none p-1"
             title="練習曲ライブラリ"
           >
-            <BookOpen className="w-4 h-4" /> <span className="hidden md:inline">練習曲</span>
+            <BookOpen className="w-5 h-5" /> <span>練習曲</span>
           </button>
 
           {/* Save Session */}
           <button
             onClick={() => setShowSaveModal(true)}
-            className="h-8 w-24 rounded-full bg-green-500/20 text-green-300 text-xs hover:bg-green-500/30 transition-all border border-green-500/30 flex items-center justify-center gap-1.5 ml-2"
+            className="h-11 w-12 md:w-14 rounded-lg bg-green-500/20 text-green-300 text-[9px] md:text-[10px] hover:bg-green-500/30 transition-all border border-green-500/30 flex flex-col items-center justify-center gap-0.5 leading-none p-1 ml-1"
             title="現在の状態を保存"
           >
-            <span className="hidden md:inline">💾 SAVE</span><span className="md:hidden">💾</span>
+            <Save className="w-5 h-5" /> <span>保存</span>
           </button>
 
           {/* Load Project (JSON) */}
           <button
             onClick={() => document.getElementById('hidden-import-json')?.click()}
-            className="h-8 w-24 rounded-full bg-white/5 text-white/70 text-xs hover:bg-white/10 transition-all border border-white/10 flex items-center justify-center gap-1.5 ml-2"
+            className="h-11 w-12 md:w-14 rounded-lg bg-white/5 text-white/70 text-[9px] md:text-[10px] hover:bg-white/10 transition-all border border-white/10 flex flex-col items-center justify-center gap-0.5 leading-none p-1 ml-1"
             title="練習データを読み込む"
           >
-            <span className="text-lg md:text-base">📂</span> <span className="hidden md:inline">LOAD</span>
+            <FolderOpen className="w-5 h-5" /> <span>読込</span>
           </button>
           <input
             type="file" accept=".json"
@@ -123,14 +123,14 @@ function App() {
           <button
             onClick={() => state.scoreResult && state.scoreResult.totalScore > 0 && setShowResult(true)}
             disabled={!state.scoreResult || state.scoreResult.totalScore <= 0}
-            className={`h-8 w-28 rounded-full text-xs transition-all border flex items-center justify-center gap-1.5 ml-4 ${state.scoreResult && state.scoreResult.totalScore > 0
+            className={`h-11 w-12 md:w-14 rounded-lg text-[9px] md:text-[10px] transition-all border flex flex-col items-center justify-center gap-0.5 leading-none p-1 ml-2 ${state.scoreResult && state.scoreResult.totalScore > 0
               ? "bg-yellow-500/20 text-yellow-300 border-yellow-500/30 hover:bg-yellow-500/30 cursor-pointer"
               : "bg-gray-800/50 text-gray-500 border-gray-700/50 cursor-not-allowed opacity-70"
               }`}
             title={state.scoreResult && state.scoreResult.totalScore > 0 ? "結果を見る" : "まだ結果がありません"}
           >
-            <Trophy className={`w-3 h-3 ${state.scoreResult && state.scoreResult.totalScore > 0 ? 'text-yellow-300' : 'text-gray-500'}`} />
-            <span className="hidden md:inline">結果を見る</span>
+            <Trophy className={`w-5 h-5 ${state.scoreResult && state.scoreResult.totalScore > 0 ? 'text-yellow-300' : 'text-gray-500'}`} />
+            <span>結果</span>
           </button>
 
         </div>
