@@ -43,7 +43,7 @@ function App() {
   return (
     <div className="w-screen h-[100dvh] bg-[#1a1a1a] text-white overflow-hidden flex flex-col">
       {/* Top Bar - Scrollable */}
-      <div className="h-14 border-b border-white/10 flex items-center px-2 md:px-4 bg-white/5 backdrop-blur-sm z-10 overflow-x-auto no-scrollbar gap-2">
+      <div className="h-14 border-b border-white/10 flex items-center justify-center px-2 md:px-4 bg-white/5 backdrop-blur-sm z-10 overflow-x-auto no-scrollbar gap-2">
         <h1 className="font-bold text-base md:text-lg tracking-tight bg-gradient-to-r from-blue-400 to-indigo-400 bg-clip-text text-transparent truncate max-w-[120px] md:max-w-none">
           Ontei <span className="hidden md:inline text-xs text-white/40 font-normal ml-2">Legacy Refactor</span>
         </h1>

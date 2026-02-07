@@ -194,7 +194,7 @@ export class ScoreAnalyzer {
             vibratoSec: 0,
             notesHit: 0,
             notesTotal: 0,
-            comment: this.getComment(totalScore),
+            comment: this.getComment(totalScore, { pitch: pitchScore, stability: stabilityScore, rhythm: rhythmScore, expressiveness: techniqueScore }, avgDiff),
             advice,
             phraseScores: this.phraseScores,
             weakNotes
@@ -273,10 +273,77 @@ export class ScoreAnalyzer {
         return nonVibratoFrames > 0 ? (stable / nonVibratoFrames) * 100 : 100;
     }
 
-    private getComment(totalScore: number): string {
-        if (totalScore >= 90) return "素晴らしい！プロ級の歌声です。";
-        else if (totalScore >= 80) return "とても上手です！安定感があります。";
-        else if (totalScore >= 70) return "良い調子です。音程のズレを減らそう。";
-        return "もう一息！ガイドをよく聞いてみよう。";
+    private getComment(score: number, radar: { pitch: number; stability: number; rhythm: number; expressiveness: number }, tendency: number): string {
+        const pick = (arr: string[]) => arr[Math.floor(Math.random() * arr.length)];
+
+        // Special advice based on specific weakness
+        if (score < 80) {
+            if (radar.pitch < 70) return pick([
+                "音程が少し不安定です。自分の声をよく聴きながら歌ってみましょう。",
+                "ピッチのズレが目立ちます。腹式呼吸を意識して支えを作ると安定します。",
+                "高音が上がりきっていないかも？喉を締めずにリラックスして。",
+                "音階練習を取り入れて、正確なピッチ感覚を養いましょう。"
+            ]);
+            if (radar.rhythm < 70) return pick([
+                "リズムが少しずれているようです。伴奏のドラムやベースを意識してみて。",
+                "走り気味、あるいは遅れ気味です。手拍子などでリズムを感じながら練習しましょう。",
+                "単語の入り（アタック）のタイミングを意識するとリズム感が改善します。",
+                "曲のテンポを体全体で感じて歌うのがコツです。"
+            ]);
+            if (radar.stability < 70) return pick([
+                "声が震えてしまっています。ロングトーンの練習で安定感を養いましょう。",
+                "語尾が不安定になりがちです。最後まで息をコントロールして。",
+                "まっすぐ発声する練習を取り入れてみましょう。",
+                "一定の強さで声を出し続ける練習が効果的です。"
+            ]);
+            if (Math.abs(tendency) > 20) {
+                if (tendency > 0) return pick([
+                    "全体的に音が上ずり気味（シャープ）です。リラックスして少し低めを意識してみて。",
+                    "張り切りすぎて音が高くなっているかも？深呼吸して肩の力を抜きましょう。"
+                ]);
+                else return pick([
+                    "全体的に音が下がり気味（フラット）です。目線を上げて、明るい声を出すイメージで！",
+                    "ピッチが届いていない箇所があります。お腹からしっかり声を支えましょう。"
+                ]);
+            }
+        }
+
+        // General Score Based Comments
+        if (score >= 95) return pick([
+            "完璧なパフォーマンス！もはやプロの領域です。感動しました。",
+            "驚異的な安定感と表現力。これ以上のアドバイスはありません！",
+            "素晴らしい！聴く人の心を捉える歌声でした。",
+            "まさに圧巻！ピッチ、リズム共に文句なしの出来栄えです。",
+            "神がかっています！録音して保存しておきたいレベルですね。"
+        ]);
+        if (score >= 85) return pick([
+            "かなりハイレベルです！細かいニュアンスまで意識が行き届いています。",
+            "素晴らしい歌声です。自信を持って歌えているのが伝わります。",
+            "とても安定しています。ここからさらに表現力を磨いてみましょう！",
+            "高得点です！基礎がしっかりできていますね。",
+            "素晴らしい！あとは細部を詰めるだけで完璧になります。"
+        ]);
+        if (score >= 75) return pick([
+            "良い調子です！全体的によく歌えています。",
+            "安定感が出てきました。細かいピッチの揺れを抑えればさらに伸びます。",
+            "ナイス！ガイドメロディによくついていけています。",
+            "基礎はできています。さらに抑揚をつけるとより良くなるでしょう。",
+            "上手です！苦手なフレーズを重点的に練習すれば90点台も夢じゃありません。"
+        ]);
+        if (score >= 60) return pick([
+            "もう少しです！音程のズレを意識して修正してみましょう。",
+            "惜しい！リズムに乗り遅れないように注意してみてください。",
+            "まずはガイドメロディをよく聴いて、丁寧に歌うことを意識しましょう。",
+            "所々良い部分があります。安定して出せる音域を広げていきましょう。",
+            "ドンマイ！落ち着いて一音一音丁寧に発声してみましょう。"
+        ]);
+
+        return pick([
+            "まずはリラックスして。ガイドの音をよく聴くことから始めましょう。",
+            "焦らず練習しましょう。まずは短いフレーズから完璧にするのがコツです。",
+            "難しかったですか？テンポを落として練習するのもおすすめです。",
+            "あきらめないで！繰り返し練習すれば必ず上手くなります。",
+            "最初は誰でも難しいものです。楽しんで歌うことが一番の上達法です！"
+        ]);
     }
 }
