@@ -1,4 +1,5 @@
 import { X, HelpCircle } from 'lucide-react';
+import { APP_VERSION } from '../constants';
 import { audioEngine } from '../lib/AudioEngine';
 import { useState, useEffect } from 'react';
 import { HelpModal } from './HelpModal';
@@ -23,7 +24,7 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
                     <h3 className="font-bold flex items-center gap-2">
                         <span className="w-2 h-6 bg-blue-500 rounded-full" />
                         <span>設定</span>
-                        <span className="text-xs font-normal text-white/30 bg-white/10 px-1.5 py-0.5 rounded ml-2">v1.2.0</span>
+                        <span className="text-xs font-normal text-white/30 bg-white/10 px-1.5 py-0.5 rounded ml-2">{APP_VERSION}</span>
                     </h3>
                     <div className="flex items-center gap-1">
                         <button
