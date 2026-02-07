@@ -112,7 +112,7 @@ export function Controls({ onOpenSettings, onOpenPractice, onOpenHistory, onReco
             className="fixed bottom-0 left-0 right-0 bg-neutral-900 border-t border-white/10 p-4 z-50 shadow-2xl"
             style={{ paddingBottom: 'max(1rem, env(safe-area-inset-bottom))' }}
         >
-            <div className="w-full flex items-center justify-between gap-4 px-4 overflow-x-auto xl:overflow-visible no-scrollbar">
+            <div className="w-full flex items-center justify-center gap-4 px-4 overflow-x-auto xl:overflow-visible no-scrollbar">
 
                 {/* Left: Playback & Recording */}
                 <div className="flex items-center gap-2 shrink-0">
