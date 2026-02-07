@@ -170,7 +170,8 @@ export class AudioEngine {
             noteNotation: 'alphabet',
             metronomeMode: 'off',
             inputLatency: 0.12, // 120ms default latency compensation
-            countIn: false
+            countIn: false,
+            showPitchDeviation: true
         };
         this.loadSettings();
         // Start loading piano samples immediately
@@ -411,6 +412,9 @@ export class AudioEngine {
 
         this.state.isPlaying = true; // Enable Auto-play for practice
         this.state.scoreResult = null; // Reset score
+        // Fix: Reset pitchHistory and analyzer state
+        this.state.pitchHistory = [];
+        this.pitchAnalyzer.reset();
 
         this.nextPracticeTime = 0;
         this.nextMetronomeTime = this.audioCtx.currentTime; // Init metronome
@@ -796,7 +800,7 @@ export class AudioEngine {
             'verticalZoom', 'pxPerSec', 'noteNotation',
             'guideOctaveOffset',
             'guideVolume', 'accompVolume', 'gateThreshold', 'toleranceCents',
-            'isParticlesEnabled', 'countIn'
+            'isParticlesEnabled', 'countIn', 'showPitchDeviation'
         ];
 
         if (updates.isBackingSoundEnabled !== undefined) {

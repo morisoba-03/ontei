@@ -536,59 +536,50 @@ export class Visualizer {
             } else {
                 // Graph mode
                 if (pts.length > 1) {
-                    // Start Pitch Line
                     ctx.save();
-                    ctx.beginPath();
-                    ctx.strokeStyle = '#39FF14'; // Neon Green
                     ctx.lineWidth = 4;
                     ctx.lineCap = 'round';
                     ctx.lineJoin = 'round';
                     ctx.shadowBlur = 15;
-                    ctx.shadowColor = '#39FF14';
 
-                    let first = true;
-                    // Draw loop with gap detection
-                    for (let i = 0; i < pts.length; i++) {
-                        const p = pts[i];
-                        const y = h - (p.midi - vmin + 1) * pxSemi;
-                        // Align with playhead: The user said "From the playline". 
-                        // Logic: playX is where "now" is. 
-                        // p.t is the timestamp of the pitch. eff is current playback time.
-                        // x = playX + (p.t - eff) ...
-                        // If p.t == eff, x = playX. So it aligns with playhead.
-                        // However, pitch detection has latency (buffer size + viterbi lag).
-                        // AudioEngine pushes with `now - vOff`.
-                        // If we want to align "sound heard now" with "playhead", we might need to adjust.
-                        // But strictly speaking, x calculation is correct for "time T is at position X".
+                    for (let i = 1; i < pts.length; i++) {
+                        const prev = pts[i - 1];
+                        const curr = pts[i];
 
-                        const x = playX + ((p.t - eff) * pxPerSec);
-
-                        // optimization
-                        if (x < -10) continue;
-                        if (x > w + 10) break;
+                        const prevX = playX + ((prev.t - eff) * pxPerSec);
+                        const prevY = h - (prev.midi - vmin + 1) * pxSemi;
+                        const currX = playX + ((curr.t - eff) * pxPerSec);
+                        const currY = h - (curr.midi - vmin + 1) * pxSemi;
 
                         // Gap detection
-                        if (i > 0) {
-                            const prev = pts[i - 1];
-                            const dt = p.t - prev.t;
-                            const dy = Math.abs(p.midi - prev.midi);
-                            // Break line if gap > 0.12s OR sudden jump > 5 semitones within short time
-                            if (dt > 0.12 || (dt < 0.1 && dy > 5)) {
-                                ctx.stroke();
-                                ctx.beginPath();
-                                ctx.strokeStyle = '#39FF14';
-                                ctx.lineWidth = 4;
-                                ctx.shadowBlur = 15;
-                                ctx.shadowColor = '#39FF14';
-                                first = true;
+                        const dt = curr.t - prev.t;
+                        const dy = Math.abs(curr.midi - prev.midi);
+                        if (dt > 0.12 || (dt < 0.1 && dy > 5)) continue;
+
+                        let color = '#39FF14'; // Default Neon Green
+                        let shadow = '#39FF14';
+
+                        if (state.showPitchDeviation) {
+                            // Find corresponding guide note
+                            // Simple optimization: check recent notes? Or just find.
+                            // midiGhostNotes are usually short enough.
+                            const note = midiGhostNotes.find(n => curr.t >= n.time && curr.t <= n.time + n.duration);
+                            if (note) {
+                                const expected = note.midi + (state.guideOctaveOffset * 12);
+                                if (Math.abs(curr.midi - expected) > 1.0) { // Deviation > 1 semitone
+                                    color = '#FFA500'; // Orange
+                                    shadow = '#FFA500';
+                                }
                             }
                         }
 
-                        if (first) { ctx.moveTo(x, y); first = false; }
-                        else { ctx.lineTo(x, y); }
-
+                        ctx.beginPath();
+                        ctx.strokeStyle = color;
+                        ctx.shadowColor = shadow;
+                        ctx.moveTo(prevX, prevY);
+                        ctx.lineTo(currX, currY);
+                        ctx.stroke();
                     }
-                    ctx.stroke();
                     ctx.restore();
                 }
             }

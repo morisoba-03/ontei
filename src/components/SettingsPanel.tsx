@@ -139,6 +139,16 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
                                 </button>
                             </div>
 
+                            <div className="flex items-center justify-between text-sm pt-2 border-t border-white/5 mt-2">
+                                <span>音程ズレ警告 (オレンジ表示)</span>
+                                <button
+                                    onClick={() => update('showPitchDeviation', !state.showPitchDeviation)}
+                                    className={`w-10 h-5 rounded-full transition-colors relative ${state.showPitchDeviation ? 'bg-orange-500' : 'bg-white/10'}`}
+                                >
+                                    <span className={`absolute top-0.5 w-4 h-4 bg-white rounded-full transition-transform duration-200 ${state.showPitchDeviation ? 'left-5.5' : 'left-0.5'}`} />
+                                </button>
+                            </div>
+
                             <div className="space-y-2">
                                 <div className="flex justify-between text-sm items-center">
                                     <span>ガイド音程シフト</span>
