@@ -338,12 +338,18 @@ export function PresetSongModal({ open, onClose }: PresetSongModalProps) {
                 </div>
 
                 {/* Footer */}
-                <div className="p-3 border-t border-white/10 bg-zinc-800/30 shrink-0">
+                <div className="p-4 border-t border-white/10 bg-zinc-800/30 shrink-0 flex flex-col gap-2">
                     <p className="text-xs text-white/40 text-center">
                         {tab === 'user'
                             ? "バックアップとしてエクスポートしておくことを推奨します"
                             : "曲を選択すると練習を開始できます"}
                     </p>
+                    <button
+                        onClick={onClose}
+                        className="w-full py-2.5 rounded-lg bg-white/5 hover:bg-white/10 text-white text-sm font-medium transition-colors border border-white/5"
+                    >
+                        閉じる
+                    </button>
                 </div>
             </div>
         </div>

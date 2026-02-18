@@ -86,7 +86,7 @@ export function SaveSongModal({ open, onClose }: SaveSongModalProps) {
 
     return (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/70 backdrop-blur-sm p-4 animate-in fade-in duration-200">
-            <div className="bg-zinc-900 border border-white/10 rounded-2xl w-full max-w-md shadow-2xl overflow-hidden flex flex-col">
+            <div className="bg-zinc-900 border border-white/10 rounded-2xl w-full max-w-md max-h-[85vh] shadow-2xl overflow-hidden flex flex-col">
                 <div className="flex items-center justify-between p-4 border-b border-white/10 bg-zinc-800/50">
                     <h2 className="text-lg font-semibold text-white flex items-center gap-2">
                         <Save className="w-5 h-5 text-green-400" />
@@ -122,7 +122,7 @@ export function SaveSongModal({ open, onClose }: SaveSongModalProps) {
                     </button>
                 </div>
 
-                <div className="p-6">
+                <div className="p-6 flex-1 overflow-y-auto overscroll-contain">
                     {mode === 'library' ? (
                         <div className="space-y-4">
                             <p className="text-sm text-white/60">
@@ -195,6 +195,15 @@ export function SaveSongModal({ open, onClose }: SaveSongModalProps) {
                             </button>
                         </div>
                     )}
+                </div>
+
+                <div className="p-4 border-t border-white/10 bg-zinc-800/30 shrink-0">
+                    <button
+                        onClick={onClose}
+                        className="w-full py-2.5 rounded-lg bg-white/5 hover:bg-white/10 text-white text-sm font-medium transition-colors border border-white/5"
+                    >
+                        キャンセル
+                    </button>
                 </div>
             </div>
         </div>

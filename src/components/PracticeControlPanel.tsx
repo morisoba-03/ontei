@@ -297,8 +297,13 @@ export const PracticeControlPanel: React.FC<Props> = ({ audioEngine, isPracticin
                     </div>
                 )}
 
-                <div className="pt-2 text-[10px] text-center text-white/20 border-t border-white/5 shrink-0">
-                    Continuous Practice Generator v1.1
+                <div className="pt-4 border-t border-white/5 shrink-0">
+                    <button
+                        onClick={onClose}
+                        className="w-full py-2.5 bg-white/5 hover:bg-white/10 text-white/70 hover:text-white rounded-lg text-sm font-medium transition-colors border border-white/5"
+                    >
+                        パネルを閉じる
+                    </button>
                 </div>
             </div>
         </div>
