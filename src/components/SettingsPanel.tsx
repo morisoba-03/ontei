@@ -309,8 +309,13 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
 
                 </div>
 
-                <div className="pt-4 pb-4 text-center shrink-0">
-                    <p className="text-[10px] text-white/20">Ontei Web - Refactor</p>
+                <div className="p-4 border-t border-white/10 bg-black/20 shrink-0">
+                    <button
+                        onClick={onClose}
+                        className="w-full py-3 bg-white/10 hover:bg-white/20 text-white rounded-xl font-bold transition-all active:scale-95 border border-white/5 shadow-lg"
+                    >
+                        設定を閉じる
+                    </button>
                 </div>
             </div>
             {showHelp && <HelpModal onClose={() => setShowHelp(false)} />}

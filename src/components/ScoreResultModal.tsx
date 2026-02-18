@@ -74,19 +74,19 @@ export const ScoreResultModal: React.FC<Props> = ({ result, onClose }) => {
 
     return (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-sm animate-in fade-in duration-300 p-4">
-            <div className="w-full max-w-4xl bg-[#1a1a1e] rounded-3xl border border-white/10 shadow-2xl overflow-hidden animate-in zoom-in-95 duration-300">
+            <div className="w-full max-w-4xl bg-[#1a1a1e] rounded-3xl border border-white/10 shadow-2xl overflow-hidden animate-in zoom-in-95 duration-300 flex flex-col max-h-[90dvh]">
                 {/* Header */}
-                <div className="bg-gradient-to-r from-indigo-900/50 to-purple-900/50 p-6 flex items-center justify-between border-b border-white/10">
-                    <h2 className="text-2xl font-bold flex items-center gap-2 text-white">
+                <div className="bg-gradient-to-r from-indigo-900/50 to-purple-900/50 p-4 md:p-6 flex items-center justify-between border-b border-white/10 shrink-0">
+                    <h2 className="text-xl md:text-2xl font-bold flex items-center gap-2 text-white">
                         <Trophy className="text-yellow-400 fill-yellow-400" />
                         診断結果
                     </h2>
-                    <button onClick={onClose} className="p-2 hover:bg-white/10 rounded-full transition-colors text-white/60 hover:text-white">
-                        <X />
+                    <button onClick={onClose} className="p-2 bg-white/5 hover:bg-white/10 rounded-full transition-colors text-white/80 hover:text-white">
+                        <X size={20} />
                     </button>
                 </div>
 
-                <div className="p-8 grid grid-cols-1 md:grid-cols-2 gap-8">
+                <div className="p-6 md:p-8 grid grid-cols-1 md:grid-cols-2 gap-8 overflow-y-auto overscroll-contain">
                     {/* Left: Score & Comment */}
                     <div className="space-y-6 text-center md:text-left">
                         <div className="space-y-2">
@@ -296,6 +296,16 @@ export const ScoreResultModal: React.FC<Props> = ({ result, onClose }) => {
                             </div>
                         )}
                     </div>
+                </div>
+
+                {/* Footer */}
+                <div className="p-4 border-t border-white/10 bg-black/20 flex justify-center shrink-0">
+                    <button
+                        onClick={onClose}
+                        className="w-full md:w-auto px-8 py-3 rounded-xl bg-white/10 hover:bg-white/20 text-white font-bold transition-all border border-white/5 shadow-lg active:scale-95"
+                    >
+                        閉じる
+                    </button>
                 </div>
             </div>
         </div>
