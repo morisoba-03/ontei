@@ -1,3 +1,6 @@
+// @ts-ignore
+import AnalysisWorker from './analysis.worker?worker';
+
 export interface AnalysisResult {
     freq: number;
     conf: number;
@@ -10,7 +13,7 @@ export class AnalysisProcessor {
     public onResult: ((res: AnalysisResult) => void) | null = null;
 
     constructor() {
-        this.worker = new Worker(new URL('./analysis.worker.ts', import.meta.url), { type: 'module' });
+        this.worker = new AnalysisWorker();
         this.worker.onmessage = (e) => {
             if (e.data.type === 'result' && this.onResult) {
                 this.onResult(e.data.payload);
