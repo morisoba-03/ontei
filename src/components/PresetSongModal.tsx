@@ -142,9 +142,16 @@ export function PresetSongModal({ open, onClose }: PresetSongModalProps) {
             }
 
             // Load Backing
+            let backingName: string | null = null;
             if (song.backingUrl) {
-                if (song.backingUrl.endsWith('.mid')) {
-                    await audioEngine.loadBackingMidiFromUrl(song.backingUrl);
+                // Use relative path from public/ (or base)
+                const url = song.backingUrl;
+
+                if (url.endsWith('.mid')) {
+                    backingName = await audioEngine.loadBackingMidiFromUrl(url);
+                } else {
+                    // Future support for mp3 backing
+                    // await audioEngine.loadBackingAudioFromUrl(url);
                 }
             }
 
@@ -156,7 +163,11 @@ export function PresetSongModal({ open, onClose }: PresetSongModalProps) {
             // Enter Practice Mode
             audioEngine.startPractice({ mode: 'Midi' });
 
-            toast.success(`「${song.name}」を読み込みました`);
+            if (backingName) {
+                toast.success(`「${song.name}」を読み込みました\n(伴奏: ${backingName})`);
+            } else {
+                toast.success(`「${song.name}」を読み込みました`);
+            }
             onClose();
         } catch (e) {
             console.error(e);

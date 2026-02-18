@@ -420,6 +420,9 @@ export class AudioEngine {
         this.nextMetronomeTime = this.audioCtx.currentTime; // Init metronome
         this.nextNoteIndexToSchedule = 0;
 
+        // Reset backing track index for practice
+        this.nextBackingNoteIndex = 0;
+
         if (config.mode === 'Midi') {
             // Note: stopPractice() might have restored notes from backup if we switched from Random.
             // If we are starting fresh Midi practice, we might have loaded notes.
@@ -479,8 +482,9 @@ export class AudioEngine {
             }
         }
 
-        this.backingMidiNotes = []; // Clear backing midi
-        this.nextBackingNoteIndex = 0;
+        // Do not clear backing MIDI here, as it might be loaded just before starting practice
+        // this.backingMidiNotes = []; 
+        // this.nextBackingNoteIndex = 0;
 
 
         this.practiceQueue = [];
@@ -1027,18 +1031,18 @@ export class AudioEngine {
             if (when >= this.audioCtx.currentTime - 0.05) {
                 // Simple backing sound (lower volume/different tone)
                 // Use volumeScale 0.3 for backing
-                this.scheduleNote(note.midi, when, Math.min(note.duration, 0.5) / this.state.tempoFactor, false, 0.3);
+                this.scheduleNote(note.midi, when, Math.min(note.duration, 0.5) / this.state.tempoFactor, false, 0.3, true);
             }
             this.nextBackingNoteIndex++;
         }
     }
 
-    scheduleNote(midi: number, when: number, duration: number, isResume = false, volumeScale = 1.0) {
+    scheduleNote(midi: number, when: number, duration: number, isResume = false, volumeScale = 1.0, isBacking = false) {
         if (!this.audioCtx || !this.masterGain) return;
 
         // Use Sampler if available
         if (Object.keys(this.pianoBuffers).length > 0) {
-            this.playSampledNote(midi, when, duration, isResume, volumeScale);
+            this.playSampledNote(midi, when, duration, isResume, volumeScale, isBacking);
             return;
         }
 
@@ -1051,7 +1055,8 @@ export class AudioEngine {
         const freq = 440 * Math.pow(2, (midi - 69) / 12);
         osc.frequency.value = freq;
 
-        const vol = this.state.guideVolume * volumeScale;
+        const baseVol = isBacking ? this.state.accompVolume : this.state.guideVolume;
+        const vol = baseVol * volumeScale;
 
         // Envelope
         if (isResume) {
@@ -1077,7 +1082,7 @@ export class AudioEngine {
         }, (when - this.audioCtx.currentTime + duration + 0.2) * 1000);
     }
 
-    playSampledNote(midi: number, when: number, duration: number, isResume: boolean, volumeScale: number) {
+    playSampledNote(midi: number, when: number, duration: number, isResume: boolean, volumeScale: number, isBacking = false) {
         if (!this.audioCtx || !this.masterGain) return;
 
         // Find closest sample
@@ -1114,7 +1119,8 @@ export class AudioEngine {
         source.playbackRate.value = rate * this.state.tempoFactor;
 
         const gain = this.audioCtx.createGain();
-        const vol = this.state.guideVolume * 0.8 * volumeScale; // Normalize volume
+        const baseVol = isBacking ? this.state.accompVolume : this.state.guideVolume;
+        const vol = baseVol * 0.8 * volumeScale; // Normalize volume
 
         // ADSR Envelope
         const attackTime = isResume ? 0.05 : 0.02;
@@ -1196,6 +1202,10 @@ export class AudioEngine {
             // Clear existing practice data on new audio load (as requested by workflow)
             this.state.midiGhostNotes = [];
             this.state.scoreResult = null;
+
+            // Clear backing tracks when loading new main track
+            this.backingMidiNotes = [];
+            this.nextBackingNoteIndex = 0;
 
         } catch (e) {
             console.error("Load Audio Failed", e);
@@ -1327,7 +1337,7 @@ export class AudioEngine {
         }
     }
 
-    async loadBackingMidiFromUrl(url: string) {
+    async loadBackingMidiFromUrl(url: string): Promise<string | null> {
         try {
             console.log(`[AudioEngine] Loading backing MIDI from ${url}`);
             const res = await fetch(url);
@@ -1351,10 +1361,14 @@ export class AudioEngine {
             allNotes.sort((a, b) => a.time - b.time);
             this.backingMidiNotes = allNotes;
             this.nextBackingNoteIndex = 0;
+            this.updateState({ isBackingSoundEnabled: true });
             console.log(`[AudioEngine] Loaded ${allNotes.length} backing notes.`);
+            const fileName = url.split('/').pop() || '伴奏データ';
+            return fileName;
         } catch (e) {
             console.error("loadBackingMidiFromUrl failed", e);
             toast.error(`伴奏MIDIの読み込みに失敗しました: ${url}`);
+            return null;
         }
     }
 
@@ -1457,6 +1471,10 @@ export class AudioEngine {
             this.state.midiGhostNotes = [];
             this.state.scoreResult = null;
         }
+
+        // Clear backing tracks when loading new main track
+        this.backingMidiNotes = [];
+        this.nextBackingNoteIndex = 0;
 
         const track = this.loadedMidi.tracks[trackIndex];
         if (!track) return;
