@@ -19,6 +19,7 @@ export interface ScoreResult {
     };
     tendency: number; // 平均ズレ (cent)。正なら#傾向、負ならb傾向
     vibratoCount: number;
+    scoopCount: number;
     vibratoSec: number;
     notesHit: number;
     notesTotal: number;
@@ -38,6 +39,7 @@ export class ScoreAnalyzer {
     private lastVibratoTime: number = 0;
     private vibratoState: boolean = false;
     private vibratoCount: number = 0;
+    private scoopCount: number = 0;
     private advisor = new PerformanceAdvisor();
 
     // Config
@@ -51,6 +53,7 @@ export class ScoreAnalyzer {
         this.vibratoBuffer = [];
         this.vibratoState = false;
         this.vibratoCount = 0;
+        this.scoopCount = 0;
     }
 
     feed(time: number, userPitch: number, guidePitch: number): { isVibrato: boolean } {
@@ -143,6 +146,7 @@ export class ScoreAnalyzer {
                 radar: { pitch: 0, stability: 0, expressiveness: 0, rhythm: 0, technique: 0 },
                 tendency: 0,
                 vibratoCount: 0,
+                scoopCount: 0,
                 vibratoSec: 0,
                 notesHit: 0,
                 notesTotal: 0,
@@ -158,7 +162,11 @@ export class ScoreAnalyzer {
 
         const pitchScore = this.calculatePitchScore(validFrames);
         const stabilityScore = this.calculateStabilityScore(validFrames);
-        const techniqueScore = Math.min(100, this.vibratoCount * 10);
+
+        // Technique: Vibrato + Scoop
+        const vibratoBonus = this.vibratoCount * 10;
+        const scoopBonus = this.scoopCount * 5;
+        const techniqueScore = Math.min(100, vibratoBonus + scoopBonus);
 
         // Rhythm: Percentage of frames where user sang while guide was active
         const rhythmScore = guideActiveFrames > 0
@@ -191,6 +199,7 @@ export class ScoreAnalyzer {
             },
             tendency: avgDiff,
             vibratoCount: this.vibratoCount,
+            scoopCount: this.scoopCount,
             vibratoSec: 0,
             notesHit: 0,
             notesTotal: 0,
@@ -231,6 +240,8 @@ export class ScoreAnalyzer {
 
     private calculatePhraseScores(phrases: import('./types').Phrase[]) {
         this.phraseScores = [];
+        this.scoopCount = 0; // Reset for recalculation based on phrases
+
         if (!phrases || phrases.length === 0) return;
 
         phrases.forEach(phrase => {
@@ -241,6 +252,28 @@ export class ScoreAnalyzer {
 
             let score = 0;
             if (valid.length > 0) {
+                // Scoop Detection Logic (Portamento support)
+                // Check first few frames (e.g., first 300ms)
+                const attackDuration = 0.3;
+                const attackFrames = valid.filter(f => f.time - phrase.startTime < attackDuration);
+
+                if (attackFrames.length > 3) {
+                    // Check if starting low and rising
+                    const startDiff = attackFrames[0].diffCents; // Should be negative (flat)
+                    const endDiff = attackFrames[attackFrames.length - 1].diffCents;
+
+                    // Condition 1: Starts significantly flat (-200 to -50 cents)
+                    // Condition 2: Ends closer to target (improving)
+                    // Condition 3: Monotonic increase in pitch (roughly)
+                    if (startDiff < -50 && endDiff > startDiff + 30 && Math.abs(endDiff) < 50) {
+                        this.scoopCount++;
+
+                        // Bonus: Treat these attack frames as "hits" for pitch scoring purpose
+                        // We temporarily modify their diff for scoring calculation (hacky but effective for score)
+                        attackFrames.forEach(f => f.diffCents = 0);
+                    }
+                }
+
                 const pitchScore = this.calculatePitchScore(valid);
                 score = pitchScore;
             }
