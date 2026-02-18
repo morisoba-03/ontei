@@ -11,7 +11,7 @@ declare global {
 }
 
 
-import { PitchAnalyzer } from './PitchAnalyzer';
+import { AnalysisProcessor } from './audio/AnalysisProcessor';
 import { Visualizer } from './Visualizer';
 import { extractMelodyNotesFromBuffer } from './MelodyExtractor';
 import { PracticePatternGenerator } from './PracticePatternGenerator';
@@ -20,7 +20,7 @@ import { toast } from '../components/Toast';
 export class AudioEngine {
     state: AudioEngineState;
     visualizer: Visualizer | null = null;
-    pitchAnalyzer: PitchAnalyzer;
+    analysisProcessor: AnalysisProcessor;
     scoreAnalyzer: import('./ScoreAnalyzer').ScoreAnalyzer;
 
     // Sampler
@@ -123,7 +123,7 @@ export class AudioEngine {
     }
 
     constructor() {
-        this.pitchAnalyzer = new PitchAnalyzer();
+        this.analysisProcessor = new AnalysisProcessor();
         this.scoreAnalyzer = new ScoreAnalyzer();
         this.state = {
             isPlaying: false,
@@ -273,6 +273,10 @@ export class AudioEngine {
             // Connect: Source -> Analyser (no output to destination to avoid feedback)
             this.micSource.connect(this.micAnalyser);
 
+            // Init Processor
+            this.analysisProcessor.init(this.audioCtx.sampleRate);
+            this.analysisProcessor.onResult = (res) => this.handleAnalysisResult(res);
+
             this.startAnalysis();
             return true;
         } catch (e) {
@@ -303,10 +307,32 @@ export class AudioEngine {
             }
         }
 
-        const result = this.pitchAnalyzer.analyze(this.micData, this.audioCtx.sampleRate, {
-            viterbi: true,
-            guideFreq: guideFreq
-        });
+        // Offload analysis to Worker
+        this.analysisProcessor.processAsync(this.micData, guideFreq);
+    }
+
+    private handleAnalysisResult(result: { freq: number, conf: number }) {
+        if (!this.audioCtx) return;
+
+        // Determine Guide Freq again? No, we passed it to worker, but worker output doesn't include it.
+        // Actually we need guideFreq to update meter color.
+        // We can recalculate it or pass it through.
+        // Let's recalculate it briefly or store it? Recalculation is cheap.
+
+        // Re-calculate guideFreq for visualization logic (copy-paste logic, or extract method)
+        // Or simpler: Just accept result and update state. The meter color logic needs guideFreq.
+        // Let's extract guideFreq calculation or just Recalculate.
+
+        let guideFreq = 0;
+        const eff = this.state.playbackPosition + this.state.timelineOffsetSec;
+        if (Array.isArray(this.state.midiGhostNotes)) {
+            const note = this.state.midiGhostNotes.find(n => eff >= n.time && eff <= n.time + n.duration);
+            if (note) {
+                const offset = (this.state.guideOctaveOffset * 12) + this.state.transposeOffset;
+                guideFreq = 440 * Math.pow(2, (note.midi + offset - 69) / 12);
+            }
+        }
+
         const { freq, conf } = result;
 
         // Update Meter Color
@@ -414,7 +440,7 @@ export class AudioEngine {
         this.state.scoreResult = null; // Reset score
         // Fix: Reset pitchHistory and analyzer state
         this.state.pitchHistory = [];
-        this.pitchAnalyzer.reset();
+        this.analysisProcessor.reset();
 
         this.nextPracticeTime = 0;
         this.nextMetronomeTime = this.audioCtx.currentTime; // Init metronome
@@ -1646,6 +1672,93 @@ export class AudioEngine {
 
         this.draw();
         this.notify();
+    }
+    async measureLatency(): Promise<number | null> {
+        if (!this.audioCtx) return null;
+
+        // Ensure mic is active (force re-init to be sure)
+        const micOk = await this.initMic();
+        if (!micOk || !this.micAnalyser) {
+            console.error("Mic init failed for calibration");
+            return null;
+        }
+
+        const BEEPS = 3;
+        const results: number[] = [];
+        const BUFFER_SIZE = 2048;
+        const data = new Float32Array(BUFFER_SIZE);
+        const THRESHOLD = 0.15; // Slightly higher threshold to avoid noise
+
+        console.log("[Calibration] Starting latency measurement...");
+
+        for (let i = 0; i < BEEPS; i++) {
+            // Wait for silence/reset
+            await new Promise(r => setTimeout(r, 500));
+
+            // Create fresh nodes for beep
+            const osc = this.audioCtx.createOscillator();
+            const gain = this.audioCtx.createGain();
+            osc.connect(gain);
+            gain.connect(this.masterGain!);
+
+            osc.type = 'square'; // Sharper attack
+            osc.frequency.value = 1000;
+            gain.gain.value = 0.5;
+
+            const startTime = this.audioCtx.currentTime + 0.1; // Schedule slightly in future
+            osc.start(startTime);
+            osc.stop(startTime + 0.05); // 50ms beep
+
+            // Listen loop
+            const maxWait = 1.0;
+            const checkStart = performance.now();
+            let detectedAt = -1;
+
+            // Simple polling at ~60fps
+            while ((performance.now() - checkStart) / 1000 < maxWait) {
+                this.micAnalyser.getFloatTimeDomainData(data);
+
+                let maxAmp = 0;
+                for (let k = 0; k < data.length; k++) maxAmp = Math.max(maxAmp, Math.abs(data[k]));
+
+                if (maxAmp > THRESHOLD) {
+                    // Signal detected!
+                    // Rough timestamp: audioCtx.currentTime
+                    detectedAt = this.audioCtx.currentTime;
+                    // Refine: subtract buffer latency approximation? 
+                    // Buffer is ~46ms at 44.1kHz. So detectedAt is "when buffer was processed", 
+                    // while actual sound arrived earlier. 
+                    // Let's assume detectedAt is reasonably close to "now".
+                    break;
+                }
+                await new Promise(r => setTimeout(r, 10));
+            }
+
+            if (detectedAt !== -1) {
+                // Latency = Measured Time - Scheduled Start Time
+                // Note: detectedAt is likely slightly AFTER the event due to JS event loop and buffer size.
+                let latency = detectedAt - startTime;
+
+                // Adjustment: Analyzer buffer window creates a delay. 
+                // We detected it *after* it filled the buffer. 
+                // So the actual sound happened roughly (latency - bufferDuration/2) ago?
+                // For safety, let's just take raw diff. It sets an UPPER bound, which is safer (better early than late).
+
+                if (latency > 0.005 && latency < 1.0) {
+                    console.log(`[Calibration] Beep ${i + 1}: ${latency.toFixed(3)}s`);
+                    results.push(latency);
+                }
+            }
+        }
+
+        if (results.length === 0) return null;
+
+        // Avg
+        const avg = results.reduce((a, b) => a + b, 0) / results.length;
+        console.log(`[Calibration] Measured Avg: ${avg.toFixed(3)}s`);
+
+        // Safety: ensure reasonable bounds (e.g. 50ms to 500ms)
+        return Math.max(0.05, Math.min(0.5, avg));
     }
 }
 

@@ -8,6 +8,7 @@ import type { AudioEngineState } from '../lib/types';
 export function SettingsPanel({ onClose }: { onClose: () => void }) {
     const [state, setState] = useState(audioEngine.state);
     const [showHelp, setShowHelp] = useState(false);
+    const [isCalibrating, setIsCalibrating] = useState(false);
 
     useEffect(() => {
         return audioEngine.subscribe(() => setState(audioEngine.state));
@@ -15,6 +16,22 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
 
     const update = <K extends keyof AudioEngineState>(key: K, value: AudioEngineState[K]) => {
         audioEngine.updateState({ [key]: value } as Partial<AudioEngineState>);
+    };
+
+    const handleCalibrate = async () => {
+        setIsCalibrating(true);
+        try {
+            const latency = await audioEngine.measureLatency();
+            if (latency !== null) {
+                update('inputLatency', latency);
+            } else {
+                alert("測定に失敗しました。マイク入力を確認してください。");
+            }
+        } catch (e) {
+            console.error(e);
+        } finally {
+            setIsCalibrating(false);
+        }
     };
 
     return (
@@ -258,6 +275,20 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
                                     onChange={(e) => update('inputLatency', parseFloat(e.target.value) / 1000)}
                                     className="w-full h-2 bg-white/20 rounded-full appearance-none cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-4 [&::-webkit-slider-thumb]:h-4 [&::-webkit-slider-thumb]:bg-pink-500 [&::-webkit-slider-thumb]:rounded-full hover:[&::-webkit-slider-thumb]:scale-110 transition-all"
                                 />
+                                <button
+                                    onClick={handleCalibrate}
+                                    disabled={isCalibrating}
+                                    className={`w-full py-1.5 mt-2 rounded-md text-xs font-bold transition-all flex items-center justify-center gap-2 ${isCalibrating ? 'bg-pink-500/20 text-pink-300' : 'bg-pink-500/20 hover:bg-pink-500/30 text-pink-400 hover:text-pink-300'}`}
+                                >
+                                    {isCalibrating ? (
+                                        <>
+                                            <span className="w-2 h-2 bg-pink-500 rounded-full animate-ping" />
+                                            測定中... (音が出ます)
+                                        </>
+                                    ) : (
+                                        "自動測定 (キャリブレーション)"
+                                    )}
+                                </button>
                             </div>
 
                             {/* Tolerance */}
