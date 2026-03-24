@@ -13,6 +13,7 @@ import { PitchIndicator } from './components/PitchIndicator';
 import { StatsDashboard } from './components/StatsDashboard';
 import { PresetSongModal } from './components/PresetSongModal';
 import { SaveSongModal } from './components/SaveSongModal';
+import { ScalePracticeModal } from './components/ScalePracticeModal';
 import { Trophy, Trash2, BarChart3, BookOpen, FileMusic, FileAudio, Save, FolderOpen } from 'lucide-react';
 
 
@@ -26,6 +27,7 @@ function App() {
   const [showStats, setShowStats] = useState(false);
   const [showPresets, setShowPresets] = useState(false);
   const [showSaveModal, setShowSaveModal] = useState(false);
+  const [showScalePractice, setShowScalePractice] = useState(false);
   const [recordingBlob, setRecordingBlob] = useState<Blob | null>(null);
   const [state, setState] = useState(audioEngine.state);
 
@@ -182,6 +184,7 @@ function App() {
           />
         )}
         <StatsDashboard open={showStats} onClose={() => setShowStats(false)} />
+        {showScalePractice && <ScalePracticeModal audioEngine={engine} onClose={() => setShowScalePractice(false)} />}
 
         <PresetSongModal open={showPresets} onClose={() => setShowPresets(false)} />
         <SaveSongModal open={showSaveModal} onClose={() => setShowSaveModal(false)} />
@@ -241,7 +244,7 @@ function App() {
           }}
           onOpenHistory={() => setShowHistory(true)}
           onRecordingComplete={(blob) => setRecordingBlob(blob)}
-
+          onOpenScalePractice={() => setShowScalePractice(true)}
         />
       </div>
 
