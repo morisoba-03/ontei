@@ -10,7 +10,7 @@ interface Props {
     onClose: () => void;
 }
 
-const SCALE_TYPES: ScaleType[] = ['Major', 'NaturalMinor', 'HarmonicMinor', 'MelodicMinor', 'MajorPentatonic', 'MinorPentatonic', 'Chromatic'];
+const SCALE_TYPES: ScaleType[] = ['Major', 'NaturalMinor', 'HarmonicMinor', 'MelodicMinor', 'MajorPentatonic', 'MinorPentatonic', 'Chromatic', 'Dorian', 'Mixolydian', 'Blues'];
 const ARP_TYPES: ArpeggioType[] = ['Major', 'Minor', 'Major7', 'Minor7', 'Dominant7'];
 const EXERCISE_TYPES: import('../lib/types').ExerciseType[] = ['LongTone', 'FiveNote', 'Triad', 'Thirds', 'Octave'];
 
