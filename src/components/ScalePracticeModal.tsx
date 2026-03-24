@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { X, Play, Square, RotateCcw, Music, Piano, HelpCircle } from 'lucide-react';
+import { X, Play, Square, RotateCcw, Music, Music2, HelpCircle } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { AudioEngine } from '../lib/AudioEngine';
 
@@ -310,7 +310,7 @@ export function ScalePracticeModal({ audioEngine, onClose }: Props) {
     // ─── レンダリング ───
     const tabs = [
         { id: 'play' as const,     icon: <Play size={14} />,       label: '再生' },
-        { id: 'keyboard' as const, icon: <Piano size={14} />,      label: '鍵盤' },
+        { id: 'keyboard' as const, icon: <Music2 size={14} />,     label: '鍵盤' },
         { id: 'quiz' as const,     icon: <HelpCircle size={14} />, label: 'クイズ' },
     ];
 
