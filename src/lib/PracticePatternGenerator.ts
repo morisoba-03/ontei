@@ -23,7 +23,11 @@ export class PracticePatternGenerator {
         'MelodicMinor': [0, 2, 3, 5, 7, 9, 11, 12], // Ascending typically
         'MajorPentatonic': [0, 2, 4, 7, 9, 12],
         'MinorPentatonic': [0, 3, 5, 7, 10, 12],
-        'Chromatic': [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
+        'Chromatic': [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12],
+        // スケール練習機能で追加した3種類
+        'Dorian': [0, 2, 3, 5, 7, 9, 10, 12],
+        'Mixolydian': [0, 2, 4, 5, 7, 9, 10, 12],
+        'Blues': [0, 3, 5, 6, 7, 10, 12]
     };
 
     static ARPEGGIOS: Record<ArpeggioType, number[]> = {

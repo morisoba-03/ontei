@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Play, Square, Mic, MousePointer2, Hand, Pencil, Eraser, Settings, Activity, Clock, Repeat, SkipBack, Music2, Volume2, X, Plus, Minus } from 'lucide-react';
+import { Play, Square, Mic, MousePointer2, Hand, Pencil, Eraser, Settings, Activity, Clock, Repeat, SkipBack, Music2, Music, Volume2, X, Plus, Minus } from 'lucide-react';
 import { audioEngine } from '../lib/AudioEngine';
 import { MidiTrackSelector } from './MidiTrackSelector';
 import type { MidiTrackInfo } from './MidiTrackSelector';
@@ -12,10 +12,10 @@ interface ControlsProps {
     onOpenPractice: () => void; // Not used here yet but in props
     onOpenHistory?: () => void;
     onRecordingComplete?: (blob: Blob) => void;
-
+    onOpenScalePractice?: () => void;
 }
 
-export function Controls({ onOpenSettings, onOpenPractice, onOpenHistory, onRecordingComplete }: ControlsProps) {
+export function Controls({ onOpenSettings, onOpenPractice, onOpenHistory, onRecordingComplete, onOpenScalePractice }: ControlsProps) {
     const [isPlaying, setIsPlaying] = useState(audioEngine.state.isPlaying);
     const [isMicOn, setIsMicOn] = useState(!!audioEngine.micStream);
     const [isRecording, setIsRecording] = useState(audioEngine.isRecording);
@@ -307,6 +307,16 @@ export function Controls({ onOpenSettings, onOpenPractice, onOpenHistory, onReco
 
                 {/* Right: Actions */}
                 <div className="flex items-center gap-2 shrink-0 ml-auto">
+                    {onOpenScalePractice && (
+                        <button
+                            onClick={onOpenScalePractice}
+                            className="p-2.5 rounded-lg border border-white/10 bg-white/5 text-purple-400 hover:text-purple-300 hover:bg-purple-500/10 transition-all"
+                            title="スケール練習"
+                        >
+                            <Music className="w-5 h-5" />
+                        </button>
+                    )}
+
                     {onOpenPractice && (
                         <button
                             onClick={onOpenPractice}

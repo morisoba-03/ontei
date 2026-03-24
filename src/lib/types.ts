@@ -101,7 +101,7 @@ export interface AudioEngineState {
     showPitchDeviation: boolean;
 }
 
-export type ScaleType = 'Major' | 'NaturalMinor' | 'HarmonicMinor' | 'MelodicMinor' | 'MajorPentatonic' | 'MinorPentatonic' | 'Chromatic';
+export type ScaleType = 'Major' | 'NaturalMinor' | 'HarmonicMinor' | 'MelodicMinor' | 'MajorPentatonic' | 'MinorPentatonic' | 'Chromatic' | 'Dorian' | 'Mixolydian' | 'Blues';
 export type ArpeggioType = 'Major' | 'Minor' | 'Major7' | 'Minor7' | 'Dominant7';
 export type ExerciseType = 'LongTone' | 'Thirds' | 'Triad' | 'FiveNote' | 'Octave';
 
