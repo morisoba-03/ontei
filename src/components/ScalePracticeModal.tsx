@@ -302,7 +302,6 @@ export function ScalePracticeModal({ audioEngine, onClose }: Props) {
     const scaleMidis = getScaleMidis();
     const playingPC = playingMidi !== null ? ((playingMidi % 12) + 12) % 12 : null;
     const intervals = SCALE_INTERVALS[selectedScale];
-    const degreeCount = intervals.length; // ルート抜きの音数
 
     // 度数ラベル（1,2,3...）
     const degreeLabels = intervals.map((_, i) => `${i + 1}`);
