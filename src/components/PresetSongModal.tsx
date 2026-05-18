@@ -1,5 +1,7 @@
-import { X, Music, Star, Zap, BookOpen, Loader2, Download, Upload, Trash2, FolderSync, AlertCircle } from 'lucide-react';
+import { X, Music, Star, Zap, BookOpen, Loader2, Download, Upload, Trash2, FolderSync, AlertCircle, QrCode, ScanLine } from 'lucide-react';
 import { type PresetSong } from '../lib/presetSongs';
+import { QRShareModal } from './QRShareModal';
+import { QRScanModal } from './QRScanModal';
 import { audioEngine } from '../lib/AudioEngine';
 import { storage } from '../lib/storage';
 import { cn } from '../lib/utils';
@@ -20,6 +22,8 @@ const difficultyConfig = {
 export function PresetSongModal({ open, onClose }: PresetSongModalProps) {
     const [loadingId, setLoadingId] = useState<string | null>(null);
     const [userSongs, setUserSongs] = useState<PresetSong[]>([]);
+    const [sharingQR, setSharingQR] = useState<PresetSong | null>(null);
+    const [showScanner, setShowScanner] = useState(false);
 
     useEffect(() => {
         if (open) {
@@ -159,6 +163,15 @@ export function PresetSongModal({ open, onClose }: PresetSongModalProps) {
         }
     };
 
+    const handleQRImported = async (song: PresetSong) => {
+        const current = await storage.loadUserPresets();
+        const updated = [...current, song];
+        await storage.saveUserPresets(updated);
+        setUserSongs(updated);
+        toast.success(`「${song.name}」をインポートしました`);
+        setShowScanner(false);
+    };
+
     if (!open) return null;
 
     return (
@@ -193,7 +206,14 @@ export function PresetSongModal({ open, onClose }: PresetSongModalProps) {
                 </div>
 
                 {/* Toolbar */}
-                <div className="px-3 pt-2 pb-2 flex items-center gap-2 shrink-0">
+                <div className="px-3 pt-2 pb-2 flex items-center gap-2 shrink-0 flex-wrap">
+                    <button
+                        onClick={() => setShowScanner(true)}
+                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-500/20 hover:bg-blue-500/30 border border-blue-500/30 text-xs text-blue-300 hover:text-blue-200 transition-all"
+                        title="QRコードをスキャンして曲をインポート"
+                    >
+                        <ScanLine className="w-3.5 h-3.5" /> QRスキャン
+                    </button>
                     <button
                         onClick={() => document.getElementById('user-lib-import')?.click()}
                         className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-xs text-white/70 hover:text-white transition-all"
@@ -213,7 +233,7 @@ export function PresetSongModal({ open, onClose }: PresetSongModalProps) {
                         className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-xs text-white/70 hover:text-white transition-all"
                         title="すべてのユーザー曲をJSONとして保存"
                     >
-                        <Download className="w-3.5 h-3.5" /> エクスポート（バックアップ）
+                        <Download className="w-3.5 h-3.5" /> エクスポート
                     </button>
                 </div>
 
@@ -278,15 +298,24 @@ export function PresetSongModal({ open, onClose }: PresetSongModalProps) {
                                         </div>
                                     </button>
 
-                                    {/* 削除ボタン（常時表示） */}
+                                    {/* QR共有・削除ボタン（常時表示） */}
                                     {!isLoading && (
-                                        <button
-                                            onClick={(e) => handleDeleteUserSong(e, song.id)}
-                                            className="absolute top-1/2 -translate-y-1/2 right-3 p-2 rounded-full hover:bg-red-500/20 text-white/30 hover:text-red-400 transition-colors"
-                                            title="削除"
-                                        >
-                                            <Trash2 className="w-4 h-4" />
-                                        </button>
+                                        <div className="absolute top-1/2 -translate-y-1/2 right-2 flex flex-col gap-1">
+                                            <button
+                                                onClick={(e) => { e.stopPropagation(); setSharingQR(song); }}
+                                                className="p-2 rounded-full hover:bg-purple-500/20 text-white/30 hover:text-purple-400 transition-colors"
+                                                title="QRコードで共有"
+                                            >
+                                                <QrCode className="w-4 h-4" />
+                                            </button>
+                                            <button
+                                                onClick={(e) => handleDeleteUserSong(e, song.id)}
+                                                className="p-2 rounded-full hover:bg-red-500/20 text-white/30 hover:text-red-400 transition-colors"
+                                                title="削除"
+                                            >
+                                                <Trash2 className="w-4 h-4" />
+                                            </button>
+                                        </div>
                                     )}
                                 </div>
                             );
@@ -304,6 +333,10 @@ export function PresetSongModal({ open, onClose }: PresetSongModalProps) {
                     </button>
                 </div>
             </div>
+
+            {/* QR Share / Scan sub-modals */}
+            {sharingQR && <QRShareModal song={sharingQR} onClose={() => setSharingQR(null)} />}
+            {showScanner && <QRScanModal onClose={() => setShowScanner(false)} onImported={handleQRImported} />}
         </div>
     );
 }
