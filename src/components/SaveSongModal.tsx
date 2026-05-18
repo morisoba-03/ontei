@@ -126,7 +126,10 @@ export function SaveSongModal({ open, onClose }: SaveSongModalProps) {
                     {mode === 'library' ? (
                         <div className="space-y-4">
                             <p className="text-sm text-white/60">
-                                ローカルの練習曲ライブラリに追加します。後でいつでも呼び出せます。
+                                ローカルの練習曲ライブラリに追加します。「練習曲」ボタンから後でいつでも呼び出せます。
+                            </p>
+                            <p className="text-xs text-amber-300/70 bg-amber-500/10 border border-amber-500/20 rounded-lg px-3 py-2">
+                                ⚠️ データはこのブラウザにのみ保存されます。定期的にエクスポートしてバックアップしてください。
                             </p>
 
                             <div className="space-y-2">
