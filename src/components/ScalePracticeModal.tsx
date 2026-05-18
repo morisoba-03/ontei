@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { X, Play, Square, RotateCcw, Music, Music2, HelpCircle } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { AudioEngine } from '../lib/AudioEngine';
