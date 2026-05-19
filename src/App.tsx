@@ -63,6 +63,20 @@ function App() {
     });
   }, []);
 
+  // Auto-start mic on page load.
+  // Silently fails if permission is denied — user can still toggle manually.
+  useEffect(() => {
+    const timer = setTimeout(async () => {
+      try {
+        await audioEngine.initMic();
+        localStorage.setItem(MIC_EXPLAINED_KEY, '1');
+      } catch {
+        // Permission denied or no mic available — ignore silently
+      }
+    }, 600);
+    return () => clearTimeout(timer);
+  }, []);
+
   useEffect(() => {
     return engine.subscribe(() => {
       setState({ ...engine.state });
