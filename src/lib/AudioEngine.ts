@@ -205,6 +205,7 @@ export class AudioEngine {
             inputLatency: 0.12, // 120ms default latency compensation
             countIn: false,
             showPitchDeviation: true,
+            showTuner: true,
             showTolerancePreview: false
         };
         this.loadSettings();
@@ -799,7 +800,7 @@ export class AudioEngine {
                     'guideOctaveOffset',
                     'guideVolume', 'accompVolume', 'gateThreshold', 'toleranceCents',
                     'isParticlesEnabled', 'countIn', 'showPitchDeviation', 'inputLatency',
-                    'micRenderMode',
+                    'micRenderMode', 'showTuner',
                 ];
 
                 const updates: Partial<AudioEngineState> = {};
@@ -824,7 +825,7 @@ export class AudioEngine {
                 'guideOctaveOffset',
                 'guideVolume', 'accompVolume', 'gateThreshold', 'toleranceCents',
                 'isParticlesEnabled', 'countIn', 'showPitchDeviation', 'inputLatency',
-                'micRenderMode',
+                'micRenderMode', 'showTuner',
             ];
 
             const toSave = persistentKeys.reduce((acc, key) => {
@@ -874,7 +875,7 @@ export class AudioEngine {
             'verticalZoom', 'pxPerSec', 'noteNotation',
             'guideOctaveOffset',
             'guideVolume', 'accompVolume', 'gateThreshold', 'toleranceCents',
-            'isParticlesEnabled', 'countIn', 'showPitchDeviation', 'micRenderMode',
+            'isParticlesEnabled', 'countIn', 'showPitchDeviation', 'micRenderMode', 'showTuner',
         ];
 
         if (updates.isBackingSoundEnabled !== undefined) {
