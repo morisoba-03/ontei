@@ -1,73 +1,73 @@
-# React + TypeScript + Vite
+# Ontei — 音程訓練アプリ
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+歌の音程をリアルタイムに可視化して練習できるブラウザアプリです。MIDIや音声ファイルをガイドとして読み込み、マイクで歌うと音程の正確さが即座にグラフで確認できます。
 
-Currently, two official plugins are available:
+**デモ:** https://morisoba-03.github.io/ontei/
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) (or [oxc](https://oxc.rs) when used in [rolldown-vite](https://vite.dev/guide/rolldown)) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+---
 
-## React Compiler
+## 主な機能
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+- **音程の可視化** — マイク入力した歌声の音程をリアルタイムで描画
+- **MIDIガイド** — MIDIファイルを読み込んでガイドメロディーを表示・再生
+- **音声解析ガイド** — MP3/WAV などの音声ファイルから音程を自動解析してガイドを生成
+- **採点** — 音程・安定性・表現力・リズム・技術の5軸レーダーチャートで評価
+- **スケール練習** — ドレミなどのスケール練習モード
+- **練習曲ライブラリ** — 練習した曲をブラウザに保存して呼び出し
+- **QRコード共有** — 保存した練習曲をQRコードでスマホ↔PCに転送
+- **録音** — 練習中の歌声を録音して聴き返し
 
-## Expanding the ESLint configuration
+## 使い方
 
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
+### 基本ステップ
 
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
+1. **ガイドを読み込む** — 上部の「ガイド」ボタンからMIDIまたは音声ファイルを選択
+2. **マイクをONにする** — 上部の「MIC」ボタンを押してブラウザのマイク許可を承認
+3. **再生して歌う** — 再生ボタン（▶）を押し、ガイドに合わせて歌う
+4. **結果を確認** — 「結果」ボタンで採点レポートを表示
 
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
+### キーボードショートカット
 
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+| キー | 操作 |
+|------|------|
+| `Space` | 再生 / 停止 |
+| `R` | 録音 開始 / 停止 |
+| `M` | マイク ON / OFF |
+
+### 対応ファイル形式
+
+| ボタン | 対応形式 | 用途 |
+|--------|----------|------|
+| ガイド | `.mid` `.midi` `.mp3` `.wav` `.ogg` `.m4a` | 練習する曲のメロディー |
+| 伴奏   | `.mp3` `.wav` `.ogg` `.m4a` | カラオケ音源など |
+| 読込   | `.json` | 以前エクスポートした練習データ |
+
+### 練習曲の共有（QRコード）
+
+1. 「練習曲」ライブラリから共有したい曲のQRアイコンをクリック
+2. 表示されたQRコードをスマホでスキャン（複数枚ある場合は順番に）
+3. スマホ側の「QRスキャン」ボタンでスキャン完了するとインポートされる
+
+## 技術スタック
+
+- React 19 + TypeScript
+- Vite
+- Tailwind CSS v4
+- Tone.js（音声処理）
+- @tonejs/midi（MIDI解析）
+- pitchy（ピッチ検出）
+- fflate（圧縮）
+- qrcode + jsqr（QRコード生成・読取）
+
+## ローカル開発
+
+```bash
+npm install
+npm run dev        # 開発サーバー起動
+npm run build      # ビルド
+npm run preview    # ビルド結果をプレビュー
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+## データの保存について
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
-
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
-```
+練習曲ライブラリはブラウザの **IndexedDB** に保存されます。ブラウザのデータを削除すると消えるため、大切な曲は「保存」ボタンからJSONファイルとして書き出しておくことを推奨します。
