@@ -23,9 +23,41 @@ export class AudioEngine {
     analysisProcessor: AnalysisProcessor;
     scoreAnalyzer: import('./ScoreAnalyzer').ScoreAnalyzer;
 
-    // Sampler
+    // Sampler (Salamander Grand Piano via Tone.js CDN)
     pianoBuffers: Record<string, AudioBuffer> = {};
     pianoLoadPromise: Promise<void> | null = null;
+    static readonly PIANO_SAMPLES: { name: string, midi: number }[] = [
+        { name: 'A0',   midi: 21 },
+        { name: 'C1',   midi: 24 },
+        { name: 'D#1',  midi: 27 },
+        { name: 'F#1',  midi: 30 },
+        { name: 'A1',   midi: 33 },
+        { name: 'C2',   midi: 36 },
+        { name: 'D#2',  midi: 39 },
+        { name: 'F#2',  midi: 42 },
+        { name: 'A2',   midi: 45 },
+        { name: 'C3',   midi: 48 },
+        { name: 'D#3',  midi: 51 },
+        { name: 'F#3',  midi: 54 },
+        { name: 'A3',   midi: 57 },
+        { name: 'C4',   midi: 60 },
+        { name: 'D#4',  midi: 63 },
+        { name: 'F#4',  midi: 66 },
+        { name: 'A4',   midi: 69 },
+        { name: 'C5',   midi: 72 },
+        { name: 'D#5',  midi: 75 },
+        { name: 'F#5',  midi: 78 },
+        { name: 'A5',   midi: 81 },
+        { name: 'C6',   midi: 84 },
+        { name: 'D#6',  midi: 87 },
+        { name: 'F#6',  midi: 90 },
+        { name: 'A6',   midi: 93 },
+        { name: 'C7',   midi: 96 },
+        { name: 'D#7',  midi: 99 },
+        { name: 'F#7',  midi: 102 },
+        { name: 'A7',   midi: 105 },
+        { name: 'C8',   midi: 108 },
+    ];
 
     // Audio Context & Nodes
     audioCtx: AudioContext | null = null;
@@ -182,32 +214,34 @@ export class AudioEngine {
     async loadPianoSamples() {
         if (!window.AudioContext && !window.webkitAudioContext) return;
 
-        // Wait for user interaction to init context? No, just load buffers.
-        // We need a temporary context if main one isn't ready, or just wait.
-        // Actually, we can decode without a running context.
         const Ctx = window.AudioContext || window.webkitAudioContext;
         const tempCtx = new Ctx();
 
-        const samples = {
-            'C3': 'samples/piano/C3.mp3', // MIDI 48
-            'C4': 'samples/piano/C4.mp3', // MIDI 60
-            'C5': 'samples/piano/C5.mp3', // MIDI 72
-        };
+        const baseUrl = 'https://tonejs.github.io/audio/salamander/';
 
-        const promises = Object.entries(samples).map(async ([note, url]) => {
+        const promises = AudioEngine.PIANO_SAMPLES.map(async ({ name }) => {
             try {
-                const res = await fetch(url);
+                const res = await fetch(baseUrl + encodeURIComponent(name) + '.mp3');
+                if (!res.ok) throw new Error(`HTTP ${res.status}`);
                 const arrayBuffer = await res.arrayBuffer();
                 const audioBuffer = await tempCtx.decodeAudioData(arrayBuffer);
-                this.pianoBuffers[note] = audioBuffer;
+                this.pianoBuffers[name] = audioBuffer;
             } catch (e) {
-                console.error(`Failed to load sample ${note}`, e);
+                console.warn(`[AudioEngine] Failed to load piano sample ${name}`, e);
             }
         });
 
         await Promise.all(promises);
-        console.log('[AudioEngine] Piano samples loaded');
+        const loaded = Object.keys(this.pianoBuffers).length;
+        const total = AudioEngine.PIANO_SAMPLES.length;
+        console.log(`[AudioEngine] Piano samples loaded (${loaded}/${total})`);
         tempCtx.close();
+        this.notify();
+        if (loaded === 0) {
+            toast.warning('ピアノ音源の読み込みに失敗しました（合成音で代用します）');
+        } else if (loaded < total) {
+            toast.info(`ピアノ音源を読み込みました（${loaded}/${total}）`);
+        }
     }
 
     setCanvas(canvas: HTMLCanvasElement) {
@@ -1112,27 +1146,20 @@ export class AudioEngine {
     playSampledNote(midi: number, when: number, duration: number, isResume: boolean, volumeScale: number, isBacking = false) {
         if (!this.audioCtx || !this.masterGain) return;
 
-        // Find closest sample
-        // C3=48, C4=60, C5=72
-        const map: { midi: number, buffer: string }[] = [
-            { midi: 48, buffer: 'C3' },
-            { midi: 60, buffer: 'C4' },
-            { midi: 72, buffer: 'C5' }
-        ];
-
-        // Simple nearest neighbor search
-        let closest = map[0];
-        let minDiff = Math.abs(midi - closest.midi);
-
-        for (const m of map) {
-            const diff = Math.abs(midi - m.midi);
+        // Find the closest loaded sample (skip any that failed to load)
+        let closest: { name: string, midi: number } | null = null;
+        let minDiff = Infinity;
+        for (const s of AudioEngine.PIANO_SAMPLES) {
+            if (!this.pianoBuffers[s.name]) continue;
+            const diff = Math.abs(midi - s.midi);
             if (diff < minDiff) {
                 minDiff = diff;
-                closest = m;
+                closest = s;
             }
         }
+        if (!closest) return;
 
-        const buffer = this.pianoBuffers[closest.buffer];
+        const buffer = this.pianoBuffers[closest.name];
         if (!buffer) return;
 
         // Calc Playback Rate
