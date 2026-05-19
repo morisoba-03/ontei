@@ -720,10 +720,13 @@ export class AudioEngine {
         }
 
         // Sync Guide Index
-        if (this.state.melodyTrackIndex !== -1 && this.state.currentTracks[this.state.melodyTrackIndex]) {
-            const notes = this.state.currentTracks[this.state.melodyTrackIndex].notes;
+        {
+            const trackNotes = this.state.melodyTrackIndex !== -1 && this.state.currentTracks[this.state.melodyTrackIndex]
+                ? this.state.currentTracks[this.state.melodyTrackIndex].notes
+                : [];
+            const guideNotes = trackNotes.length > 0 ? trackNotes : this.state.midiGhostNotes;
             let idx = 0;
-            while (idx < notes.length && notes[idx].time + notes[idx].duration < newTime) {
+            while (idx < guideNotes.length && guideNotes[idx].time + guideNotes[idx].duration < newTime) {
                 idx++;
             }
             this.nextGuideNoteIndex = idx;
@@ -1020,29 +1023,29 @@ export class AudioEngine {
     scheduleGuideNotes() {
         if (!this.audioCtx) return;
 
-        // Simple scheduling: Look ahead and schedule notes
-        const lookahead = 0.1; // 100ms
-        const currentTime = this.state.playbackPosition; // app time
-        const notes = this.state.melodyTrackIndex !== -1 && this.state.currentTracks[this.state.melodyTrackIndex]
-            ? this.state.currentTracks[this.state.melodyTrackIndex].notes
-            : [];
+        const lookahead = 0.1;
+        const currentTime = this.state.playbackPosition;
 
-        // We need a stable index for playback.
-        // For now, simpler: iter from current index
+        const trackNotes: (Note | GhostNote)[] =
+            this.state.melodyTrackIndex !== -1 && this.state.currentTracks[this.state.melodyTrackIndex]
+                ? this.state.currentTracks[this.state.melodyTrackIndex].notes
+                : [];
+
+        // Fall back to ghost notes during regular (non-practice) playback
+        const notes: (Note | GhostNote)[] =
+            trackNotes.length > 0 || this.state.isPracticing
+                ? trackNotes
+                : this.state.midiGhostNotes;
+
         while (this.nextGuideNoteIndex < notes.length) {
             const note = notes[this.nextGuideNoteIndex];
             if (note.time > currentTime + lookahead) break;
 
-            // Schedule
-            // If it's already past, don't schedule unless it's very recent?
-            // "when" in audioCtx time
             const when = this.audioCtx.currentTime + (note.time - currentTime) / this.state.tempoFactor;
-
             if (when >= this.audioCtx.currentTime - 0.05) {
                 const offset = this.state.guideOctaveOffset * 12 + this.state.transposeOffset;
                 this.scheduleNote(note.midi + offset, when, note.duration / this.state.tempoFactor);
             }
-
             this.nextGuideNoteIndex++;
         }
     }
@@ -1170,22 +1173,22 @@ export class AudioEngine {
 
         const source = this.audioCtx.createBufferSource();
         source.buffer = buffer;
-        source.playbackRate.value = rate * this.state.tempoFactor;
+        source.playbackRate.value = rate;
 
         const gain = this.audioCtx.createGain();
         const baseVol = isBacking ? this.state.accompVolume : this.state.guideVolume;
         const vol = baseVol * 0.8 * volumeScale; // Normalize volume
 
-        // ADSR Envelope
-        const attackTime = isResume ? 0.05 : 0.02;
-        gain.gain.setValueAtTime(0, when);
-        gain.gain.linearRampToValueAtTime(vol, when + attackTime); // Fast attack
-
-        // Release/Fadeout
-        const releaseTime = 0.1;
+        // ADSR Envelope — clamp attack/release to note duration
+        const attackTime = Math.min(isResume ? 0.05 : 0.02, duration * 0.15);
+        const releaseTime = Math.min(0.08, duration * 0.3);
         const stopTime = when + duration;
+        const peakTime = when + attackTime;
+        const releaseStart = Math.max(peakTime + 0.001, stopTime - releaseTime);
 
-        gain.gain.setValueAtTime(vol, stopTime - releaseTime);
+        gain.gain.setValueAtTime(0, when);
+        gain.gain.linearRampToValueAtTime(vol, peakTime);
+        gain.gain.setValueAtTime(vol, releaseStart);
         gain.gain.linearRampToValueAtTime(0, stopTime);
 
         source.connect(gain);
