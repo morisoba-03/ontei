@@ -177,28 +177,28 @@ export function Controls({ onOpenSettings, onOpenPractice, onOpenHistory, onReco
                 </button>
 
                 {/* Tempo Control (Simple +/-) */}
-                {/* Tempo Control (Simple +/-) */}
+                {/* Display Scale Control (visual zoom only) */}
                 <div className="flex items-center bg-white/5 border border-white/10 rounded-lg p-0.5 shrink-0">
                     <button
                         onClick={() => {
-                            const current = typeof audioEngine.state.tempoFactor === 'number' ? audioEngine.state.tempoFactor : 1.0;
-                            audioEngine.updateState({ tempoFactor: Math.max(0.1, current - 0.01) });
+                            const current = audioEngine.state.pxPerSec || 100;
+                            audioEngine.updateState({ pxPerSec: Math.max(20, current - 5) });
                         }}
                         className="p-1.5 md:p-2 hover:bg-white/10 rounded-md text-white/50 hover:text-white transition-colors"
-                        title="速度ダウン (-1%)"
+                        title="表示倍率ダウン (-5%)"
                     >
                         <Minus className="w-4 h-4" />
                     </button>
                     <div className="px-1 text-xs font-mono text-white/70 min-w-[3em] text-center">
-                        {Math.round((audioEngine.state.tempoFactor || 1) * 100)}%
+                        {Math.round(audioEngine.state.pxPerSec || 100)}%
                     </div>
                     <button
                         onClick={() => {
-                            const current = typeof audioEngine.state.tempoFactor === 'number' ? audioEngine.state.tempoFactor : 1.0;
-                            audioEngine.updateState({ tempoFactor: Math.min(2.0, current + 0.01) });
+                            const current = audioEngine.state.pxPerSec || 100;
+                            audioEngine.updateState({ pxPerSec: Math.min(400, current + 5) });
                         }}
                         className="p-1.5 md:p-2 hover:bg-white/10 rounded-md text-white/50 hover:text-white transition-colors"
-                        title="速度アップ (+1%)"
+                        title="表示倍率アップ (+5%)"
                     >
                         <Plus className="w-4 h-4" />
                     </button>
