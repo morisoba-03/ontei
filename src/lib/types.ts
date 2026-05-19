@@ -100,6 +100,7 @@ export interface AudioEngineState {
     inputLatency: number; // seconds
     countIn: boolean;
     showPitchDeviation: boolean;
+    showTolerancePreview: boolean;
 }
 
 export type ScaleType = 'Major' | 'NaturalMinor' | 'HarmonicMinor' | 'MelodicMinor' | 'MajorPentatonic' | 'MinorPentatonic' | 'Chromatic' | 'Dorian' | 'Mixolydian' | 'Blues';
