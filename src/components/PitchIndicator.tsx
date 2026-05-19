@@ -25,7 +25,7 @@ export function PitchIndicator() {
             );
 
             if (ghostNote) {
-                const offset = state.guideOctaveOffset * 12;
+                const offset = (state.guideOctaveOffset * 12) + state.transposeOffset;
                 targetPitch = 440 * Math.pow(2, (ghostNote.midi + offset - 69) / 12);
             }
 
