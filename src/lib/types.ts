@@ -65,7 +65,7 @@ export interface AudioEngineState {
     midiGhostNotes: GhostNote[];
     phrases: Phrase[];
     practiceExpectedNotes: GhostNote[] | null;
-    micRenderMode: 'dot' | 'graph';
+    micRenderMode: 'dot' | 'graph' | 'segment';
     practiceMode: string;
     editTool: 'view' | 'select' | 'pencil' | 'eraser';
     gateThreshold: number;

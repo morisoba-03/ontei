@@ -114,6 +114,39 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
                                 />
                             </div>
 
+                            {/* Pitch Line Style */}
+                            <div className="space-y-2 pt-2 border-t border-white/5">
+                                <div className="flex justify-between text-sm items-center">
+                                    <span>音程線スタイル</span>
+                                </div>
+                                <div className="flex bg-white/10 rounded-lg p-1">
+                                    <button
+                                        onClick={() => update('micRenderMode', 'graph')}
+                                        className={`flex-1 py-1 rounded-md text-xs transition-all ${state.micRenderMode === 'graph' ? 'bg-green-500 text-white shadow-sm' : 'text-white/50 hover:text-white/80'}`}
+                                        title="全点を繋いで描画（歌声向け）"
+                                    >
+                                        グラフ
+                                    </button>
+                                    <button
+                                        onClick={() => update('micRenderMode', 'segment')}
+                                        className={`flex-1 py-1 rounded-md text-xs transition-all ${state.micRenderMode === 'segment' ? 'bg-green-500 text-white shadow-sm' : 'text-white/50 hover:text-white/80'}`}
+                                        title="音程ジャンプで線を切る（ピアノ等向け）"
+                                    >
+                                        ステップ
+                                    </button>
+                                    <button
+                                        onClick={() => update('micRenderMode', 'dot')}
+                                        className={`flex-1 py-1 rounded-md text-xs transition-all ${state.micRenderMode === 'dot' ? 'bg-green-500 text-white shadow-sm' : 'text-white/50 hover:text-white/80'}`}
+                                        title="各点を点として描画"
+                                    >
+                                        ドット
+                                    </button>
+                                </div>
+                                <p className="text-[10px] text-white/30">
+                                    {state.micRenderMode === 'graph' ? '全点を繋いで描画（歌声・スラー向け）' : state.micRenderMode === 'segment' ? '音程の大きな跳躍で線を切る（ピアノ等向け）' : '各音程を点で描画'}
+                                </p>
+                            </div>
+
                             {/* Visual Effects */}
                             <div className="flex items-center justify-between text-sm pt-2 border-t border-white/5">
                                 <span>リアルタイム演出</span>

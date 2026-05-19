@@ -1,4 +1,4 @@
-import { X, Music, Star, Zap, BookOpen, Loader2, Download, Upload, Trash2, FolderSync, AlertCircle, QrCode, ScanLine } from 'lucide-react';
+import { X, Music, Star, Zap, BookOpen, Loader2, Download, Upload, Trash2, FolderSync, AlertCircle, QrCode, ScanLine, Clock, BarChart2, SortAsc } from 'lucide-react';
 import { type PresetSong } from '../lib/presetSongs';
 import { QRShareModal } from './QRShareModal';
 import { QRScanModal } from './QRScanModal';
@@ -19,22 +19,41 @@ const difficultyConfig = {
     hard: { label: '上級', color: 'text-red-400 bg-red-500/20', icon: Zap },
 };
 
+type SortKey = 'recent' | 'name' | 'plays';
+
+function formatRelativeTime(ts?: number): string {
+    if (!ts) return '未練習';
+    const diff = Date.now() - ts;
+    const days = Math.floor(diff / 86400000);
+    if (days === 0) return '今日';
+    if (days === 1) return '昨日';
+    if (days < 7) return `${days}日前`;
+    if (days < 30) return `${Math.floor(days / 7)}週間前`;
+    return `${Math.floor(days / 30)}ヶ月前`;
+}
+
 export function PresetSongModal({ open, onClose }: PresetSongModalProps) {
     const [loadingId, setLoadingId] = useState<string | null>(null);
     const [userSongs, setUserSongs] = useState<PresetSong[]>([]);
     const [sharingQR, setSharingQR] = useState<PresetSong | null>(null);
     const [showScanner, setShowScanner] = useState(false);
+    const [sortBy, setSortBy] = useState<SortKey>('recent');
 
     useEffect(() => {
-        if (open) {
-            loadUserDocs();
-        }
+        if (open) loadUserDocs();
     }, [open]);
 
     const loadUserDocs = async () => {
         const presets = await storage.loadUserPresets();
         setUserSongs(presets);
     };
+
+    const sortedSongs = [...userSongs].sort((a, b) => {
+        if (sortBy === 'recent') return (b.lastPlayed || b.createdAt || 0) - (a.lastPlayed || a.createdAt || 0);
+        if (sortBy === 'name') return a.name.localeCompare(b.name, 'ja');
+        if (sortBy === 'plays') return (b.playCount || 0) - (a.playCount || 0);
+        return 0;
+    });
 
     const handleDeleteUserSong = async (e: React.MouseEvent, id: string) => {
         e.stopPropagation();
@@ -43,6 +62,8 @@ export function PresetSongModal({ open, onClose }: PresetSongModalProps) {
         try {
             const newPresets = userSongs.filter(s => s.id !== id);
             await storage.saveUserPresets(newPresets);
+            // Clean up MIDI binary if present
+            await storage.deleteSongMidi(id).catch(() => {});
             setUserSongs(newPresets);
             toast.success('削除しました');
         } catch {
@@ -55,6 +76,7 @@ export function PresetSongModal({ open, onClose }: PresetSongModalProps) {
             toast.error('エクスポートする曲がありません');
             return;
         }
+        // Export metadata only (MIDI binaries are too large for JSON)
         const json = JSON.stringify(userSongs, null, 2);
         const blob = new Blob([json], { type: 'application/json' });
         const url = URL.createObjectURL(blob);
@@ -75,29 +97,22 @@ export function PresetSongModal({ open, onClose }: PresetSongModalProps) {
             try {
                 const content = ev.target?.result as string;
                 const json = JSON.parse(content);
-
                 if (!Array.isArray(json)) throw new Error('Invalid format');
 
                 const current = await storage.loadUserPresets();
                 const currentMap = new Map(current.map(s => [s.id, s]));
-
-                let addedCount = 0;
-                let updatedCount = 0;
+                let added = 0, updated = 0;
 
                 for (const item of json) {
                     if (!item.name || !item.notes) continue;
-                    if (currentMap.has(item.id)) {
-                        updatedCount++;
-                    } else {
-                        addedCount++;
-                    }
+                    currentMap.has(item.id) ? updated++ : added++;
                     currentMap.set(item.id, item);
                 }
 
                 const newPresets = Array.from(currentMap.values());
                 await storage.saveUserPresets(newPresets);
                 setUserSongs(newPresets);
-                toast.success(`${addedCount}曲を追加、${updatedCount}曲を更新しました`);
+                toast.success(`${added}曲を追加、${updated}曲を更新しました`);
             } catch (err) {
                 console.error(err);
                 toast.error('読み込みに失敗しました。正しいJSONファイルか確認してください。');
@@ -115,15 +130,30 @@ export function PresetSongModal({ open, onClose }: PresetSongModalProps) {
             audioEngine.stopPractice();
             audioEngine.stopPlayback();
 
-            if (song.midiUrl) {
+            // --- Load note data ---
+            if (song.hasMidiData) {
+                // A案: Load from stored MIDI binary
+                const midiBuffer = await storage.loadSongMidi(song.id);
+                if (midiBuffer) {
+                    const candidates = audioEngine.loadMidiFromBuffer(midiBuffer);
+                    if (candidates && candidates.length > 0) {
+                        const track = candidates.find(t => t.noteCount > 0);
+                        if (track) audioEngine.importMidiTrack(track.id, 0);
+                    }
+                } else if (song.notes) {
+                    // Fallback to stored notes (binary may have been cleared)
+                    audioEngine.updateState({
+                        midiGhostNotes: [...song.notes],
+                        playbackPosition: 0,
+                        scoreResult: null,
+                    });
+                }
+            } else if (song.midiUrl) {
                 const candidates = await audioEngine.loadMidiFromUrl(song.midiUrl);
                 if (candidates && candidates.length > 0) {
                     if (audioEngine.state.midiGhostNotes.length === 0) {
                         const track = candidates.find(t => t.noteCount > 0);
-                        if (track) {
-                            audioEngine.importMidiTrack(track.id, song.transpose || 0);
-                            audioEngine.updateState({ guideOctaveOffset: 0, transposeOffset: 0 });
-                        }
+                        if (track) audioEngine.importMidiTrack(track.id, song.transpose || 0);
                     }
                 }
             } else if (song.notes) {
@@ -131,33 +161,47 @@ export function PresetSongModal({ open, onClose }: PresetSongModalProps) {
                     midiGhostNotes: [...song.notes],
                     playbackPosition: 0,
                     scoreResult: null,
-                    guideOctaveOffset: 0,
-                    transposeOffset: 0
                 });
             }
 
-            let backingName: string | null = null;
+            // Backing track
             if (song.backingUrl) {
                 const url = song.backingUrl;
                 if (url.endsWith('.mid')) {
-                    backingName = await audioEngine.loadBackingMidiFromUrl(url);
+                    await audioEngine.loadBackingMidiFromUrl(url);
                 }
             }
 
-            if (song.bpm) {
+            // BPM (only if not embedded in MIDI binary)
+            if (song.bpm && !song.hasMidiData) {
                 audioEngine.updateState({ bpm: song.bpm });
             }
 
-            audioEngine.startPractice({ mode: 'Midi' });
+            // B案: Restore per-song settings
+            audioEngine.updateState({
+                guideOctaveOffset: song.settings?.guideOctaveOffset ?? 0,
+                transposeOffset: song.settings?.transposeOffset ?? 0,
+                ...(song.settings?.toleranceCents !== undefined
+                    ? { toleranceCents: song.settings.toleranceCents }
+                    : {}),
+            });
 
-            toast.success(backingName
-                ? `「${song.name}」を読み込みました\n(伴奏: ${backingName})`
-                : `「${song.name}」を読み込みました`
+            // C案: Update practice metadata
+            const now = Date.now();
+            const updatedSongs = userSongs.map(s =>
+                s.id === song.id
+                    ? { ...s, lastPlayed: now, playCount: (s.playCount || 0) + 1 }
+                    : s
             );
+            await storage.saveUserPresets(updatedSongs);
+            setUserSongs(updatedSongs);
+
+            audioEngine.startPractice({ mode: 'Midi' });
+            toast.success(`「${song.name}」を読み込みました`);
             onClose();
         } catch (e) {
             console.error(e);
-            toast.error("読み込みに失敗しました");
+            toast.error('読み込みに失敗しました');
         } finally {
             setLoadingId(null);
         }
@@ -173,6 +217,12 @@ export function PresetSongModal({ open, onClose }: PresetSongModalProps) {
     };
 
     if (!open) return null;
+
+    const sortLabels: Record<SortKey, string> = {
+        recent: '最近練習',
+        name: '名前順',
+        plays: '練習回数',
+    };
 
     return (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
@@ -197,11 +247,11 @@ export function PresetSongModal({ open, onClose }: PresetSongModalProps) {
                     </button>
                 </div>
 
-                {/* ブラウザ保存の注意 */}
+                {/* Warning */}
                 <div className="mx-3 mt-3 shrink-0 flex items-start gap-2 bg-amber-500/10 border border-amber-500/30 rounded-lg px-3 py-2">
                     <AlertCircle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
                     <p className="text-xs text-amber-300/80">
-                        曲はこのブラウザにのみ保存されます。ブラウザのキャッシュ削除で消えるため、<strong>定期的にエクスポートしてバックアップ</strong>してください。
+                        データはこのブラウザにのみ保存されます。<strong>定期的にエクスポート</strong>してバックアップしてください。
                     </p>
                 </div>
 
@@ -210,36 +260,46 @@ export function PresetSongModal({ open, onClose }: PresetSongModalProps) {
                     <button
                         onClick={() => setShowScanner(true)}
                         className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-500/20 hover:bg-blue-500/30 border border-blue-500/30 text-xs text-blue-300 hover:text-blue-200 transition-all"
-                        title="QRコードをスキャンして曲をインポート"
                     >
                         <ScanLine className="w-3.5 h-3.5" /> QRスキャン
                     </button>
                     <button
                         onClick={() => document.getElementById('user-lib-import')?.click()}
                         className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-xs text-white/70 hover:text-white transition-all"
-                        title="JSONファイルからインポート"
                     >
                         <Upload className="w-3.5 h-3.5" /> インポート
                     </button>
-                    <input
-                        id="user-lib-import"
-                        type="file"
-                        accept=".json"
-                        className="hidden"
-                        onChange={handleImportLibrary}
-                    />
+                    <input id="user-lib-import" type="file" accept=".json" className="hidden" onChange={handleImportLibrary} />
                     <button
                         onClick={handleExportLibrary}
                         className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-xs text-white/70 hover:text-white transition-all"
-                        title="すべてのユーザー曲をJSONとして保存"
                     >
                         <Download className="w-3.5 h-3.5" /> エクスポート
                     </button>
+
+                    {/* Sort selector */}
+                    {userSongs.length > 1 && (
+                        <div className="ml-auto flex items-center gap-1 text-xs text-white/40">
+                            <SortAsc className="w-3 h-3" />
+                            {(['recent', 'name', 'plays'] as SortKey[]).map(key => (
+                                <button
+                                    key={key}
+                                    onClick={() => setSortBy(key)}
+                                    className={cn(
+                                        "px-2 py-1 rounded transition-all",
+                                        sortBy === key ? "bg-white/15 text-white/80" : "hover:bg-white/10 text-white/40"
+                                    )}
+                                >
+                                    {sortLabels[key]}
+                                </button>
+                            ))}
+                        </div>
+                    )}
                 </div>
 
                 {/* Song List */}
                 <div className="px-3 pb-3 overflow-y-auto flex-1 space-y-2 min-h-0">
-                    {userSongs.length === 0 ? (
+                    {sortedSongs.length === 0 ? (
                         <div className="flex flex-col items-center gap-3 py-10 text-white/30">
                             <FolderSync className="w-10 h-10 opacity-40" />
                             <p className="text-sm">曲が保存されていません</p>
@@ -251,7 +311,7 @@ export function PresetSongModal({ open, onClose }: PresetSongModalProps) {
                             </div>
                         </div>
                     ) : (
-                        userSongs.map(song => {
+                        sortedSongs.map(song => {
                             const diff = difficultyConfig[song.difficulty] || difficultyConfig.medium;
                             const DiffIcon = diff.icon;
                             const isLoading = loadingId === song.id;
@@ -262,7 +322,7 @@ export function PresetSongModal({ open, onClose }: PresetSongModalProps) {
                                         onClick={() => handleSelect(song)}
                                         disabled={!!loadingId}
                                         className={cn(
-                                            "w-full p-4 pr-14 rounded-xl border transition-all text-left",
+                                            "w-full p-4 pr-16 rounded-xl border transition-all text-left",
                                             isLoading ? "bg-white/10 border-white/20" : "bg-white/5 hover:bg-white/10 border-white/10 hover:border-white/20",
                                             loadingId && !isLoading && "opacity-50"
                                         )}
@@ -276,7 +336,7 @@ export function PresetSongModal({ open, onClose }: PresetSongModalProps) {
                                             </div>
                                             <div className="flex-1 min-w-0">
                                                 <div className="flex items-center gap-2 flex-wrap">
-                                                    <span className="font-medium text-white truncate max-w-[180px]">
+                                                    <span className="font-medium text-white truncate max-w-[160px]">
                                                         {song.name}
                                                     </span>
                                                     <span className={cn(
@@ -290,15 +350,39 @@ export function PresetSongModal({ open, onClose }: PresetSongModalProps) {
                                                 {song.description && song.description !== 'User preset' && (
                                                     <p className="text-sm text-white/50 mt-0.5 truncate">{song.description}</p>
                                                 )}
-                                                <div className="flex items-center gap-3 mt-1.5 text-xs text-white/40">
+                                                {/* C案: metadata row */}
+                                                <div className="flex items-center gap-2.5 mt-1.5 text-xs text-white/35 flex-wrap">
                                                     <span>♩ {song.bpm} BPM</span>
                                                     {song.notes && <span>• {song.notes.length}ノート</span>}
+                                                    {song.hasMidiData && (
+                                                        <span className="text-blue-400/70">• MIDI保存済</span>
+                                                    )}
+                                                    {song.lastPlayed ? (
+                                                        <span className="flex items-center gap-0.5">
+                                                            <Clock className="w-2.5 h-2.5" />
+                                                            {formatRelativeTime(song.lastPlayed)}
+                                                        </span>
+                                                    ) : (
+                                                        <span className="text-white/20">• 未練習</span>
+                                                    )}
+                                                    {(song.playCount || 0) > 0 && (
+                                                        <span className="flex items-center gap-0.5">
+                                                            <BarChart2 className="w-2.5 h-2.5" />
+                                                            {song.playCount}回
+                                                        </span>
+                                                    )}
                                                 </div>
+                                                {/* B案: saved settings hint */}
+                                                {song.settings && (song.settings.guideOctaveOffset !== 0 || song.settings.transposeOffset !== 0) && (
+                                                    <div className="mt-1 text-[10px] text-cyan-400/60">
+                                                        設定: Oct{song.settings.guideOctaveOffset! > 0 ? '+' : ''}{song.settings.guideOctaveOffset ?? 0}
+                                                        {song.settings.transposeOffset ? ` / 移調${song.settings.transposeOffset > 0 ? '+' : ''}${song.settings.transposeOffset}半音` : ''}
+                                                    </div>
+                                                )}
                                             </div>
                                         </div>
                                     </button>
 
-                                    {/* QR共有・削除ボタン（常時表示） */}
                                     {!isLoading && (
                                         <div className="absolute top-1/2 -translate-y-1/2 right-2 flex flex-col gap-1">
                                             <button
@@ -334,7 +418,6 @@ export function PresetSongModal({ open, onClose }: PresetSongModalProps) {
                 </div>
             </div>
 
-            {/* QR Share / Scan sub-modals */}
             {sharingQR && <QRShareModal song={sharingQR} onClose={() => setSharingQR(null)} />}
             {showScanner && <QRScanModal onClose={() => setShowScanner(false)} onImported={handleQRImported} />}
         </div>
