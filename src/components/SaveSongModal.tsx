@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { X, Save, Download, FileJson, Library } from 'lucide-react';
+import { X, Save, Download, FileJson, Library, Database } from 'lucide-react';
 import { audioEngine } from '../lib/AudioEngine';
 import { storage } from '../lib/storage';
 import { toast } from './Toast';
@@ -16,6 +16,7 @@ export function SaveSongModal({ open, onClose }: SaveSongModalProps) {
     const [title, setTitle] = useState('');
     const [difficulty, setDifficulty] = useState<PresetSong['difficulty']>('medium');
     const [description, setDescription] = useState('');
+    const [saving, setSaving] = useState(false);
 
     if (!open) return null;
 
@@ -41,13 +42,11 @@ export function SaveSongModal({ open, onClose }: SaveSongModalProps) {
         // Get notes from current state
         let notes = [...audioEngine.state.midiGhostNotes];
 
-        // If no ghost notes, try to get from melodic tracks
         if (notes.length === 0 && audioEngine.state.currentTracks.length > 0) {
             const trackIndex = audioEngine.state.melodyTrackIndex >= 0
                 ? audioEngine.state.melodyTrackIndex
                 : 0;
             const track = audioEngine.state.currentTracks[trackIndex];
-
             if (track && track.notes.length > 0) {
                 notes = track.notes.map(n => ({
                     midi: n.midi,
@@ -63,24 +62,54 @@ export function SaveSongModal({ open, onClose }: SaveSongModalProps) {
             return;
         }
 
-        const newSong: PresetSong = {
-            id: 'user-' + Date.now(),
-            name: title,
-            description: description || 'User preset',
-            difficulty,
-            bpm: audioEngine.state.bpm || 120,
-            notes: notes,
-            // User presets typically store logic notes directly
-        };
+        setSaving(true);
+        const songId = 'user-' + Date.now();
 
         try {
+            // A案: Try to save MIDI binary alongside the metadata
+            let hasMidiData = false;
+            try {
+                const midiBuffer = await storage.loadMidi();
+                if (midiBuffer && midiBuffer.byteLength > 100) {
+                    await storage.saveSongMidi(songId, midiBuffer);
+                    hasMidiData = true;
+                }
+            } catch (e) {
+                console.warn('[SaveSong] Could not save MIDI binary:', e);
+            }
+
+            // B案: Capture current per-song settings
+            const settings = {
+                guideOctaveOffset: audioEngine.state.guideOctaveOffset,
+                transposeOffset: audioEngine.state.transposeOffset,
+                toleranceCents: audioEngine.state.toleranceCents,
+            };
+
+            const newSong: PresetSong = {
+                id: songId,
+                name: title.trim(),
+                description: description.trim() || 'User preset',
+                difficulty,
+                bpm: audioEngine.state.bpm || 120,
+                notes,
+                hasMidiData,
+                settings,
+                // C案: Initialize metadata
+                createdAt: Date.now(),
+                playCount: 0,
+            };
+
             const current = await storage.loadUserPresets();
             await storage.saveUserPresets([...current, newSong]);
-            toast.success('練習曲ライブラリに追加しました');
+
+            const extra = hasMidiData ? '（MIDIデータ保存済）' : '（ノートのみ）';
+            toast.success(`「${title}」をライブラリに追加しました ${extra}`);
             onClose();
         } catch (e) {
             console.error(e);
             toast.error('保存に失敗しました');
+        } finally {
+            setSaving(false);
         }
     };
 
@@ -126,7 +155,7 @@ export function SaveSongModal({ open, onClose }: SaveSongModalProps) {
                     {mode === 'library' ? (
                         <div className="space-y-4">
                             <p className="text-sm text-white/60">
-                                ローカルの練習曲ライブラリに追加します。「練習曲」ボタンから後でいつでも呼び出せます。
+                                ローカルの練習曲ライブラリに追加します。MIDIデータが読み込まれている場合は自動的に保存されます。
                             </p>
                             <p className="text-xs text-amber-300/70 bg-amber-500/10 border border-amber-500/20 rounded-lg px-3 py-2">
                                 ⚠️ データはこのブラウザにのみ保存されます。定期的にエクスポートしてバックアップしてください。
@@ -138,6 +167,7 @@ export function SaveSongModal({ open, onClose }: SaveSongModalProps) {
                                     type="text"
                                     value={title}
                                     onChange={e => setTitle(e.target.value)}
+                                    onKeyDown={e => e.key === 'Enter' && handleAddToLibrary()}
                                     placeholder="曲名を入力..."
                                     className="w-full bg-black/20 border border-white/10 rounded-lg p-2.5 text-white placeholder-white/30 focus:outline-none focus:border-blue-500/50 focus:ring-1 focus:ring-blue-500/50 transition-all"
                                     autoFocus
@@ -149,7 +179,7 @@ export function SaveSongModal({ open, onClose }: SaveSongModalProps) {
                                     <label className="text-xs font-medium text-white/70">難易度</label>
                                     <select
                                         value={difficulty}
-                                        onChange={e => setDifficulty(e.target.value as any)}
+                                        onChange={e => setDifficulty(e.target.value as PresetSong['difficulty'])}
                                         className="w-full bg-black/20 border border-white/10 rounded-lg p-2.5 text-white focus:outline-none focus:border-blue-500/50"
                                     >
                                         <option value="easy">初級</option>
@@ -169,12 +199,32 @@ export function SaveSongModal({ open, onClose }: SaveSongModalProps) {
                                 </div>
                             </div>
 
+                            {/* What gets saved preview */}
+                            <div className="bg-white/5 rounded-lg p-3 space-y-1.5 text-xs text-white/50">
+                                <p className="font-medium text-white/70">保存される内容：</p>
+                                <p>• ノートデータ（{audioEngine.state.midiGhostNotes.length}ノート）</p>
+                                <p>• 現在の設定（オクターブ: {audioEngine.state.guideOctaveOffset > 0 ? '+' : ''}{audioEngine.state.guideOctaveOffset}、移調: {audioEngine.state.transposeOffset > 0 ? '+' : ''}{audioEngine.state.transposeOffset}半音）</p>
+                                <p className={audioEngine.state.midiGhostNotes.length > 0 ? 'text-blue-400' : 'text-white/30'}>
+                                    • MIDIバイナリ {audioEngine.state.midiGhostNotes.length > 0 ? '（自動保存）' : '（未読み込み）'}
+                                </p>
+                            </div>
+
                             <button
                                 onClick={handleAddToLibrary}
-                                className="w-full py-3 bg-blue-600 hover:bg-blue-500 text-white rounded-xl font-medium shadow-lg shadow-blue-500/20 transition-all active:scale-[0.98] mt-4 flex items-center justify-center gap-2"
+                                disabled={saving}
+                                className="w-full py-3 bg-blue-600 hover:bg-blue-500 disabled:bg-blue-600/50 text-white rounded-xl font-medium shadow-lg shadow-blue-500/20 transition-all active:scale-[0.98] mt-4 flex items-center justify-center gap-2"
                             >
-                                <Library className="w-5 h-5" />
-                                ライブラリに追加
+                                {saving ? (
+                                    <>
+                                        <Database className="w-5 h-5 animate-pulse" />
+                                        保存中...
+                                    </>
+                                ) : (
+                                    <>
+                                        <Library className="w-5 h-5" />
+                                        ライブラリに追加
+                                    </>
+                                )}
                             </button>
                         </div>
                     ) : (

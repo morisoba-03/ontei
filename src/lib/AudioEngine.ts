@@ -799,6 +799,7 @@ export class AudioEngine {
                     'guideOctaveOffset',
                     'guideVolume', 'accompVolume', 'gateThreshold', 'toleranceCents',
                     'isParticlesEnabled', 'countIn', 'showPitchDeviation', 'inputLatency',
+                    'micRenderMode',
                 ];
 
                 const updates: Partial<AudioEngineState> = {};
@@ -823,6 +824,7 @@ export class AudioEngine {
                 'guideOctaveOffset',
                 'guideVolume', 'accompVolume', 'gateThreshold', 'toleranceCents',
                 'isParticlesEnabled', 'countIn', 'showPitchDeviation', 'inputLatency',
+                'micRenderMode',
             ];
 
             const toSave = persistentKeys.reduce((acc, key) => {
@@ -872,7 +874,7 @@ export class AudioEngine {
             'verticalZoom', 'pxPerSec', 'noteNotation',
             'guideOctaveOffset',
             'guideVolume', 'accompVolume', 'gateThreshold', 'toleranceCents',
-            'isParticlesEnabled', 'countIn', 'showPitchDeviation'
+            'isParticlesEnabled', 'countIn', 'showPitchDeviation', 'micRenderMode',
         ];
 
         if (updates.isBackingSoundEnabled !== undefined) {

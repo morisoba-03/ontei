@@ -54,6 +54,20 @@ export const storage = {
         return (await this._get('user_presets')) || [];
     },
 
+    // A案: Per-song MIDI binary storage
+    async saveSongMidi(id: string, data: ArrayBuffer) {
+        return this._put(`song_midi_${id}`, data);
+    },
+
+    async loadSongMidi(id: string): Promise<ArrayBuffer | null> {
+        const result = await this._get(`song_midi_${id}`);
+        return result instanceof ArrayBuffer ? result : null;
+    },
+
+    async deleteSongMidi(id: string) {
+        return this._delete(`song_midi_${id}`);
+    },
+
     async _put(key: string, value: any) {
         return new Promise<void>((resolve, reject) => {
             const request = indexedDB.open(DB_NAME, DB_VERSION);
@@ -79,6 +93,21 @@ export const storage = {
                 const getReq = store.get(key);
                 getReq.onsuccess = () => resolve(getReq.result);
                 getReq.onerror = () => reject(getReq.error);
+            };
+            request.onerror = () => reject(request.error);
+        });
+    },
+
+    async _delete(key: string) {
+        return new Promise<void>((resolve, reject) => {
+            const request = indexedDB.open(DB_NAME, DB_VERSION);
+            request.onsuccess = () => {
+                const db = request.result;
+                const tx = db.transaction(STORE_NAME, 'readwrite');
+                const store = tx.objectStore(STORE_NAME);
+                store.delete(key);
+                tx.oncomplete = () => resolve();
+                tx.onerror = () => reject(tx.error);
             };
             request.onerror = () => reject(request.error);
         });
