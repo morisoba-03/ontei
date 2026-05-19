@@ -574,14 +574,12 @@ export class Visualizer {
                         let shadow = '#39FF14';
 
                         if (state.showPitchDeviation) {
-                            // Find corresponding guide note
-                            // Simple optimization: check recent notes? Or just find.
-                            // midiGhostNotes are usually short enough.
                             const note = midiGhostNotes.find(n => curr.t >= n.time && curr.t <= n.time + n.duration);
                             if (note) {
-                                const expected = note.midi + (state.guideOctaveOffset * 12);
-                                if (Math.abs(curr.midi - expected) > 1.0) { // Deviation > 1 semitone
-                                    color = '#FFA500'; // Orange
+                                const expected = note.midi + (state.guideOctaveOffset * 12) + state.transposeOffset;
+                                const toleranceSemitones = toleranceCents / 100;
+                                if (Math.abs(curr.midi - expected) > toleranceSemitones) {
+                                    color = '#FFA500'; // Orange = out of tolerance
                                     shadow = '#FFA500';
                                 }
                             }
