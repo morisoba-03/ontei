@@ -18,6 +18,16 @@ export const storage = {
         });
     },
 
+    async hasStoredMidi(): Promise<boolean> {
+        try {
+            await this.init();
+            const data = await this._get('lastMidi');
+            return data instanceof ArrayBuffer && data.byteLength > 100;
+        } catch {
+            return false;
+        }
+    },
+
     async saveMidi(data: ArrayBuffer) {
         return this._put('lastMidi', data);
     },
