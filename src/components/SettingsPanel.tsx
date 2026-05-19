@@ -147,6 +147,17 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
                                 </p>
                             </div>
 
+                            {/* Tuner Visibility */}
+                            <div className="flex items-center justify-between text-sm pt-2 border-t border-white/5">
+                                <span>チューナー表示（再生中）</span>
+                                <button
+                                    onClick={() => update('showTuner', !state.showTuner)}
+                                    className={`w-10 h-5 rounded-full transition-colors relative ${state.showTuner ? 'bg-blue-500' : 'bg-white/10'}`}
+                                >
+                                    <span className={`absolute top-0.5 w-4 h-4 bg-white rounded-full transition-transform duration-200 ${state.showTuner ? 'left-5.5' : 'left-0.5'}`} />
+                                </button>
+                            </div>
+
                             {/* Visual Effects */}
                             <div className="flex items-center justify-between text-sm pt-2 border-t border-white/5">
                                 <span>リアルタイム演出</span>

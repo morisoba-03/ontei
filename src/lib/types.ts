@@ -100,6 +100,7 @@ export interface AudioEngineState {
     inputLatency: number; // seconds
     countIn: boolean;
     showPitchDeviation: boolean;
+    showTuner: boolean;
     showTolerancePreview: boolean;
 }
 
