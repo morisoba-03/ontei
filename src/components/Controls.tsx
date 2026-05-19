@@ -204,6 +204,36 @@ export function Controls({ onOpenSettings, onOpenPractice, onOpenHistory, onReco
                     </button>
                 </div>
 
+                {/* BPM Control */}
+                <div className="flex items-center bg-white/5 border border-white/10 rounded-lg p-0.5 shrink-0">
+                    <button
+                        onClick={() => {
+                            const base = audioEngine.state.baseBpm || 120;
+                            const newBpm = Math.max(20, audioEngine.state.bpm - 5);
+                            audioEngine.updateState({ bpm: newBpm, tempoFactor: newBpm / base });
+                        }}
+                        className="p-1.5 md:p-2 hover:bg-white/10 rounded-md text-white/50 hover:text-white transition-colors"
+                        title="BPMダウン (-5)"
+                    >
+                        <Minus className="w-4 h-4" />
+                    </button>
+                    <div className="px-1 text-xs font-mono text-white/70 min-w-[4.5em] text-center leading-tight">
+                        <div>{audioEngine.state.bpm}</div>
+                        <div className="text-[9px] text-white/40">BPM</div>
+                    </div>
+                    <button
+                        onClick={() => {
+                            const base = audioEngine.state.baseBpm || 120;
+                            const newBpm = Math.min(300, audioEngine.state.bpm + 5);
+                            audioEngine.updateState({ bpm: newBpm, tempoFactor: newBpm / base });
+                        }}
+                        className="p-1.5 md:p-2 hover:bg-white/10 rounded-md text-white/50 hover:text-white transition-colors"
+                        title="BPMアップ (+5)"
+                    >
+                        <Plus className="w-4 h-4" />
+                    </button>
+                </div>
+
                 {/* Loop Toggle */}
                 <button
                     onClick={() => {
