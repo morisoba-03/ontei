@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Play, Square, MousePointer2, Hand, Pencil, Eraser, Settings, Activity, Clock, Repeat, SkipBack, Music2, Music, Volume2, X, Plus, Minus } from 'lucide-react';
+import { Play, Square, MousePointer2, Hand, Pencil, Eraser, Settings, Activity, Clock, Repeat, SkipBack, Music2, Music, Volume2, X, Plus, Minus, ArrowUpDown } from 'lucide-react';
 import { audioEngine } from '../lib/AudioEngine';
 import { MidiTrackSelector } from './MidiTrackSelector';
 import type { MidiTrackInfo } from './MidiTrackSelector';
@@ -13,9 +13,10 @@ interface ControlsProps {
     onOpenHistory?: () => void;
     onRecordingComplete?: (blob: Blob) => void;
     onOpenScalePractice?: () => void;
+    onOpenTranspose?: () => void;
 }
 
-export function Controls({ onOpenSettings, onOpenPractice, onOpenHistory, onRecordingComplete, onOpenScalePractice }: ControlsProps) {
+export function Controls({ onOpenSettings, onOpenPractice, onOpenHistory, onRecordingComplete, onOpenScalePractice, onOpenTranspose }: ControlsProps) {
     const [isPlaying, setIsPlaying] = useState(audioEngine.state.isPlaying);
     const [isRecording, setIsRecording] = useState(audioEngine.isRecording);
     const [editTool, setEditTool] = useState(audioEngine.state.editTool);
@@ -233,6 +234,15 @@ export function Controls({ onOpenSettings, onOpenPractice, onOpenHistory, onReco
                         <Plus className="w-4 h-4" />
                     </button>
                 </div>
+
+                {/* Transpose Button */}
+                <button
+                    onClick={onOpenTranspose}
+                    className="p-1.5 md:p-2.5 rounded-lg border transition-all shrink-0 bg-white/5 border-white/10 text-white/50 hover:text-white hover:bg-white/10"
+                    title="移調（オクターブ・半音）"
+                >
+                    <ArrowUpDown className="w-5 h-5" />
+                </button>
 
                 {/* Loop Toggle */}
                 <button
