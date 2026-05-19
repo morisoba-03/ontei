@@ -343,8 +343,11 @@ export class AudioEngine {
             }
         }
 
+        // Convert dBFS gate threshold to RMS amplitude
+        const minRms = Math.pow(10, (this.state.gateThreshold || -50) / 20);
+
         // Offload analysis to Worker
-        this.analysisProcessor.processAsync(this.micData, guideFreq);
+        this.analysisProcessor.processAsync(this.micData, guideFreq, minRms);
     }
 
     private handleAnalysisResult(result: { freq: number, conf: number }) {
@@ -795,7 +798,7 @@ export class AudioEngine {
                     'verticalZoom', 'pxPerSec', 'noteNotation',
                     'guideOctaveOffset',
                     'guideVolume', 'accompVolume', 'gateThreshold', 'toleranceCents',
-                    'isParticlesEnabled',
+                    'isParticlesEnabled', 'countIn', 'showPitchDeviation', 'inputLatency',
                 ];
 
                 const updates: Partial<AudioEngineState> = {};
@@ -819,7 +822,7 @@ export class AudioEngine {
                 'verticalZoom', 'pxPerSec', 'noteNotation',
                 'guideOctaveOffset',
                 'guideVolume', 'accompVolume', 'gateThreshold', 'toleranceCents',
-                'isParticlesEnabled',
+                'isParticlesEnabled', 'countIn', 'showPitchDeviation', 'inputLatency',
             ];
 
             const toSave = persistentKeys.reduce((acc, key) => {
