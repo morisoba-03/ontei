@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { X } from 'lucide-react';
 import { audioEngine } from '../lib/AudioEngine';
 import { cn } from '../lib/utils';
 
@@ -8,13 +9,13 @@ export function PitchIndicator() {
         targetPitch: number;
         cents: number;
         isActive: boolean;
-    }>({ currentPitch: 0, targetPitch: 0, cents: 0, isActive: false });
+        showTuner: boolean;
+    }>({ currentPitch: 0, targetPitch: 0, cents: 0, isActive: false, showTuner: true });
 
     useEffect(() => {
         const update = () => {
             const state = audioEngine.state;
             const currentPitch = state.currentMicPitch || 0;
-            // const conf = state.currentMicConf || 0;
 
             // Find current guide note
             let targetPitch = 0;
@@ -28,7 +29,6 @@ export function PitchIndicator() {
                 targetPitch = 440 * Math.pow(2, (ghostNote.midi + offset - 69) / 12);
             }
 
-            // Calculate cents difference
             let cents = 0;
             if (currentPitch > 0 && targetPitch > 0) {
                 cents = Math.round(1200 * Math.log2(currentPitch / targetPitch));
@@ -38,36 +38,40 @@ export function PitchIndicator() {
                 currentPitch,
                 targetPitch,
                 cents,
-                isActive: state.isPlaying && (currentPitch > 0 || !!ghostNote)
+                isActive: state.isPlaying && (currentPitch > 0 || !!ghostNote),
+                showTuner: state.showTuner,
             });
         };
 
-        const interval = setInterval(update, 50); // 20 FPS
+        const interval = setInterval(update, 50);
         return () => clearInterval(interval);
     }, []);
 
-    if (!pitchData.isActive || pitchData.targetPitch === 0) return null;
+    if (!pitchData.showTuner || !pitchData.isActive || pitchData.targetPitch === 0) return null;
 
     const absCents = Math.abs(pitchData.cents);
     const isGood = absCents <= 20;
     const isOk = absCents <= 50;
 
-    // Clamp for display (-100 to +100 cents)
     const displayCents = Math.max(-100, Math.min(100, pitchData.cents));
-    const barPosition = 50 + (displayCents / 100) * 50; // 0-100%
+    const barPosition = 50 + (displayCents / 100) * 50;
 
     return (
-        <div className="absolute top-16 left-1/2 -translate-x-1/2 z-50 pointer-events-none">
-            <div className="bg-black/70 backdrop-blur-md rounded-2xl px-6 py-3 border border-white/10 shadow-2xl">
+        <div className="absolute top-16 left-1/2 -translate-x-1/2 z-50">
+            <div className="relative bg-black/70 backdrop-blur-md rounded-2xl px-6 py-3 border border-white/10 shadow-2xl">
+                {/* Close button */}
+                <button
+                    onClick={() => audioEngine.updateState({ showTuner: false })}
+                    className="absolute -top-2 -right-2 w-5 h-5 rounded-full bg-white/20 hover:bg-white/40 flex items-center justify-center transition-colors"
+                    title="チューナーを非表示"
+                >
+                    <X className="w-3 h-3 text-white" />
+                </button>
+
                 {/* Pitch meter bar */}
                 <div className="w-48 h-3 bg-white/10 rounded-full relative overflow-hidden mb-2">
-                    {/* Center line */}
                     <div className="absolute left-1/2 top-0 bottom-0 w-0.5 bg-white/30 -translate-x-1/2" />
-
-                    {/* Good zone */}
                     <div className="absolute left-[40%] right-[40%] top-0 bottom-0 bg-emerald-500/20" />
-
-                    {/* Indicator (Only show if we have current pitch) */}
                     {pitchData.currentPitch > 0 && (
                         <div
                             className={cn(
