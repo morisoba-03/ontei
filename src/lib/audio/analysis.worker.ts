@@ -10,11 +10,12 @@ self.onmessage = (e: MessageEvent) => {
     if (type === 'init') {
         sampleRate = payload.sampleRate;
     } else if (type === 'process') {
-        const { buffer, guideFreq } = payload;
+        const { buffer, guideFreq, minRms } = payload;
         // buffer is a Float32Array
         const result: PitchResult = analyzer.analyze(buffer, sampleRate, {
             viterbi: true,
-            guideFreq: guideFreq
+            guideFreq: guideFreq,
+            minRms: minRms
         });
         self.postMessage({ type: 'result', payload: result });
     } else if (type === 'reset') {

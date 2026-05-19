@@ -484,7 +484,7 @@ export class Visualizer {
 
                 if (n.role === 'call' || n.role === 'resp' || n.role === 'practice') {
                     try {
-                        const lbl = n.label || noteLabel(Math.round(dispMidi));
+                        const lbl = n.label || noteLabel(Math.round(dispMidi), state.noteNotation);
                         ctx.save();
                         ctx.font = '12px sans-serif';
                         ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
@@ -739,7 +739,7 @@ export class Visualizer {
     drawGrid(state: AudioEngineState) {
         if (!this.ctx) return;
         const { width, height } = this.canvas;
-        const { timelineOffsetSec, verticalOffset, bpm, baseBpm, pxPerSec, verticalZoom } = state;
+        const { timelineOffsetSec, verticalOffset, bpm, baseBpm, pxPerSec, verticalZoom, noteNotation } = state;
 
         // Font for labels
         this.ctx.font = '10px sans-serif';
@@ -783,7 +783,7 @@ export class Visualizer {
             // Label C (Octave)
             if (isC) {
                 this.ctx.fillStyle = 'rgba(255, 255, 255, 0.6)';
-                this.ctx.fillText('C' + (m / 12 - 1), 2, y - 2);
+                this.ctx.fillText(noteLabel(m, noteNotation), 2, y - 2);
             }
         }
 
