@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { CanvasView } from './components/CanvasView';
 import { Controls } from './components/Controls';
 import { SettingsPanel } from './components/SettingsPanel';
@@ -14,8 +14,13 @@ import { StatsDashboard } from './components/StatsDashboard';
 import { PresetSongModal } from './components/PresetSongModal';
 import { SaveSongModal } from './components/SaveSongModal';
 import { ScalePracticeModal } from './components/ScalePracticeModal';
-import { Trophy, Trash2, BarChart3, BookOpen, FileMusic, FileAudio, Save, FolderOpen } from 'lucide-react';
+import { WelcomeModal } from './components/WelcomeModal';
+import { MicPermissionModal } from './components/MicPermissionModal';
+import { Trophy, Trash2, BarChart3, BookOpen, FileMusic, FileAudio, Save, FolderOpen, Mic } from 'lucide-react';
+import { cn } from './lib/utils';
 
+const VISITED_KEY = 'ontei_visited';
+const MIC_EXPLAINED_KEY = 'ontei_mic_explained';
 
 function App() {
   const [engine] = useState(() => audioEngine);
@@ -28,8 +33,23 @@ function App() {
   const [showPresets, setShowPresets] = useState(false);
   const [showSaveModal, setShowSaveModal] = useState(false);
   const [showScalePractice, setShowScalePractice] = useState(false);
+  const [showWelcome, setShowWelcome] = useState(false);
+  const [showMicPermission, setShowMicPermission] = useState(false);
   const [recordingBlob, setRecordingBlob] = useState<Blob | null>(null);
   const [state, setState] = useState(audioEngine.state);
+  const [isMicOn, setIsMicOn] = useState(!!audioEngine.micStream);
+
+  // Show welcome screen only on first visit
+  useEffect(() => {
+    if (!localStorage.getItem(VISITED_KEY)) {
+      setShowWelcome(true);
+    }
+  }, []);
+
+  const handleWelcomeClose = () => {
+    localStorage.setItem(VISITED_KEY, '1');
+    setShowWelcome(false);
+  };
 
   // Initialize from storage on mount
   useEffect(() => {
@@ -39,12 +59,66 @@ function App() {
   useEffect(() => {
     return engine.subscribe(() => {
       setState({ ...engine.state });
+      setIsMicOn(!!audioEngine.micStream);
     });
   }, [engine]);
 
+  const toggleMic = useCallback(async () => {
+    if (audioEngine.micStream) {
+      audioEngine.micStream.getTracks().forEach(t => t.stop());
+      audioEngine.micStream = null;
+      audioEngine.notify();
+    } else {
+      if (!localStorage.getItem(MIC_EXPLAINED_KEY)) {
+        setShowMicPermission(true);
+      } else {
+        await audioEngine.initMic();
+      }
+    }
+  }, []);
+
+  const handleMicPermissionConfirm = async () => {
+    localStorage.setItem(MIC_EXPLAINED_KEY, '1');
+    setShowMicPermission(false);
+    await audioEngine.initMic();
+  };
+
+  const handleMicPermissionCancel = () => {
+    setShowMicPermission(false);
+  };
+
+  // Keyboard shortcuts
+  useEffect(() => {
+    const handleKey = async (e: KeyboardEvent) => {
+      const tag = (e.target as HTMLElement).tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || (e.target as HTMLElement).isContentEditable) return;
+
+      if (e.code === 'Space') {
+        e.preventDefault();
+        if (audioEngine.state.isPlaying) {
+          audioEngine.stopPlayback();
+        } else {
+          await audioEngine.ensureAudio();
+          audioEngine.startPlayback();
+        }
+      } else if (e.code === 'KeyR' && !e.ctrlKey && !e.metaKey) {
+        if (audioEngine.isRecording) {
+          const blob = await audioEngine.stopRecording();
+          if (blob) setRecordingBlob(blob);
+        } else {
+          await audioEngine.startRecording();
+        }
+      } else if (e.code === 'KeyM' && !e.ctrlKey && !e.metaKey) {
+        await toggleMic();
+      }
+    };
+    window.addEventListener('keydown', handleKey);
+    return () => window.removeEventListener('keydown', handleKey);
+  }, [toggleMic]);
+
   return (
     <div className="w-screen h-[100dvh] bg-[#1a1a1a] text-white overflow-hidden flex flex-col">
-      {/* Top Bar - Scrollable */}
+      {/* Top Bar */}
       <div className="h-14 border-b border-white/10 flex items-center justify-center px-2 md:px-4 bg-white/5 backdrop-blur-sm z-10 overflow-x-auto no-scrollbar gap-2">
         <h1 className="font-bold text-base md:text-lg tracking-tight bg-gradient-to-r from-blue-400 to-indigo-400 bg-clip-text text-transparent truncate max-w-[120px] md:max-w-none">
           Ontei <span className="hidden md:inline text-xs text-white/40 font-normal ml-2">Legacy Refactor</span>
@@ -69,7 +143,7 @@ function App() {
               if (file.name.endsWith('.mid') || file.name.endsWith('.midi')) {
                 engine.loadMidiFile(file);
               } else {
-                engine.loadAudioFile(file); // Audio Analysis
+                engine.loadAudioFile(file);
               }
             }}
             className="hidden" id="hidden-import-guide"
@@ -137,6 +211,21 @@ function App() {
 
         </div>
 
+        {/* Mic Button */}
+        <button
+          onClick={toggleMic}
+          className={cn(
+            "h-11 w-12 md:w-14 rounded-lg text-[9px] md:text-[10px] transition-all border flex flex-col items-center justify-center gap-0.5 leading-none p-1 ml-1 shrink-0",
+            isMicOn
+              ? "bg-red-500 text-white border-red-500 shadow-lg shadow-red-500/30 animate-pulse"
+              : "bg-white/5 border-white/10 text-white/70 hover:bg-white/10 hover:text-white"
+          )}
+          title={isMicOn ? "マイクOFF (M)" : "マイクON (M)"}
+        >
+          <Mic className="w-5 h-5" />
+          <span>{isMicOn ? 'MIC ON' : 'MIC'}</span>
+        </button>
+
         {/* BPM Control */}
         <div className="flex items-center gap-2 bg-black/20 rounded-full px-3 py-1 border border-white/10 shrink-0">
           <span className="text-xs text-white/60 font-medium">BPM: {state.bpm}</span>
@@ -198,13 +287,9 @@ function App() {
         {showResult && (
           <ScoreResultModal
             result={state.scoreResult!}
-            onClose={() => {
-              setShowResult(false);
-            }}
+            onClose={() => setShowResult(false)}
           />
         )}
-
-
 
         {/* Loading Overlay */}
         {state.loadingProgress !== null && (
@@ -216,7 +301,6 @@ function App() {
             <div className="text-white/60 font-mono text-sm">
               {Math.round(state.loadingProgress)}%
             </div>
-            {/* Progress Bar */}
             <div className="w-64 h-1.5 bg-white/10 rounded-full overflow-hidden">
               <div
                 className="h-full bg-blue-500 transition-all duration-100 ease-out"
@@ -225,12 +309,6 @@ function App() {
             </div>
           </div>
         )}
-
-        {/* Score Result Modal */}
-
-
-        {/* Result Button (Visible when stopped and result available) */}
-        {/* Result Button Removed as per user request */}
 
         <Controls
           onOpenSettings={() => setShowSettings(true)}
@@ -247,6 +325,15 @@ function App() {
           onOpenScalePractice={() => setShowScalePractice(true)}
         />
       </div>
+
+      {/* Modals */}
+      {showWelcome && <WelcomeModal onClose={handleWelcomeClose} />}
+      {showMicPermission && (
+        <MicPermissionModal
+          onConfirm={handleMicPermissionConfirm}
+          onCancel={handleMicPermissionCancel}
+        />
+      )}
 
       {/* Toast Notifications */}
       <ToastContainer />
