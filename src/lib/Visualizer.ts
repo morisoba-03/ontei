@@ -584,11 +584,23 @@ export class Visualizer {
                     const y = h - (p.midi - vmin + 1) * pxSemi;
                     const x = playX + ((p.t - eff) * pxPerSec);
                     if (x < 0 || x > w) continue;
+
+                    let dotColor = '#00FFCC';
+                    if (state.showPitchDeviation) {
+                        const note = midiGhostNotes.find(n => p.t >= n.time && p.t <= n.time + n.duration);
+                        if (note) {
+                            const expected = note.midi + (state.guideOctaveOffset * 12) + state.transposeOffset;
+                            if (Math.abs(p.midi - expected) > toleranceCents / 100) {
+                                dotColor = '#FFA500';
+                            }
+                        }
+                    }
+
                     ctx.beginPath();
                     ctx.arc(x, y, 3, 0, Math.PI * 2);
-                    ctx.fillStyle = '#00FFCC';
+                    ctx.fillStyle = dotColor;
                     ctx.shadowBlur = 10;
-                    ctx.shadowColor = '#00FFCC';
+                    ctx.shadowColor = dotColor;
                     ctx.strokeStyle = '#fff';
                     ctx.lineWidth = 1.5;
                     ctx.fill(); ctx.stroke();
