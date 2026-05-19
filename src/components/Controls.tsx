@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Play, Square, Mic, MousePointer2, Hand, Pencil, Eraser, Settings, Activity, Clock, Repeat, SkipBack, Music2, Music, Volume2, X, Plus, Minus } from 'lucide-react';
+import { Play, Square, MousePointer2, Hand, Pencil, Eraser, Settings, Activity, Clock, Repeat, SkipBack, Music2, Music, Volume2, X, Plus, Minus } from 'lucide-react';
 import { audioEngine } from '../lib/AudioEngine';
 import { MidiTrackSelector } from './MidiTrackSelector';
 import type { MidiTrackInfo } from './MidiTrackSelector';
@@ -17,7 +17,6 @@ interface ControlsProps {
 
 export function Controls({ onOpenSettings, onOpenPractice, onOpenHistory, onRecordingComplete, onOpenScalePractice }: ControlsProps) {
     const [isPlaying, setIsPlaying] = useState(audioEngine.state.isPlaying);
-    const [isMicOn, setIsMicOn] = useState(!!audioEngine.micStream);
     const [isRecording, setIsRecording] = useState(audioEngine.isRecording);
     const [editTool, setEditTool] = useState(audioEngine.state.editTool);
     const [loopEnabled, setLoopEnabled] = useState(audioEngine.state.loopEnabled);
@@ -30,7 +29,6 @@ export function Controls({ onOpenSettings, onOpenPractice, onOpenHistory, onReco
 
         const unsub = audioEngine.subscribe(() => {
             setIsPlaying(audioEngine.state.isPlaying);
-            setIsMicOn(!!audioEngine.micStream);
             setIsRecording(audioEngine.isRecording);
             setEditTool(audioEngine.state.editTool);
             setLoopEnabled(audioEngine.state.loopEnabled);
@@ -73,19 +71,6 @@ export function Controls({ onOpenSettings, onOpenPractice, onOpenHistory, onReco
         } else {
             await audioEngine.ensureAudio();
             audioEngine.startPlayback();
-        }
-    };
-
-    const toggleMic = async () => {
-        if (isMicOn) {
-            // Stop mic
-            if (audioEngine.micStream) {
-                audioEngine.micStream.getTracks().forEach(t => t.stop());
-                audioEngine.micStream = null;
-                audioEngine.notify();
-            }
-        } else {
-            await audioEngine.initMic();
         }
     };
 
@@ -143,19 +128,6 @@ export function Controls({ onOpenSettings, onOpenPractice, onOpenHistory, onReco
                         title={isPlaying ? "停止 (Space)" : "再生 (Space)"}
                     >
                         {isPlaying ? <Square className="w-5 h-5 fill-current" /> : <Play className="w-5 h-5 fill-current translate-x-0.5" />}
-                    </button>
-
-                    <button
-                        onClick={toggleMic}
-                        className={cn(
-                            "w-10 h-10 rounded-full flex items-center justify-center transition-all border",
-                            isMicOn
-                                ? "bg-red-500 text-white border-red-500 shadow-red-500/20 animate-pulse"
-                                : "bg-white/5 border-white/10 text-white/70 hover:text-white hover:bg-white/10"
-                        )}
-                        title="マイク入力切替"
-                    >
-                        <Mic className="w-5 h-5" />
                     </button>
 
                     <button
