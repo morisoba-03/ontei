@@ -530,7 +530,55 @@ export class Visualizer {
             // Sort points by time to prevent zigzag lines when history is out of order (e.g. loops)
             pts.sort((a, b) => a.t - b.t);
 
-            if (micRenderMode === 'dot') {
+            if (micRenderMode === 'segment') {
+                // Segment mode: break line on large pitch jumps (for piano / discrete notes)
+                const JUMP_THRESHOLD = 1.5; // semitones — tune this to taste
+                if (pts.length > 1) {
+                    ctx.save();
+                    ctx.lineWidth = 4;
+                    ctx.lineCap = 'round';
+                    ctx.lineJoin = 'round';
+                    ctx.shadowBlur = 15;
+
+                    for (let i = 1; i < pts.length; i++) {
+                        const prev = pts[i - 1];
+                        const curr = pts[i];
+                        const dt = curr.t - prev.t;
+                        const dy = Math.abs(curr.midi - prev.midi);
+
+                        // Break on time gap OR pitch jump larger than threshold
+                        if (dt > 0.12 || dy > JUMP_THRESHOLD) continue;
+
+                        const prevX = playX + ((prev.t - eff) * pxPerSec);
+                        const prevY = h - (prev.midi - vmin + 1) * pxSemi;
+                        const currX = playX + ((curr.t - eff) * pxPerSec);
+                        const currY = h - (curr.midi - vmin + 1) * pxSemi;
+
+                        let color = '#39FF14';
+                        let shadow = '#39FF14';
+
+                        if (state.showPitchDeviation) {
+                            const note = midiGhostNotes.find(n => curr.t >= n.time && curr.t <= n.time + n.duration);
+                            if (note) {
+                                const expected = note.midi + (state.guideOctaveOffset * 12) + state.transposeOffset;
+                                const toleranceSemitones = toleranceCents / 100;
+                                if (Math.abs(curr.midi - expected) > toleranceSemitones) {
+                                    color = '#FFA500';
+                                    shadow = '#FFA500';
+                                }
+                            }
+                        }
+
+                        ctx.beginPath();
+                        ctx.strokeStyle = color;
+                        ctx.shadowColor = shadow;
+                        ctx.moveTo(prevX, prevY);
+                        ctx.lineTo(currX, currY);
+                        ctx.stroke();
+                    }
+                    ctx.restore();
+                }
+            } else if (micRenderMode === 'dot') {
                 ctx.save();
                 for (const p of pts) {
                     const y = h - (p.midi - vmin + 1) * pxSemi;
