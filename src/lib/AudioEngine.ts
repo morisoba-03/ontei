@@ -27,36 +27,36 @@ export class AudioEngine {
     pianoBuffers: Record<string, AudioBuffer> = {};
     pianoLoadPromise: Promise<void> | null = null;
     static readonly PIANO_SAMPLES: { name: string, midi: number }[] = [
-        { name: 'A0',   midi: 21 },
-        { name: 'C1',   midi: 24 },
-        { name: 'D#1',  midi: 27 },
-        { name: 'F#1',  midi: 30 },
-        { name: 'A1',   midi: 33 },
-        { name: 'C2',   midi: 36 },
-        { name: 'D#2',  midi: 39 },
-        { name: 'F#2',  midi: 42 },
-        { name: 'A2',   midi: 45 },
-        { name: 'C3',   midi: 48 },
-        { name: 'D#3',  midi: 51 },
-        { name: 'F#3',  midi: 54 },
-        { name: 'A3',   midi: 57 },
-        { name: 'C4',   midi: 60 },
-        { name: 'D#4',  midi: 63 },
-        { name: 'F#4',  midi: 66 },
-        { name: 'A4',   midi: 69 },
-        { name: 'C5',   midi: 72 },
-        { name: 'D#5',  midi: 75 },
-        { name: 'F#5',  midi: 78 },
-        { name: 'A5',   midi: 81 },
-        { name: 'C6',   midi: 84 },
-        { name: 'D#6',  midi: 87 },
-        { name: 'F#6',  midi: 90 },
-        { name: 'A6',   midi: 93 },
-        { name: 'C7',   midi: 96 },
-        { name: 'D#7',  midi: 99 },
-        { name: 'F#7',  midi: 102 },
-        { name: 'A7',   midi: 105 },
-        { name: 'C8',   midi: 108 },
+        { name: 'A0',  midi: 21 },
+        { name: 'C1',  midi: 24 },
+        { name: 'Eb1', midi: 27 },
+        { name: 'Gb1', midi: 30 },
+        { name: 'A1',  midi: 33 },
+        { name: 'C2',  midi: 36 },
+        { name: 'Eb2', midi: 39 },
+        { name: 'Gb2', midi: 42 },
+        { name: 'A2',  midi: 45 },
+        { name: 'C3',  midi: 48 },
+        { name: 'Eb3', midi: 51 },
+        { name: 'Gb3', midi: 54 },
+        { name: 'A3',  midi: 57 },
+        { name: 'C4',  midi: 60 },
+        { name: 'Eb4', midi: 63 },
+        { name: 'Gb4', midi: 66 },
+        { name: 'A4',  midi: 69 },
+        { name: 'C5',  midi: 72 },
+        { name: 'Eb5', midi: 75 },
+        { name: 'Gb5', midi: 78 },
+        { name: 'A5',  midi: 81 },
+        { name: 'C6',  midi: 84 },
+        { name: 'Eb6', midi: 87 },
+        { name: 'Gb6', midi: 90 },
+        { name: 'A6',  midi: 93 },
+        { name: 'C7',  midi: 96 },
+        { name: 'Eb7', midi: 99 },
+        { name: 'Gb7', midi: 102 },
+        { name: 'A7',  midi: 105 },
+        { name: 'C8',  midi: 108 },
     ];
 
     // Audio Context & Nodes
@@ -240,7 +240,7 @@ export class AudioEngine {
         if (loaded === 0) {
             toast.warning('ピアノ音源の読み込みに失敗しました（合成音で代用します）');
         } else if (loaded < total) {
-            toast.info(`ピアノ音源を読み込みました（${loaded}/${total}）`);
+            toast.warning(`ピアノ音源を一部読み込めませんでした（${loaded}/${total}）`);
         }
     }
 
