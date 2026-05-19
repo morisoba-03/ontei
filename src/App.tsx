@@ -17,6 +17,8 @@ import { ScalePracticeModal } from './components/ScalePracticeModal';
 import { WelcomeModal } from './components/WelcomeModal';
 import { MicPermissionModal } from './components/MicPermissionModal';
 import { TransposeModal } from './components/TransposeModal';
+import { ResumeModal } from './components/ResumeModal';
+import { storage } from './lib/storage';
 import { Trophy, Trash2, BarChart3, BookOpen, FileMusic, FileAudio, Save, FolderOpen, Mic } from 'lucide-react';
 import { cn } from './lib/utils';
 
@@ -37,6 +39,7 @@ function App() {
   const [showWelcome, setShowWelcome] = useState(false);
   const [showMicPermission, setShowMicPermission] = useState(false);
   const [showTranspose, setShowTranspose] = useState(false);
+  const [showResume, setShowResume] = useState(false);
   const [recordingBlob, setRecordingBlob] = useState<Blob | null>(null);
   const [state, setState] = useState(audioEngine.state);
   const [isMicOn, setIsMicOn] = useState(!!audioEngine.micStream);
@@ -53,9 +56,13 @@ function App() {
     setShowWelcome(false);
   };
 
-  // Initialize from storage on mount
+  // On mount: check if previous session data exists → show resume dialog
   useEffect(() => {
-    audioEngine.initFromStorage();
+    storage.hasStoredMidi().then(has => {
+      if (has) {
+        setShowResume(true);
+      }
+    });
   }, []);
 
   useEffect(() => {
@@ -328,6 +335,18 @@ function App() {
       </div>
 
       {/* Modals */}
+      {showResume && (
+        <ResumeModal
+          onResume={() => {
+            audioEngine.initFromStorage();
+            setShowResume(false);
+          }}
+          onNew={() => {
+            storage.saveMidi(new ArrayBuffer(0)).catch(() => {});
+            setShowResume(false);
+          }}
+        />
+      )}
       {showWelcome && <WelcomeModal onClose={handleWelcomeClose} />}
       {showMicPermission && (
         <MicPermissionModal
