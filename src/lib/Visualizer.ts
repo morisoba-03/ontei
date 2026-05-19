@@ -233,7 +233,7 @@ export class Visualizer {
         const visEnd = eff + ((w - playX) / pxPerSec) + visMarginSec;
 
         // Draw Measure Lines
-        const beatDur = 60 / (state.bpm || 120);
+        const beatDur = 60 / (state.baseBpm || state.bpm || 120);
         const barDur = beatDur * 4;
 
         ctx.save();
@@ -727,7 +727,7 @@ export class Visualizer {
     drawGrid(state: AudioEngineState) {
         if (!this.ctx) return;
         const { width, height } = this.canvas;
-        const { timelineOffsetSec, verticalOffset, bpm, pxPerSec, verticalZoom } = state;
+        const { timelineOffsetSec, verticalOffset, bpm, baseBpm, pxPerSec, verticalZoom } = state;
 
         // Font for labels
         this.ctx.font = '10px sans-serif';
@@ -776,7 +776,7 @@ export class Visualizer {
         }
 
         // Vertical Lines (Time)
-        const beatInterval = 60 / bpm;
+        const beatInterval = 60 / (baseBpm || bpm || 120);
 
         // Calculate visible time range based on playback position
         const playX = getPlayX(width);
