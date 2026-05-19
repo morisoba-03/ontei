@@ -749,11 +749,11 @@ export class AudioEngine {
         }
         this.nextNoteIndexToSchedule = pIdx;
 
-        // Trim Pitch History (Fix for green line crumbling on rewind)
-        // User Request: Preserve pitch history on rewind
-        // if (this.state.pitchHistory.length > 0) {
-        //     this.state.pitchHistory = this.state.pitchHistory.filter(p => p.time <= newTime);
-        // }
+        // Clear pitch history points after the seek position so old recordings
+        // don't reappear when playback passes that time again.
+        if (this.state.pitchHistory.length > 0) {
+            this.state.pitchHistory = this.state.pitchHistory.filter(p => p.time <= newTime);
+        }
     }
 
     private _isSeeking = false;
