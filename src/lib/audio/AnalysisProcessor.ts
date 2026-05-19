@@ -25,11 +25,11 @@ export class AnalysisProcessor {
         this.worker.postMessage({ type: 'init', payload: { sampleRate } });
     }
 
-    processAsync(inputBuffer: Float32Array, guideFreq: number = 0) {
+    processAsync(inputBuffer: Float32Array, guideFreq: number = 0, minRms?: number) {
         // Send buffer to worker for processing
         this.worker.postMessage({
             type: 'process',
-            payload: { buffer: inputBuffer, guideFreq }
+            payload: { buffer: inputBuffer, guideFreq, minRms }
         });
     }
 
