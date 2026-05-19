@@ -219,7 +219,7 @@ export class Visualizer {
             pxPerSec, guideLineWidth, showNoteNames,
             currentTracks, melodyTrackIndex, pitchHistory, midiGhostNotes,
             micRenderMode,
-            toleranceCents
+            toleranceCents, showTolerancePreview
         } = state;
 
         // Common Metrics
@@ -420,6 +420,20 @@ export class Visualizer {
                 const y = h - (dispMidi - vmin + 1) * pxSemi;
 
                 ctx.beginPath(); ctx.moveTo(x1, y); ctx.lineTo(x2, y); ctx.stroke();
+
+                // Tolerance preview: dashed lines at ±toleranceCents while slider is active
+                if (showTolerancePreview && n.role === 'call') {
+                    const tolPx = (toleranceCents / 100) * pxSemi;
+                    ctx.save();
+                    ctx.strokeStyle = 'rgba(52, 211, 153, 0.7)'; // emerald
+                    ctx.lineWidth = 1;
+                    ctx.setLineDash([4, 4]);
+                    ctx.fillStyle = 'rgba(52, 211, 153, 0.06)';
+                    ctx.fillRect(x1, y - tolPx, x2 - x1, tolPx * 2);
+                    ctx.beginPath(); ctx.moveTo(x1, y - tolPx); ctx.lineTo(x2, y - tolPx); ctx.stroke();
+                    ctx.beginPath(); ctx.moveTo(x1, y + tolPx); ctx.lineTo(x2, y + tolPx); ctx.stroke();
+                    ctx.restore();
+                }
 
                 // Separator Line for Ghost Notes (Consecutive Same Pitch Only)
                 // Check next note
