@@ -301,6 +301,10 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
                                     type="range" min="10" max="100" step="5"
                                     value={state.toleranceCents}
                                     onChange={(e) => update('toleranceCents', parseFloat(e.target.value))}
+                                    onMouseDown={() => audioEngine.updateState({ showTolerancePreview: true })}
+                                    onTouchStart={() => audioEngine.updateState({ showTolerancePreview: true })}
+                                    onMouseUp={() => audioEngine.updateState({ showTolerancePreview: false })}
+                                    onTouchEnd={() => audioEngine.updateState({ showTolerancePreview: false })}
                                     className="w-full h-2 bg-white/20 rounded-full appearance-none cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-4 [&::-webkit-slider-thumb]:h-4 [&::-webkit-slider-thumb]:bg-emerald-500 [&::-webkit-slider-thumb]:rounded-full hover:[&::-webkit-slider-thumb]:scale-110 transition-all"
                                 />
                             </div>

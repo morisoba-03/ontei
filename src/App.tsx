@@ -16,7 +16,6 @@ import { SaveSongModal } from './components/SaveSongModal';
 import { ScalePracticeModal } from './components/ScalePracticeModal';
 import { WelcomeModal } from './components/WelcomeModal';
 import { MicPermissionModal } from './components/MicPermissionModal';
-import { TransposeModal } from './components/TransposeModal';
 import { ResumeModal } from './components/ResumeModal';
 import { storage } from './lib/storage';
 import { Trophy, Trash2, BarChart3, BookOpen, FileMusic, FileAudio, Save, FolderOpen, Mic } from 'lucide-react';
@@ -38,7 +37,6 @@ function App() {
   const [showScalePractice, setShowScalePractice] = useState(false);
   const [showWelcome, setShowWelcome] = useState(false);
   const [showMicPermission, setShowMicPermission] = useState(false);
-  const [showTranspose, setShowTranspose] = useState(false);
   const [showResume, setShowResume] = useState(false);
   const [recordingBlob, setRecordingBlob] = useState<Blob | null>(null);
   const [state, setState] = useState(audioEngine.state);
@@ -330,7 +328,6 @@ function App() {
           onOpenHistory={() => setShowHistory(true)}
           onRecordingComplete={(blob) => setRecordingBlob(blob)}
           onOpenScalePractice={() => setShowScalePractice(true)}
-          onOpenTranspose={() => setShowTranspose(true)}
         />
       </div>
 
@@ -354,13 +351,6 @@ function App() {
           onCancel={handleMicPermissionCancel}
         />
       )}
-      {showTranspose && (
-        <TransposeModal
-          audioEngine={audioEngine}
-          onClose={() => setShowTranspose(false)}
-        />
-      )}
-
       {/* Toast Notifications */}
       <ToastContainer />
     </div>

@@ -204,7 +204,8 @@ export class AudioEngine {
             metronomeMode: 'off',
             inputLatency: 0.12, // 120ms default latency compensation
             countIn: false,
-            showPitchDeviation: true
+            showPitchDeviation: true,
+            showTolerancePreview: false
         };
         this.loadSettings();
         // Start loading piano samples immediately
