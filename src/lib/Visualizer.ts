@@ -216,7 +216,7 @@ export class Visualizer {
         const {
             isCalibrating, isPracticing, isPitchOnlyMode,
             playbackPosition, timelineOffsetSec, verticalOffset,
-            pxPerSec, guideLineWidth, showNoteNames,
+            pxPerSec, tempoFactor, guideLineWidth, showNoteNames,
             currentTracks, melodyTrackIndex, pitchHistory, midiGhostNotes,
             micRenderMode,
             toleranceCents
@@ -227,10 +227,12 @@ export class Visualizer {
         const eff = playbackPosition + timelineOffsetSec;
         const vmin = 36 + Math.round((132 - 36 - total) * (verticalOffset / 100));
         const pxSemi = this.pxPerPitch;
+        // px = effective pixels-per-second accounting for tempo factor
+        const px = pxPerSec / (tempoFactor || 1);
 
         const visMarginSec = 2.0;
-        const visStart = eff - (playX / pxPerSec) - visMarginSec;
-        const visEnd = eff + ((w - playX) / pxPerSec) + visMarginSec;
+        const visStart = eff - (playX / px) - visMarginSec;
+        const visEnd = eff + ((w - playX) / px) + visMarginSec;
 
         // Draw Measure Lines
         const beatDur = 60 / (state.bpm || 120);
@@ -249,7 +251,7 @@ export class Visualizer {
         for (let b = barStartIdx; b <= barEndIdx; b++) {
             if (b < 0) continue;
             const t = b * barDur;
-            const x = playX + (t - eff) * pxPerSec;
+            const x = playX + (t - eff) * px;
             if (x >= 0 && x <= w) {
                 ctx.moveTo(x, 0); ctx.lineTo(x, h);
                 ctx.fillStyle = 'rgba(255,255,255,0.3)';
@@ -301,7 +303,7 @@ export class Visualizer {
 
                     const midi = 69 + 12 * Math.log2(p.freq / 440);
                     const y = h - (midi - vmin + 1) * pxSemi;
-                    const x = playX + (p.time - eff) * pxPerSec;
+                    const x = playX + (p.time - eff) * px;
 
                     // Gap detection (if silence/break in extraction)
                     if (!first && i > 0) {
@@ -332,8 +334,8 @@ export class Visualizer {
                 for (const n of notes) {
                     if (n.time > visEnd) break;
                     if (n.time + n.duration < visStart) continue;
-                    const x1 = playX + (n.time - eff) * pxPerSec;
-                    let x2 = playX + ((n.time + n.duration) - eff) * pxPerSec;
+                    const x1 = playX + (n.time - eff) * px;
+                    let x2 = playX + ((n.time + n.duration) - eff) * px;
 
                     // Visual Separation for adjacent notes (1px gap)
                     if (x2 - x1 > 3) {
@@ -412,8 +414,8 @@ export class Visualizer {
                     ctx.strokeStyle = 'rgba(255,80,80,0.9)'; ctx.setLineDash([6, 4]);
                 }
                 if (n.time + n.duration < visStart || n.time > visEnd) continue;
-                const x1 = playX + (n.time - eff) * pxPerSec;
-                const x2 = playX + ((n.time + n.duration) - eff) * pxPerSec;
+                const x1 = playX + (n.time - eff) * px;
+                const x2 = playX + ((n.time + n.duration) - eff) * px;
                 if (x2 < 0 || x1 > w) continue;
 
                 const dispMidi = n.midi + (state.guideOctaveOffset * 12) + state.transposeOffset;
@@ -520,7 +522,7 @@ export class Visualizer {
                 ctx.save();
                 for (const p of pts) {
                     const y = h - (p.midi - vmin + 1) * pxSemi;
-                    const x = playX + ((p.t - eff) * pxPerSec);
+                    const x = playX + ((p.t - eff) * px);
                     if (x < 0 || x > w) continue;
                     ctx.beginPath();
                     ctx.arc(x, y, 3, 0, Math.PI * 2);
@@ -546,9 +548,9 @@ export class Visualizer {
                         const prev = pts[i - 1];
                         const curr = pts[i];
 
-                        const prevX = playX + ((prev.t - eff) * pxPerSec);
+                        const prevX = playX + ((prev.t - eff) * px);
                         const prevY = h - (prev.midi - vmin + 1) * pxSemi;
-                        const currX = playX + ((curr.t - eff) * pxPerSec);
+                        const currX = playX + ((curr.t - eff) * px);
                         const currY = h - (curr.midi - vmin + 1) * pxSemi;
 
                         // Gap detection
@@ -586,7 +588,7 @@ export class Visualizer {
 
             // Vibrato Detection and Visualization
             if (pts.length > 20) {
-                this.drawVibratoIndicators(ctx, pts, state, playX, pxSemi, vmin, h, w, eff, pxPerSec);
+                this.drawVibratoIndicators(ctx, pts, state, playX, pxSemi, vmin, h, w, eff, px);
             }
         }
 
@@ -905,10 +907,11 @@ export class Visualizer {
         if (!this.ctx) return;
 
         const { width, height } = this.canvas;
-        const { timelineOffsetSec, playbackPosition, pxPerSec } = state;
+        const { timelineOffsetSec, playbackPosition, pxPerSec, tempoFactor } = state;
 
         const playX = getPlayX(width);
         const eff = playbackPosition + timelineOffsetSec;
+        const px = pxPerSec / (tempoFactor || 1);
 
         // Check if loop is complete (both start and end set properly)
         const isComplete = state.loopEnd > state.loopStart;
@@ -916,8 +919,8 @@ export class Visualizer {
 
         if (isComplete) {
             // Complete loop: Green region
-            const x1 = playX + (state.loopStart - eff) * pxPerSec;
-            const x2 = playX + (state.loopEnd - eff) * pxPerSec;
+            const x1 = playX + (state.loopStart - eff) * px;
+            const x2 = playX + (state.loopEnd - eff) * px;
 
             const left = Math.max(0, x1);
             const right = Math.min(width, x2);
@@ -974,26 +977,8 @@ export class Visualizer {
             }
         } else if (isPartial) {
             // Partial loop: Yellow region from start to current playback
-            const x1 = playX + (state.loopStart - eff) * pxPerSec;
-            // End is exactly at the playback cursor (playX)
-            // But we must respect the physical timeline.
-            // If the user has scrolled away (timelineOffsetSec != 0), playX might not represent "playback cursor" relative to notes?
-            // "playX" IS the screen coordinate where the playhead sits.
-            // "eff" IS the time at playX.
-            // "playbackPosition" is the current time of the playhead.
-            // So yes, the playhead is ALWAYS at playX (unless stopped/seeking? No, Visualizer always centers playX for 'playbackPosition').
-            // Wait, if I pan, timelineOffsetSec changes. playbackPosition continues increasing.
-            // eff = playbackPosition + timelineOffsetSec.
-            // The Playhead is drawn at playX ONLY if timelineOffsetSec == 0 ?
-            // Let's check how Grid/Notes are drawn.
-            // x = playX + (t - eff) ...
-            // Playhead is at t = playbackPosition.
-            // x_playhead = playX + (playbackPosition - (playbackPosition + timelineOffsetSec)) ...
-            // x_playhead = playX - timelineOffsetSec * ...
-            // So if timelineOffsetSec is 0 (tracking), playhead is at playX.
-            // If I pan, playhead moves.
-
-            const currentHeadX = playX - (timelineOffsetSec * pxPerSec);
+            const x1 = playX + (state.loopStart - eff) * px;
+            const currentHeadX = playX - (timelineOffsetSec * px);
 
             // We want to draw from Start(x1) to CurrentHead(x2)
             const x2 = currentHeadX;
