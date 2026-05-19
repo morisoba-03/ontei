@@ -73,6 +73,7 @@ export interface AudioEngineState {
     accompVolume: number;
     selectedNote: Note | null;
     bpm: number;
+    baseBpm: number;
     isMonophonic: boolean;
     practiceConfig?: PracticeConfig;
     currentMicPitch?: number;

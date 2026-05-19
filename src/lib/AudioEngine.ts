@@ -153,6 +153,7 @@ export class AudioEngine {
             accompVolume: 0.8,
             selectedNote: null,
             bpm: 120,
+            baseBpm: 120,
             isMonophonic: true,
             guideOctaveOffset: 1,
             scoreResult: null,
@@ -1513,6 +1514,8 @@ export class AudioEngine {
 
         if (tempos.length > 0) {
             this.state.bpm = Math.round(tempos[0].bpm);
+            this.state.baseBpm = this.state.bpm;
+            this.state.tempoFactor = 1.0;
         }
         this.state.tempoMap = tempos;
 
