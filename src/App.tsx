@@ -19,8 +19,9 @@ import { WelcomeModal } from './components/WelcomeModal';
 import { MicPermissionModal } from './components/MicPermissionModal';
 import { ResumeModal } from './components/ResumeModal';
 import { storage } from './lib/storage';
-import { Trophy, Trash2, BarChart3, BookOpen, Save, Mic, ArrowLeftRight } from 'lucide-react';
+import { Trophy, Trash2, BarChart3, BookOpen, Save, Mic, ArrowLeftRight, ListMusic } from 'lucide-react';
 import { cn } from './lib/utils';
+import { MidiTrackSelector } from './components/MidiTrackSelector';
 
 const VISITED_KEY = 'ontei_visited';
 const MIC_EXPLAINED_KEY = 'ontei_mic_explained';
@@ -40,6 +41,7 @@ function App() {
   const [showWelcome, setShowWelcome] = useState(false);
   const [showMicPermission, setShowMicPermission] = useState(false);
   const [showResume, setShowResume] = useState(false);
+  const [showTrackSelector, setShowTrackSelector] = useState(false);
   const [recordingBlob, setRecordingBlob] = useState<Blob | null>(null);
   const [state, setState] = useState(audioEngine.state);
   const [isMicOn, setIsMicOn] = useState(!!audioEngine.micStream);
@@ -175,6 +177,17 @@ function App() {
               <Save className="w-5 h-5" /> <span>保存</span>
             </button>
 
+            {/* Track Selector — shown when MIDI with multiple playable tracks is loaded */}
+            {(state.midiAvailableTracks ?? []).filter(t => t.noteCount > 0).length > 1 && (
+              <button
+                onClick={() => setShowTrackSelector(true)}
+                className="h-11 w-12 md:w-14 rounded-lg bg-emerald-500/20 text-emerald-300 text-[9px] md:text-[10px] hover:bg-emerald-500/30 transition-all border border-emerald-500/30 flex flex-col items-center justify-center gap-0.5 leading-none p-1"
+                title={`トラック変更: ${(state.midiAvailableTracks ?? []).find(t => t.id === state.selectedMidiTrackId)?.name || `Track ${(state.selectedMidiTrackId ?? 0) + 1}`}`}
+              >
+                <ListMusic className="w-5 h-5" /> <span>トラック</span>
+              </button>
+            )}
+
             <button
               onClick={() => state.scoreResult && state.scoreResult.totalScore > 0 && setShowResult(true)}
               disabled={!state.scoreResult || state.scoreResult.totalScore <= 0}
@@ -201,7 +214,7 @@ function App() {
                 ? "bg-red-500 text-white border-red-500 shadow-lg shadow-red-500/30 animate-pulse"
                 : "bg-white/5 border-white/10 text-white/70 hover:bg-white/10 hover:text-white"
             )}
-            title={isMicOn ? "マイクOFF (M)" : "マイクON (M)"}
+            title={isMicOn ? `マイクOFF (M)${audioEngine.micStream?.getAudioTracks()[0]?.label ? ` — ${audioEngine.micStream.getAudioTracks()[0].label}` : ''}` : "マイクON (M)"}
           >
             <Mic className="w-5 h-5" />
             <span>{isMicOn ? 'ON' : 'MIC'}</span>
@@ -259,6 +272,17 @@ function App() {
 
         <PresetSongModal open={showPresets} onClose={() => setShowPresets(false)} />
         <SaveSongModal open={showSaveModal} onClose={() => setShowSaveModal(false)} />
+        <MidiTrackSelector
+          open={showTrackSelector}
+          tracks={state.midiAvailableTracks ?? []}
+          selectedId={state.selectedMidiTrackId}
+          onSelect={(trackId) => {
+            audioEngine.importMidiTrack(trackId);
+            audioEngine.startPractice({ mode: 'Midi' });
+            setShowTrackSelector(false);
+          }}
+          onCancel={() => setShowTrackSelector(false)}
+        />
         <ImportExportModal open={showImportExport} onClose={() => setShowImportExport(false)} />
         {recordingBlob && (
           <RecordingPlayer

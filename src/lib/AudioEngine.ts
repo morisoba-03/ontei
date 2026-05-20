@@ -1340,6 +1340,7 @@ export class AudioEngine {
 
     async loadMidiFile(file: File) {
         const arrayBuffer = await file.arrayBuffer();
+        this.state.loadedMidiFileName = file.name.replace(/\.[^.]+$/, '');
 
         // Save to IndexedDB for session restoration
         try {
@@ -1366,7 +1367,7 @@ export class AudioEngine {
 
         const playableTracks = candidates.filter(t => t.noteCount > 0);
 
-        this.updateState({ scoreResult: null, midiAvailableTracks: candidates }); // Reset result, persist track list
+        this.updateState({ scoreResult: null, midiAvailableTracks: candidates, transposeOffset: 0, guideOctaveOffset: 0 }); // Reset result, offsets, persist track list
 
         // Logic Refinement: Check for auto-import match BEFORE showing the selector
         if (candidates.length === 1) {
@@ -1564,6 +1565,7 @@ export class AudioEngine {
 
         this.state.midiGhostNotes = ghostNotes;
         this.state.playbackPosition = 0; // Reset so instructions start from 0
+        this.state.selectedMidiTrackId = trackIndex;
         this.notify();
     }
     // Session Management

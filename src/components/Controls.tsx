@@ -25,7 +25,7 @@ export function Controls({ onOpenSettings, onOpenPractice, onOpenHistory, onReco
     const [isGuideOn, setIsGuideOn] = useState(audioEngine.state.isGuideSoundEnabled);
     const [isBackingOn, setIsBackingOn] = useState(audioEngine.state.isBackingSoundEnabled);
     const [availableTracks, setAvailableTracks] = useState<MidiTrackInfo[]>(audioEngine.state.midiAvailableTracks || []);
-    const [currentTrackIndex, setCurrentTrackIndex] = useState(audioEngine.state.melodyTrackIndex);
+    const [currentTrackIndex, setCurrentTrackIndex] = useState(audioEngine.state.selectedMidiTrackId ?? audioEngine.state.melodyTrackIndex);
 
     useEffect(() => {
         const unsub = audioEngine.subscribe(() => {
@@ -35,7 +35,7 @@ export function Controls({ onOpenSettings, onOpenPractice, onOpenHistory, onReco
             setLoopEnabled(audioEngine.state.loopEnabled);
             setIsGuideOn(audioEngine.state.isGuideSoundEnabled);
             setIsBackingOn(audioEngine.state.isBackingSoundEnabled);
-            setCurrentTrackIndex(audioEngine.state.melodyTrackIndex);
+            setCurrentTrackIndex(audioEngine.state.selectedMidiTrackId ?? audioEngine.state.melodyTrackIndex);
 
             if (audioEngine.state.midiAvailableTracks) {
                 setAvailableTracks(audioEngine.state.midiAvailableTracks);
