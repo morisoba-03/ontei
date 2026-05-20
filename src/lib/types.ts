@@ -90,10 +90,11 @@ export interface AudioEngineState {
     loopStart: number; // seconds
     loopEnd: number;   // seconds
     // Key Change (Transposition)
-    transposeOffset: number; // semitones (-12 to +12)
+    transposeOffset: number; // semitones
     lastPhraseResult?: PhraseResult;
     isParticlesEnabled: boolean;
     midiTrackCandidates?: { id: number, name: string, instrument: string, noteCount: number, channel: number }[];
+    midiAvailableTracks?: { id: number, name: string, instrument: string, noteCount: number, channel: number }[];
     noteNotation: 'alphabet' | 'katakana';
     metronomeMode: 'off' | 'on' | 'rec_only' | 'measure' | 'beat';
     meterColor?: string;
