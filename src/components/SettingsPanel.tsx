@@ -212,35 +212,6 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
 
                             <div className="space-y-2">
                                 <div className="flex justify-between text-sm items-center">
-                                    <span>ガイド音程シフト</span>
-                                    <span className="font-mono text-yellow-400 bg-yellow-400/10 px-2 py-0.5 rounded">
-                                        {state.guideOctaveOffset > 0 ? '+' : ''}{state.guideOctaveOffset} Oct
-                                    </span>
-                                </div>
-                                <div className="flex bg-white/10 rounded-lg p-1 gap-1">
-                                    <button
-                                        onClick={() => update('guideOctaveOffset', state.guideOctaveOffset - 1)}
-                                        className="flex-1 py-1 hover:bg-white/10 rounded-md transition-colors text-white/80"
-                                    >
-                                        -1
-                                    </button>
-                                    <button
-                                        onClick={() => update('guideOctaveOffset', 0)}
-                                        className="flex-1 py-1 hover:bg-white/10 rounded-md transition-colors text-xs text-white/40"
-                                    >
-                                        Reset
-                                    </button>
-                                    <button
-                                        onClick={() => update('guideOctaveOffset', state.guideOctaveOffset + 1)}
-                                        className="flex-1 py-1 hover:bg-white/10 rounded-md transition-colors text-white/80"
-                                    >
-                                        +1
-                                    </button>
-                                </div>
-                            </div>
-
-                            <div className="space-y-2">
-                                <div className="flex justify-between text-sm items-center">
                                     <span>キー変更（移調）</span>
                                     <span className="font-mono text-cyan-400 bg-cyan-400/10 px-2 py-0.5 rounded">
                                         {state.transposeOffset > 0 ? '+' : ''}{state.transposeOffset} 半音
@@ -257,6 +228,27 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
                                     <button onClick={() => update('transposeOffset', 0)} className="text-white/50 hover:text-white">Reset</button>
                                     <span>+2オクターブ</span>
                                 </div>
+                            </div>
+
+                            <div className="space-y-2 pt-2 border-t border-white/5">
+                                <div className="flex justify-between text-sm items-center">
+                                    <span>オクターブ調整</span>
+                                    <span className="font-mono text-yellow-400 bg-yellow-400/10 px-2 py-0.5 rounded">
+                                        {state.guideOctaveOffset > 0 ? '+' : ''}{state.guideOctaveOffset} Oct
+                                    </span>
+                                </div>
+                                <input
+                                    type="range" min="-4" max="4" step="1"
+                                    value={state.guideOctaveOffset}
+                                    onChange={(e) => update('guideOctaveOffset', parseInt(e.target.value))}
+                                    className="w-full h-2 bg-white/20 rounded-full appearance-none cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-6 [&::-webkit-slider-thumb]:h-6 [&::-webkit-slider-thumb]:bg-yellow-500 [&::-webkit-slider-thumb]:rounded-full hover:[&::-webkit-slider-thumb]:scale-110 transition-all"
+                                />
+                                <div className="flex justify-between text-[10px] text-white/30 px-1">
+                                    <span>-4 Oct</span>
+                                    <button onClick={() => update('guideOctaveOffset', 0)} className="text-white/50 hover:text-white">Reset</button>
+                                    <span>+4 Oct</span>
+                                </div>
+                                <p className="text-[10px] text-white/30">移調と組み合わせて使うと±6オクターブ以上の調整が可能</p>
                             </div>
 
                             <div className="space-y-2">
