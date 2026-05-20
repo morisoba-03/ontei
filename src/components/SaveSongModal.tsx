@@ -13,7 +13,7 @@ interface SaveSongModalProps {
 
 export function SaveSongModal({ open, onClose }: SaveSongModalProps) {
     const [saveType, setSaveType] = useState<'new' | 'overwrite'>('new');
-    const [title, setTitle] = useState('');
+    const [title, setTitle] = useState(audioEngine.state.loadedMidiFileName || '');
     const [difficulty, setDifficulty] = useState<PresetSong['difficulty']>('medium');
     const [description, setDescription] = useState('');
     const [saving, setSaving] = useState(false);
