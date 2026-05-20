@@ -95,6 +95,8 @@ export interface AudioEngineState {
     isParticlesEnabled: boolean;
     midiTrackCandidates?: { id: number, name: string, instrument: string, noteCount: number, channel: number }[];
     midiAvailableTracks?: { id: number, name: string, instrument: string, noteCount: number, channel: number }[];
+    loadedMidiFileName?: string;
+    selectedMidiTrackId?: number;
     noteNotation: 'alphabet' | 'katakana';
     metronomeMode: 'off' | 'on' | 'rec_only' | 'measure' | 'beat';
     meterColor?: string;
