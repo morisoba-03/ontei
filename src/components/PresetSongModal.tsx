@@ -71,21 +71,45 @@ export function PresetSongModal({ open, onClose }: PresetSongModalProps) {
         }
     };
 
-    const handleExportLibrary = () => {
+    const handleExportLibrary = async () => {
         if (userSongs.length === 0) {
             toast.error('エクスポートする曲がありません');
             return;
         }
-        // Export metadata only (MIDI binaries are too large for JSON)
-        const json = JSON.stringify(userSongs, null, 2);
-        const blob = new Blob([json], { type: 'application/json' });
+
+        // Collect MIDI binaries as base64
+        const midiDataMap: Record<string, string> = {};
+        for (const song of userSongs) {
+            if (song.hasMidiData) {
+                try {
+                    const buf = await storage.loadSongMidi(song.id);
+                    if (buf && buf.byteLength > 100) {
+                        const bytes = new Uint8Array(buf);
+                        let binary = '';
+                        for (let i = 0; i < bytes.byteLength; i++) binary += String.fromCharCode(bytes[i]);
+                        midiDataMap[song.id] = btoa(binary);
+                    }
+                } catch { /* ignore individual failures */ }
+            }
+        }
+
+        const exportData = {
+            version: 2,
+            type: 'ontei-library',
+            exportedAt: new Date().toISOString(),
+            songs: userSongs,
+            midiDataMap,
+        };
+
+        const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
         a.download = `ontei-library-${new Date().toISOString().slice(0, 10)}.json`;
         a.click();
         URL.revokeObjectURL(url);
-        toast.success(`ライブラリ(${userSongs.length}曲)をエクスポートしました`);
+        const midiCount = Object.keys(midiDataMap).length;
+        toast.success(`ライブラリ(${userSongs.length}曲、MIDI ${midiCount}件)をエクスポートしました`);
     };
 
     const handleImportLibrary = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -97,22 +121,57 @@ export function PresetSongModal({ open, onClose }: PresetSongModalProps) {
             try {
                 const content = ev.target?.result as string;
                 const json = JSON.parse(content);
-                if (!Array.isArray(json)) throw new Error('Invalid format');
+
+                let songs: PresetSong[];
+                let midiDataMap: Record<string, string> = {};
+
+                if (Array.isArray(json)) {
+                    // Old format: plain array
+                    songs = json;
+                } else if (json.type === 'ontei-library' && Array.isArray(json.songs)) {
+                    // New v2 library format
+                    songs = json.songs;
+                    midiDataMap = json.midiDataMap || {};
+                } else if (json.type === 'ontei-song' && json.song) {
+                    // Single song export — add to library
+                    const newId = 'user-' + Date.now();
+                    songs = [{ ...json.song, id: newId, createdAt: Date.now(), playCount: 0 }];
+                    if (json.midiData) midiDataMap[newId] = json.midiData;
+                } else {
+                    throw new Error('Invalid format');
+                }
 
                 const current = await storage.loadUserPresets();
                 const currentMap = new Map(current.map(s => [s.id, s]));
                 let added = 0, updated = 0;
 
-                for (const item of json) {
+                for (const item of songs) {
                     if (!item.name || !item.notes) continue;
                     currentMap.has(item.id) ? updated++ : added++;
-                    currentMap.set(item.id, item);
+                    let entry = { ...item };
+
+                    // Restore MIDI binary
+                    if (midiDataMap[item.id]) {
+                        try {
+                            const binary = atob(midiDataMap[item.id]);
+                            const buf = new ArrayBuffer(binary.length);
+                            const view = new Uint8Array(buf);
+                            for (let i = 0; i < binary.length; i++) view[i] = binary.charCodeAt(i);
+                            await storage.saveSongMidi(item.id, buf);
+                            entry.hasMidiData = true;
+                        } catch (e) {
+                            console.warn('Failed to restore MIDI for', item.id, e);
+                        }
+                    }
+
+                    currentMap.set(item.id, entry);
                 }
 
                 const newPresets = Array.from(currentMap.values());
                 await storage.saveUserPresets(newPresets);
                 setUserSongs(newPresets);
-                toast.success(`${added}曲を追加、${updated}曲を更新しました`);
+                const midiRestored = Object.keys(midiDataMap).length;
+                toast.success(`${added}曲を追加、${updated}曲を更新${midiRestored > 0 ? `（MIDI ${midiRestored}件復元）` : ''}`);
             } catch (err) {
                 console.error(err);
                 toast.error('読み込みに失敗しました。正しいJSONファイルか確認してください。');

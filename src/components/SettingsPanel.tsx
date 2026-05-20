@@ -247,15 +247,15 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
                                     </span>
                                 </div>
                                 <input
-                                    type="range" min="-12" max="12" step="1"
+                                    type="range" min="-24" max="24" step="1"
                                     value={state.transposeOffset}
                                     onChange={(e) => update('transposeOffset', parseInt(e.target.value))}
                                     className="w-full h-2 bg-white/20 rounded-full appearance-none cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-6 [&::-webkit-slider-thumb]:h-6 [&::-webkit-slider-thumb]:bg-cyan-500 [&::-webkit-slider-thumb]:rounded-full hover:[&::-webkit-slider-thumb]:scale-110 transition-all"
                                 />
                                 <div className="flex justify-between text-[10px] text-white/30 px-1">
-                                    <span>-1オクターブ</span>
+                                    <span>-2オクターブ</span>
                                     <button onClick={() => update('transposeOffset', 0)} className="text-white/50 hover:text-white">Reset</button>
-                                    <span>+1オクターブ</span>
+                                    <span>+2オクターブ</span>
                                 </div>
                             </div>
 
