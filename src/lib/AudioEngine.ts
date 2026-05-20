@@ -79,7 +79,7 @@ export class AudioEngine {
     private lastFrameTime: number = 0;
 
     // Config
-    analysisRate: number = 20;
+    analysisRate: number = 30; // 30 Hz → 33 ms intervals, finer pitch history resolution
 
     // Reactivity
     listeners: (() => void)[] = [];
@@ -292,11 +292,14 @@ export class AudioEngine {
                 this.micStream.getTracks().forEach(t => t.stop());
             }
 
+            // Use `ideal: false` instead of `false` so iOS Safari accepts the constraint
+            // without throwing an OverconstrainedError (it honours `exact` constraints strictly,
+            // ignores `ideal` ones it can't satisfy). PC browsers honour these fully either way.
             const constraints: MediaStreamConstraints = {
                 audio: {
-                    echoCancellation: false,
-                    noiseSuppression: false,
-                    autoGainControl: false,
+                    echoCancellation: { ideal: false },
+                    noiseSuppression: { ideal: false },
+                    autoGainControl: { ideal: false },
                     deviceId: deviceId ? { exact: deviceId } : undefined
                 }
             };
