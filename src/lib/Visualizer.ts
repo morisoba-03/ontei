@@ -399,7 +399,6 @@ export class Visualizer {
         if (Array.isArray(midiGhostNotes) && midiGhostNotes.length && (!isPitchOnlyMode || isPracticing)) {
             ctx.save();
             ctx.lineWidth = Math.max(2, guideLineWidth);
-            ctx.lineWidth = Math.max(2, guideLineWidth);
             for (let i = 0; i < midiGhostNotes.length; i++) {
                 const n = midiGhostNotes[i];
                 if (n.role === 'resp' || n.role === 'calib') {

@@ -40,29 +40,11 @@ export function Controls({ onOpenSettings, onOpenPractice, onOpenHistory, onReco
             if (candidates && candidates.length > 0) {
                 setMidiTracks(candidates);
                 setShowMidiSelector(true);
-                // Clear the state so it doesn't pop up again immediately
-                // Actually we should clear it after selection or cancel
                 audioEngine.updateState({ midiTrackCandidates: undefined });
             }
         });
-        const i = setInterval(() => {
-            // Polling for selectedNote visibility since it's not in local state
-            // Or better, add it to local state:
-            // setHasSelection(!!audioEngine.state.selectedNote);
-        }, 100);
 
-        return () => {
-            unsub();
-            clearInterval(i);
-        };
-    }, []);
-
-    // Better way: use useSyncExternalStore or just a simple hook wrapper.
-    // For now, let's use a simple "dummy" state to force re-render on notify
-    const [, forceUpdate] = useState(0);
-
-    useEffect(() => {
-        return audioEngine.subscribe(() => forceUpdate(n => n + 1));
+        return unsub;
     }, []);
 
     const togglePlay = async () => {
