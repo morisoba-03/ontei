@@ -803,7 +803,7 @@ export class AudioEngine {
                     'guideOctaveOffset',
                     'guideVolume', 'accompVolume', 'gateThreshold', 'toleranceCents',
                     'isParticlesEnabled', 'countIn', 'showPitchDeviation', 'inputLatency',
-                    'micRenderMode', 'showTuner',
+                    'micRenderMode', 'showTuner', 'selectedMidiTrackId',
                 ];
 
                 const updates: Partial<AudioEngineState> = {};
@@ -1686,14 +1686,23 @@ export class AudioEngine {
             const midiData = await storage.loadMidi();
             if (midiData) {
                 console.log('[AudioEngine] Restoring MIDI from storage...');
+                // Save persisted track selection before loadMidiFromBuffer may change state
+                const savedTrackId = this.state.selectedMidiTrackId;
                 const candidates = this.loadMidiFromBuffer(midiData);
-                // Auto-import first playable track if available
                 if (candidates && candidates.length > 0) {
                     const playable = candidates.filter((t: { noteCount: number }) => t.noteCount > 0);
-                    if (playable.length === 1) {
+                    // Re-select the previously chosen track if it's still valid
+                    const restoredTrack = savedTrackId !== undefined
+                        ? playable.find(t => t.id === savedTrackId)
+                        : null;
+                    if (restoredTrack) {
+                        this.importMidiTrack(restoredTrack.id);
+                        this.updateState({ midiTrackCandidates: undefined }); // suppress selector
+                        console.log(`[AudioEngine] Restored previously selected track ${restoredTrack.id}`);
+                    } else if (playable.length === 1) {
                         this.importMidiTrack(playable[0].id);
                     }
-                    // If multiple tracks, user will need to select (modal will show)
+                    // If multiple tracks and no saved preference, let selector appear
                 }
             }
 

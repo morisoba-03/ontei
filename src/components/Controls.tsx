@@ -82,46 +82,44 @@ export function Controls({ onOpenSettings, onOpenPractice, onOpenHistory, onReco
     return (
         <div
             id="bottom-controls-panel"
-            className="fixed bottom-0 left-0 right-0 bg-neutral-900 border-t border-white/10 p-4 z-50 shadow-2xl"
-            style={{ paddingBottom: 'max(1rem, env(safe-area-inset-bottom))' }}
+            className="fixed bottom-0 left-0 right-0 bg-neutral-900 border-t border-white/10 z-50 shadow-2xl"
+            style={{ paddingBottom: 'max(0.5rem, env(safe-area-inset-bottom))' }}
         >
-            <div className="w-full flex items-center justify-start md:justify-center gap-2 md:gap-4 px-4 overflow-x-auto xl:overflow-visible no-scrollbar">
+            <div className="w-full flex items-center justify-start md:justify-center gap-1.5 md:gap-4 px-2 md:px-4 py-2 md:py-4 overflow-x-auto no-scrollbar touch-pan-x">
 
                 {/* Left: Playback & Recording */}
                 <div className="flex items-center gap-2 shrink-0">
                     <button
                         onClick={() => {
                             audioEngine.onSeek(0);
-                            // If not playing, maybe we want to just reset position? 
-                            // onSeek(0) does reset position. 
                             audioEngine.updateState({ playbackPosition: 0 });
                         }}
                         className={cn(
-                            "w-10 h-10 rounded-full flex items-center justify-center transition-all border",
+                            "w-9 h-9 md:w-10 md:h-10 rounded-full flex items-center justify-center transition-all border shrink-0",
                             "bg-white/5 border-white/10 text-white/70 hover:text-white hover:bg-white/10"
                         )}
                         title="最初に戻る"
                     >
-                        <SkipBack className="w-5 h-5 fill-current" />
+                        <SkipBack className="w-4 h-4 md:w-5 md:h-5 fill-current" />
                     </button>
 
                     <button
                         onClick={togglePlay}
                         className={cn(
-                            "w-12 h-12 rounded-full flex items-center justify-center transition-all",
+                            "w-10 h-10 md:w-12 md:h-12 rounded-full flex items-center justify-center transition-all shrink-0",
                             isPlaying
                                 ? "bg-red-500/20 text-red-500 hover:bg-red-500/30"
                                 : "bg-blue-600 hover:bg-blue-500 text-white shadow-lg shadow-blue-500/20"
                         )}
                         title={isPlaying ? "停止 (Space)" : "再生 (Space)"}
                     >
-                        {isPlaying ? <Square className="w-5 h-5 fill-current" /> : <Play className="w-5 h-5 fill-current translate-x-0.5" />}
+                        {isPlaying ? <Square className="w-4 h-4 md:w-5 md:h-5 fill-current" /> : <Play className="w-4 h-4 md:w-5 md:h-5 fill-current translate-x-0.5" />}
                     </button>
 
                     <button
                         onClick={toggleRecord}
                         className={cn(
-                            "w-10 h-10 rounded-full flex items-center justify-center transition-all border",
+                            "w-9 h-9 md:w-10 md:h-10 rounded-full flex items-center justify-center transition-all border shrink-0",
                             isRecording
                                 ? "bg-red-600 text-white border-red-600 shadow-lg shadow-red-600/30"
                                 : "bg-white/5 border-white/10 text-white/70 hover:text-white hover:bg-white/10"
@@ -141,27 +139,27 @@ export function Controls({ onOpenSettings, onOpenPractice, onOpenHistory, onReco
                 <button
                     onClick={() => audioEngine.updateState({ isGuideSoundEnabled: !isGuideOn })}
                     className={cn(
-                        "p-1.5 md:p-2.5 rounded-lg border transition-all shrink-0",
+                        "p-1.5 rounded-lg border transition-all shrink-0",
                         isGuideOn
                             ? "bg-purple-500/20 border-purple-500/40 text-purple-400"
                             : "bg-white/5 border-white/10 text-white/50 hover:text-white hover:bg-white/10"
                     )}
                     title={isGuideOn ? "ガイド音ON" : "ガイド音OFF"}
                 >
-                    <Music2 className="w-5 h-5" />
+                    <Music2 className="w-4 h-4 md:w-5 md:h-5" />
                 </button>
 
                 <button
                     onClick={() => audioEngine.updateState({ isBackingSoundEnabled: !isBackingOn })}
                     className={cn(
-                        "p-1.5 md:p-2.5 rounded-lg border transition-all shrink-0",
+                        "p-1.5 rounded-lg border transition-all shrink-0",
                         isBackingOn
                             ? "bg-indigo-500/20 border-indigo-500/40 text-indigo-400"
                             : "bg-white/5 border-white/10 text-white/50 hover:text-white hover:bg-white/10"
                     )}
                     title={isBackingOn ? "伴奏ON" : "伴奏OFF"}
                 >
-                    <Volume2 className="w-5 h-5" />
+                    <Volume2 className="w-4 h-4 md:w-5 md:h-5" />
                 </button>
 
                 {/* Tempo Control (Simple +/-) */}
@@ -270,7 +268,7 @@ export function Controls({ onOpenSettings, onOpenPractice, onOpenHistory, onReco
                 </button>
 
                 {/* Center: Tools */}
-                <div className="flex items-center bg-white/5 rounded-full p-1 gap-1 shrink-0">
+                <div className="flex items-center bg-white/5 rounded-full p-0.5 gap-0.5 shrink-0">
                     {[
                         { id: 'select', icon: MousePointer2, label: '選択' },
                         { id: 'view', icon: Hand, label: '移動' },
@@ -281,14 +279,14 @@ export function Controls({ onOpenSettings, onOpenPractice, onOpenHistory, onReco
                             key={tool.id}
                             onClick={() => audioEngine.setTool(tool.id as AudioEngineState['editTool'])}
                             className={cn(
-                                "p-2 rounded-full transition-all relative group",
+                                "p-1.5 md:p-2 rounded-full transition-all relative group",
                                 editTool === tool.id
                                     ? "bg-blue-600 text-white shadow-md"
                                     : "text-white/50 hover:text-white hover:bg-white/10"
                             )}
                             title={tool.label}
                         >
-                            <tool.icon className="w-5 h-5" />
+                            <tool.icon className="w-4 h-4 md:w-5 md:h-5" />
                         </button>
                     ))}
                 </div>
@@ -317,39 +315,39 @@ export function Controls({ onOpenSettings, onOpenPractice, onOpenHistory, onReco
                     {onOpenScalePractice && (
                         <button
                             onClick={onOpenScalePractice}
-                            className="p-2.5 rounded-lg border border-white/10 bg-white/5 text-purple-400 hover:text-purple-300 hover:bg-purple-500/10 transition-all"
+                            className="p-1.5 md:p-2.5 rounded-lg border border-white/10 bg-white/5 text-purple-400 hover:text-purple-300 hover:bg-purple-500/10 transition-all shrink-0"
                             title="スケール練習"
                         >
-                            <Music className="w-5 h-5" />
+                            <Music className="w-4 h-4 md:w-5 md:h-5" />
                         </button>
                     )}
 
                     {onOpenPractice && (
                         <button
                             onClick={onOpenPractice}
-                            className="p-2.5 rounded-lg border border-white/10 bg-white/5 text-white/70 hover:text-white hover:bg-white/10 transition-all"
+                            className="p-1.5 md:p-2.5 rounded-lg border border-white/10 bg-white/5 text-white/70 hover:text-white hover:bg-white/10 transition-all shrink-0"
                             title="練習メニュー"
                         >
-                            <Activity className="w-5 h-5" />
+                            <Activity className="w-4 h-4 md:w-5 md:h-5" />
                         </button>
                     )}
 
                     {onOpenHistory && (
                         <button
                             onClick={onOpenHistory}
-                            className="p-2.5 rounded-lg border border-white/10 bg-white/5 text-white/70 hover:text-white hover:bg-white/10 transition-all"
+                            className="p-1.5 md:p-2.5 rounded-lg border border-white/10 bg-white/5 text-white/70 hover:text-white hover:bg-white/10 transition-all shrink-0"
                             title="履歴と分析"
                         >
-                            <Clock className="w-5 h-5" />
+                            <Clock className="w-4 h-4 md:w-5 md:h-5" />
                         </button>
                     )}
 
                     <button
                         onClick={onOpenSettings}
-                        className="p-2.5 rounded-lg border border-white/10 bg-white/5 text-white/70 hover:text-white hover:bg-white/10 transition-all"
+                        className="p-1.5 md:p-2.5 rounded-lg border border-white/10 bg-white/5 text-white/70 hover:text-white hover:bg-white/10 transition-all shrink-0"
                         title="設定"
                     >
-                        <Settings className="w-5 h-5" />
+                        <Settings className="w-4 h-4 md:w-5 md:h-5" />
                     </button>
                 </div>
             </div>
