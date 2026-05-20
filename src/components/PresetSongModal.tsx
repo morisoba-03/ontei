@@ -1,4 +1,4 @@
-import { X, Music, Star, Zap, BookOpen, Loader2, Download, Upload, Trash2, FolderSync, AlertCircle, QrCode, ScanLine, Clock, BarChart2, SortAsc } from 'lucide-react';
+import { X, Music, Star, Zap, BookOpen, Loader2, Trash2, FolderSync, AlertCircle, QrCode, ScanLine, Clock, BarChart2, SortAsc } from 'lucide-react';
 import { type PresetSong } from '../lib/presetSongs';
 import { QRShareModal } from './QRShareModal';
 import { QRScanModal } from './QRScanModal';
@@ -71,115 +71,7 @@ export function PresetSongModal({ open, onClose }: PresetSongModalProps) {
         }
     };
 
-    const handleExportLibrary = async () => {
-        if (userSongs.length === 0) {
-            toast.error('エクスポートする曲がありません');
-            return;
-        }
 
-        // Collect MIDI binaries as base64
-        const midiDataMap: Record<string, string> = {};
-        for (const song of userSongs) {
-            if (song.hasMidiData) {
-                try {
-                    const buf = await storage.loadSongMidi(song.id);
-                    if (buf && buf.byteLength > 100) {
-                        const bytes = new Uint8Array(buf);
-                        let binary = '';
-                        for (let i = 0; i < bytes.byteLength; i++) binary += String.fromCharCode(bytes[i]);
-                        midiDataMap[song.id] = btoa(binary);
-                    }
-                } catch { /* ignore individual failures */ }
-            }
-        }
-
-        const exportData = {
-            version: 2,
-            type: 'ontei-library',
-            exportedAt: new Date().toISOString(),
-            songs: userSongs,
-            midiDataMap,
-        };
-
-        const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `ontei-library-${new Date().toISOString().slice(0, 10)}.json`;
-        a.click();
-        URL.revokeObjectURL(url);
-        const midiCount = Object.keys(midiDataMap).length;
-        toast.success(`ライブラリ(${userSongs.length}曲、MIDI ${midiCount}件)をエクスポートしました`);
-    };
-
-    const handleImportLibrary = (e: React.ChangeEvent<HTMLInputElement>) => {
-        const file = e.target.files?.[0];
-        if (!file) return;
-
-        const reader = new FileReader();
-        reader.onload = async (ev) => {
-            try {
-                const content = ev.target?.result as string;
-                const json = JSON.parse(content);
-
-                let songs: PresetSong[];
-                let midiDataMap: Record<string, string> = {};
-
-                if (Array.isArray(json)) {
-                    // Old format: plain array
-                    songs = json;
-                } else if (json.type === 'ontei-library' && Array.isArray(json.songs)) {
-                    // New v2 library format
-                    songs = json.songs;
-                    midiDataMap = json.midiDataMap || {};
-                } else if (json.type === 'ontei-song' && json.song) {
-                    // Single song export — add to library
-                    const newId = 'user-' + Date.now();
-                    songs = [{ ...json.song, id: newId, createdAt: Date.now(), playCount: 0 }];
-                    if (json.midiData) midiDataMap[newId] = json.midiData;
-                } else {
-                    throw new Error('Invalid format');
-                }
-
-                const current = await storage.loadUserPresets();
-                const currentMap = new Map(current.map(s => [s.id, s]));
-                let added = 0, updated = 0;
-
-                for (const item of songs) {
-                    if (!item.name || !item.notes) continue;
-                    currentMap.has(item.id) ? updated++ : added++;
-                    let entry = { ...item };
-
-                    // Restore MIDI binary
-                    if (midiDataMap[item.id]) {
-                        try {
-                            const binary = atob(midiDataMap[item.id]);
-                            const buf = new ArrayBuffer(binary.length);
-                            const view = new Uint8Array(buf);
-                            for (let i = 0; i < binary.length; i++) view[i] = binary.charCodeAt(i);
-                            await storage.saveSongMidi(item.id, buf);
-                            entry.hasMidiData = true;
-                        } catch (e) {
-                            console.warn('Failed to restore MIDI for', item.id, e);
-                        }
-                    }
-
-                    currentMap.set(item.id, entry);
-                }
-
-                const newPresets = Array.from(currentMap.values());
-                await storage.saveUserPresets(newPresets);
-                setUserSongs(newPresets);
-                const midiRestored = Object.keys(midiDataMap).length;
-                toast.success(`${added}曲を追加、${updated}曲を更新${midiRestored > 0 ? `（MIDI ${midiRestored}件復元）` : ''}`);
-            } catch (err) {
-                console.error(err);
-                toast.error('読み込みに失敗しました。正しいJSONファイルか確認してください。');
-            }
-        };
-        reader.readAsText(file);
-        e.target.value = '';
-    };
 
     const handleSelect = async (song: PresetSong) => {
         if (loadingId) return;
@@ -321,19 +213,6 @@ export function PresetSongModal({ open, onClose }: PresetSongModalProps) {
                         className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-500/20 hover:bg-blue-500/30 border border-blue-500/30 text-xs text-blue-300 hover:text-blue-200 transition-all"
                     >
                         <ScanLine className="w-3.5 h-3.5" /> QRスキャン
-                    </button>
-                    <button
-                        onClick={() => document.getElementById('user-lib-import')?.click()}
-                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-xs text-white/70 hover:text-white transition-all"
-                    >
-                        <Upload className="w-3.5 h-3.5" /> インポート
-                    </button>
-                    <input id="user-lib-import" type="file" accept=".json" className="hidden" onChange={handleImportLibrary} />
-                    <button
-                        onClick={handleExportLibrary}
-                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-xs text-white/70 hover:text-white transition-all"
-                    >
-                        <Download className="w-3.5 h-3.5" /> エクスポート
                     </button>
 
                     {/* Sort selector */}

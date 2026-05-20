@@ -13,12 +13,13 @@ import { PitchIndicator } from './components/PitchIndicator';
 import { StatsDashboard } from './components/StatsDashboard';
 import { PresetSongModal } from './components/PresetSongModal';
 import { SaveSongModal } from './components/SaveSongModal';
+import { ImportExportModal } from './components/ImportExportModal';
 import { ScalePracticeModal } from './components/ScalePracticeModal';
 import { WelcomeModal } from './components/WelcomeModal';
 import { MicPermissionModal } from './components/MicPermissionModal';
 import { ResumeModal } from './components/ResumeModal';
 import { storage } from './lib/storage';
-import { Trophy, Trash2, BarChart3, BookOpen, FileMusic, FileAudio, Save, FolderOpen, Mic } from 'lucide-react';
+import { Trophy, Trash2, BarChart3, BookOpen, Save, Mic, ArrowLeftRight } from 'lucide-react';
 import { cn } from './lib/utils';
 
 const VISITED_KEY = 'ontei_visited';
@@ -34,6 +35,7 @@ function App() {
   const [showStats, setShowStats] = useState(false);
   const [showPresets, setShowPresets] = useState(false);
   const [showSaveModal, setShowSaveModal] = useState(false);
+  const [showImportExport, setShowImportExport] = useState(false);
   const [showScalePractice, setShowScalePractice] = useState(false);
   const [showWelcome, setShowWelcome] = useState(false);
   const [showMicPermission, setShowMicPermission] = useState(false);
@@ -150,67 +152,28 @@ function App() {
 
           <div id="top-bar-import-controls" className="flex items-center gap-2 shrink-0">
             <button
-              onClick={() => document.getElementById('hidden-import-guide')?.click()}
-              className="h-11 w-12 md:w-14 rounded-lg bg-blue-500/20 text-blue-300 text-[9px] md:text-[10px] hover:bg-blue-500/30 transition-all border border-blue-500/30 flex flex-col items-center justify-center gap-0.5 leading-none p-1"
-              title="ガイド(MIDI/音声)を読み込む"
-            >
-              <FileMusic className="w-5 h-5" /> <span>ガイド</span>
-            </button>
-            <input
-              type="file" accept=".mid,.midi,.mp3,.wav,.ogg,.m4a"
-              onChange={(e) => {
-                const file = e.target.files?.[0];
-                if (!file) return;
-                if (file.name.endsWith('.mid') || file.name.endsWith('.midi')) {
-                  engine.loadMidiFile(file);
-                } else {
-                  engine.loadAudioFile(file);
-                }
-              }}
-              className="hidden" id="hidden-import-guide"
-            />
-
-            <button
-              onClick={() => document.getElementById('hidden-import-audio')?.click()}
-              className="h-11 w-12 md:w-14 rounded-lg bg-purple-500/20 text-purple-300 text-[9px] md:text-[10px] hover:bg-purple-500/30 transition-all border border-purple-500/30 flex flex-col items-center justify-center gap-0.5 leading-none p-1"
-              title="伴奏(MP3/WAV)を読み込む"
-            >
-              <FileAudio className="w-5 h-5" /> <span>伴奏</span>
-            </button>
-            <input
-              type="file" accept=".mp3,.wav,.ogg,.m4a"
-              onChange={(e) => e.target.files?.[0] && engine.importBackingFile(e.target.files[0])}
-              className="hidden" id="hidden-import-audio"
-            />
-
-            <button
               onClick={() => setShowPresets(true)}
               className="h-11 w-12 md:w-14 rounded-lg bg-pink-500/20 text-pink-300 text-[9px] md:text-[10px] hover:bg-pink-500/30 transition-all border border-pink-500/30 flex flex-col items-center justify-center gap-0.5 leading-none p-1"
-              title="練習曲ライブラリ"
+              title="曲リスト"
             >
-              <BookOpen className="w-5 h-5" /> <span>練習曲</span>
+              <BookOpen className="w-5 h-5" /> <span>曲リスト</span>
+            </button>
+
+            <button
+              onClick={() => setShowImportExport(true)}
+              className="h-11 w-12 md:w-14 rounded-lg bg-blue-500/20 text-blue-300 text-[9px] md:text-[10px] hover:bg-blue-500/30 transition-all border border-blue-500/30 flex flex-col items-center justify-center gap-0.5 leading-none p-1"
+              title="インポート・エクスポート"
+            >
+              <ArrowLeftRight className="w-5 h-5" /> <span>入出力</span>
             </button>
 
             <button
               onClick={() => setShowSaveModal(true)}
               className="h-11 w-12 md:w-14 rounded-lg bg-green-500/20 text-green-300 text-[9px] md:text-[10px] hover:bg-green-500/30 transition-all border border-green-500/30 flex flex-col items-center justify-center gap-0.5 leading-none p-1"
-              title="現在の状態を保存"
+              title="曲リストに保存"
             >
               <Save className="w-5 h-5" /> <span>保存</span>
             </button>
-
-            <button
-              onClick={() => document.getElementById('hidden-import-json')?.click()}
-              className="h-11 w-12 md:w-14 rounded-lg bg-white/5 text-white/70 text-[9px] md:text-[10px] hover:bg-white/10 transition-all border border-white/10 flex flex-col items-center justify-center gap-0.5 leading-none p-1"
-              title="練習データを読み込む"
-            >
-              <FolderOpen className="w-5 h-5" /> <span>読込</span>
-            </button>
-            <input
-              type="file" accept=".json"
-              onChange={(e) => e.target.files?.[0] && engine.importSession(e.target.files[0])}
-              className="hidden" id="hidden-import-json"
-            />
 
             <button
               onClick={() => state.scoreResult && state.scoreResult.totalScore > 0 && setShowResult(true)}
@@ -296,6 +259,7 @@ function App() {
 
         <PresetSongModal open={showPresets} onClose={() => setShowPresets(false)} />
         <SaveSongModal open={showSaveModal} onClose={() => setShowSaveModal(false)} />
+        <ImportExportModal open={showImportExport} onClose={() => setShowImportExport(false)} />
         {recordingBlob && (
           <RecordingPlayer
             audioBlob={recordingBlob}
