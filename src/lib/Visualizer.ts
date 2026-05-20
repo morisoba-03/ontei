@@ -219,7 +219,7 @@ export class Visualizer {
             pxPerSec, guideLineWidth, showNoteNames,
             currentTracks, melodyTrackIndex, pitchHistory, midiGhostNotes,
             micRenderMode,
-            toleranceCents, showTolerancePreview
+            toleranceCents, showTolerancePreview, inputLatency
         } = state;
 
         // Common Metrics
@@ -557,7 +557,8 @@ export class Visualizer {
                         let shadow = '#39FF14';
 
                         if (state.showPitchDeviation) {
-                            const note = midiGhostNotes.find(n => curr.t >= n.time && curr.t <= n.time + n.duration);
+                            const lookupT = curr.t + lag + (inputLatency || 0);
+                            const note = midiGhostNotes.find(n => lookupT >= n.time && lookupT <= n.time + n.duration);
                             if (note) {
                                 const expected = note.midi + (state.guideOctaveOffset * 12) + state.transposeOffset;
                                 const toleranceSemitones = toleranceCents / 100;
@@ -586,7 +587,8 @@ export class Visualizer {
 
                     let dotColor = '#00FFCC';
                     if (state.showPitchDeviation) {
-                        const note = midiGhostNotes.find(n => p.t >= n.time && p.t <= n.time + n.duration);
+                        const lookupT = p.t + lag + (inputLatency || 0);
+                        const note = midiGhostNotes.find(n => lookupT >= n.time && lookupT <= n.time + n.duration);
                         if (note) {
                             const expected = note.midi + (state.guideOctaveOffset * 12) + state.transposeOffset;
                             if (Math.abs(p.midi - expected) > toleranceCents / 100) {
@@ -633,7 +635,8 @@ export class Visualizer {
                         let shadow = '#39FF14';
 
                         if (state.showPitchDeviation) {
-                            const note = midiGhostNotes.find(n => curr.t >= n.time && curr.t <= n.time + n.duration);
+                            const lookupT = curr.t + lag + (inputLatency || 0);
+                            const note = midiGhostNotes.find(n => lookupT >= n.time && lookupT <= n.time + n.duration);
                             if (note) {
                                 const expected = note.midi + (state.guideOctaveOffset * 12) + state.transposeOffset;
                                 const toleranceSemitones = toleranceCents / 100;
