@@ -64,7 +64,7 @@ export class AudioEngine {
     micStream: MediaStream | null = null;
     micSource: MediaStreamAudioSourceNode | null = null;
     micAnalyser: AnalyserNode | null = null;
-    micData: Float32Array | null = null;
+    micData: Float32Array<ArrayBuffer> | null = null;
 
     // Gain Nodes
     masterGain: GainNode | null = null;
@@ -329,7 +329,7 @@ export class AudioEngine {
 
     analyze() {
         if (!this.micAnalyser || !this.micData || !this.audioCtx) return;
-        this.micAnalyser.getFloatTimeDomainData(this.micData as unknown as Float32Array<ArrayBuffer>);
+        this.micAnalyser.getFloatTimeDomainData(this.micData);
 
         // Determine Guide Frequency (God Mode Bias)
         let guideFreq = 0;
@@ -759,6 +759,9 @@ export class AudioEngine {
         if (this.state.pitchHistory.length > 0) {
             this.state.pitchHistory = this.state.pitchHistory.filter(p => p.time <= newTime);
         }
+
+        // Allow phrases to be re-evaluated when seeking back over them
+        this.processedPhrases.clear();
     }
 
     private _isSeeking = false;
@@ -875,12 +878,8 @@ export class AudioEngine {
             'verticalZoom', 'pxPerSec', 'noteNotation',
             'guideOctaveOffset',
             'guideVolume', 'accompVolume', 'gateThreshold', 'toleranceCents',
-            'isParticlesEnabled', 'countIn', 'showPitchDeviation', 'micRenderMode', 'showTuner',
+            'isParticlesEnabled', 'countIn', 'showPitchDeviation', 'inputLatency', 'micRenderMode', 'showTuner',
         ];
-
-        if (updates.isBackingSoundEnabled !== undefined) {
-            this.syncBackingTrack();
-        }
 
         if (Object.keys(updates).some(k => persistentKeys.includes(k as typeof persistentKeys[number]))) {
             this.saveSettings();
@@ -1646,7 +1645,6 @@ export class AudioEngine {
     // Session Restoration from IndexedDB
     async initFromStorage() {
         try {
-            await storage.init();
             const midiData = await storage.loadMidi();
             if (midiData) {
                 console.log('[AudioEngine] Restoring MIDI from storage...');
@@ -1697,6 +1695,7 @@ export class AudioEngine {
             this.backingBuffer = null;
             this.loadedMidi = null;
             this.originalGhostNotes = null;
+            this.processedPhrases.clear();
 
             // Clear storage
             storage.saveMidi(new ArrayBuffer(0)).catch(() => { });
