@@ -1366,7 +1366,7 @@ export class AudioEngine {
 
         const playableTracks = candidates.filter(t => t.noteCount > 0);
 
-        this.updateState({ scoreResult: null }); // Reset result
+        this.updateState({ scoreResult: null, midiAvailableTracks: candidates }); // Reset result, persist track list
 
         // Logic Refinement: Check for auto-import match BEFORE showing the selector
         if (candidates.length === 1) {

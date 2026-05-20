@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Play, Square, MousePointer2, Hand, Pencil, Eraser, Settings, Activity, Clock, Repeat, SkipBack, Music2, Music, Volume2, X, Plus, Minus } from 'lucide-react';
+import { Play, Square, MousePointer2, Hand, Pencil, Eraser, Settings, Activity, Clock, Repeat, SkipBack, Music2, Music, Volume2, X, Plus, Minus, ListMusic } from 'lucide-react';
 import { audioEngine } from '../lib/AudioEngine';
 import { MidiTrackSelector } from './MidiTrackSelector';
 import type { MidiTrackInfo } from './MidiTrackSelector';
@@ -24,9 +24,10 @@ export function Controls({ onOpenSettings, onOpenPractice, onOpenHistory, onReco
     const [showMidiSelector, setShowMidiSelector] = useState(false);
     const [isGuideOn, setIsGuideOn] = useState(audioEngine.state.isGuideSoundEnabled);
     const [isBackingOn, setIsBackingOn] = useState(audioEngine.state.isBackingSoundEnabled);
+    const [availableTracks, setAvailableTracks] = useState<MidiTrackInfo[]>(audioEngine.state.midiAvailableTracks || []);
+    const [currentTrackIndex, setCurrentTrackIndex] = useState(audioEngine.state.melodyTrackIndex);
 
     useEffect(() => {
-
         const unsub = audioEngine.subscribe(() => {
             setIsPlaying(audioEngine.state.isPlaying);
             setIsRecording(audioEngine.isRecording);
@@ -34,8 +35,13 @@ export function Controls({ onOpenSettings, onOpenPractice, onOpenHistory, onReco
             setLoopEnabled(audioEngine.state.loopEnabled);
             setIsGuideOn(audioEngine.state.isGuideSoundEnabled);
             setIsBackingOn(audioEngine.state.isBackingSoundEnabled);
+            setCurrentTrackIndex(audioEngine.state.melodyTrackIndex);
 
-            // Check for MIDI candidates to import
+            if (audioEngine.state.midiAvailableTracks) {
+                setAvailableTracks(audioEngine.state.midiAvailableTracks);
+            }
+
+            // Check for MIDI candidates to import (triggers selector popup)
             const candidates = audioEngine.state.midiTrackCandidates;
             if (candidates && candidates.length > 0) {
                 setMidiTracks(candidates);
@@ -291,6 +297,23 @@ export function Controls({ onOpenSettings, onOpenPractice, onOpenHistory, onReco
 
                 {/* Right: Actions */}
                 <div className="flex items-center gap-2 shrink-0 ml-auto">
+                    {/* Track change button — shown when MIDI with multiple tracks is loaded */}
+                    {availableTracks.filter(t => t.noteCount > 0).length > 1 && (
+                        <button
+                            onClick={() => {
+                                setMidiTracks(availableTracks);
+                                setShowMidiSelector(true);
+                            }}
+                            className="flex items-center gap-1.5 px-2.5 py-2 rounded-lg border border-emerald-500/30 bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 transition-all text-xs max-w-[120px]"
+                            title="練習トラックを変更"
+                        >
+                            <ListMusic className="w-4 h-4 shrink-0" />
+                            <span className="truncate">
+                                {availableTracks.find(t => t.id === currentTrackIndex)?.name || `Track ${currentTrackIndex + 1}`}
+                            </span>
+                        </button>
+                    )}
+
                     {onOpenScalePractice && (
                         <button
                             onClick={onOpenScalePractice}
@@ -338,6 +361,7 @@ export function Controls({ onOpenSettings, onOpenPractice, onOpenHistory, onReco
                     onSelect={handleMidiSelect}
                     onCancel={() => setShowMidiSelector(false)}
                     open={showMidiSelector}
+                    selectedId={currentTrackIndex}
                 />
             )}
         </div>
