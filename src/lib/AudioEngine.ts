@@ -1580,21 +1580,57 @@ export class AudioEngine {
     }
 
     async importSession(file: File) {
-        // Safety Check
-        // If we are currently practicing, ensure we don't lose progress.
-        if (this.state.midiGhostNotes.length > 0) {
-            // Just clear silently
-        }
-
         const text = await file.text();
         try {
-            const session = JSON.parse(text);
-            if (session.bpm) this.state.bpm = session.bpm;
-            if (session.tempoMap) this.state.tempoMap = session.tempoMap;
-            if (session.practiceConfig) this.state.practiceConfig = session.practiceConfig;
-            if (session.ghostNotes) {
-                this.state.midiGhostNotes = session.ghostNotes;
-                // If we have guide notes, we likely want to be in practice mode
+            const json = JSON.parse(text);
+
+            // New format: ontei-song export (version 2)
+            if (json.type === 'ontei-song' && json.song) {
+                const { song, midiData } = json;
+
+                // Restore MIDI binary and load it if present
+                if (midiData) {
+                    try {
+                        const binary = atob(midiData);
+                        const buf = new ArrayBuffer(binary.length);
+                        const view = new Uint8Array(buf);
+                        for (let i = 0; i < binary.length; i++) view[i] = binary.charCodeAt(i);
+                        await storage.saveMidi(buf);
+                        const candidates = this.loadMidiFromBuffer(buf);
+                        if (candidates && candidates.length > 0) {
+                            const track = candidates.find(t => t.noteCount > 0);
+                            if (track) this.importMidiTrack(track.id, 0);
+                        }
+                    } catch (e) {
+                        console.warn('[importSession] Failed to restore MIDI:', e);
+                    }
+                }
+
+                // Fall back to stored notes if MIDI didn't populate ghost notes
+                if (this.state.midiGhostNotes.length === 0 && song.notes?.length > 0) {
+                    this.state.midiGhostNotes = song.notes;
+                    this.state.isPracticing = true;
+                }
+
+                if (song.bpm) this.state.bpm = song.bpm;
+
+                // Restore per-song settings
+                if (song.settings) {
+                    if (song.settings.guideOctaveOffset !== undefined) this.state.guideOctaveOffset = song.settings.guideOctaveOffset;
+                    if (song.settings.transposeOffset !== undefined) this.state.transposeOffset = song.settings.transposeOffset;
+                    if (song.settings.toleranceCents !== undefined) this.state.toleranceCents = song.settings.toleranceCents;
+                }
+
+                this.notify();
+                return true;
+            }
+
+            // Legacy format: plain session JSON
+            if (json.bpm) this.state.bpm = json.bpm;
+            if (json.tempoMap) this.state.tempoMap = json.tempoMap;
+            if (json.practiceConfig) this.state.practiceConfig = json.practiceConfig;
+            if (json.ghostNotes) {
+                this.state.midiGhostNotes = json.ghostNotes;
                 this.state.isPracticing = true;
             }
             this.notify();
