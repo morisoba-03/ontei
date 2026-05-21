@@ -331,10 +331,9 @@ export class PracticePatternGenerator {
             return result;
         };
 
-        while (timeLeft > 0) {
-            const beatDur = 60 / bpm;
-            const measureDur = beatDur * 4;
+        const beatDur = 60 / bpm;
 
+        while (timeLeft > 0) {
             // Compute chromatic root if chromatic mode is enabled
             let chromaticRoot: number | undefined;
             if (options.chromaticMode) {
@@ -343,10 +342,9 @@ export class PracticePatternGenerator {
             }
 
             const result = generateSafePattern(cursor, chromaticRoot);
-            // Result is now guaranteed by fallback
             if (!result) {
-                cursor += measureDur; // Should not happen
-                timeLeft -= measureDur;
+                cursor += beatDur * 4;
+                timeLeft -= beatDur * 4;
                 continue;
             }
 
@@ -354,18 +352,14 @@ export class PracticePatternGenerator {
             const callNotes = result.notes.map(n => ({ ...n, role: 'call' } as GhostNote));
             notes.push(...callNotes);
 
-            // 2. Calculate Phrase Alignment
-            // We want the Call to occupy discrete measures, then Response to occupy discrete measures.
-            // Example: Call is 5 beats. Defines a "Call Phrase" of 2 measures (8 beats).
+            // 2. Beat-aligned phrase duration with minimum gap
+            // breathEnabled: 2-beat gap (explicit breath pause); otherwise 1-beat gap
             const callDur = result.duration;
-            const callMeasures = Math.ceil(callDur / measureDur);
-            const phraseDur = callMeasures * measureDur; // Duration of the Call Block
+            const gapBeats = options.breathEnabled ? 2 : 1;
+            const callPhraseDur = (Math.ceil(callDur / beatDur) + gapBeats) * beatDur;
 
-            // Breath gap between call and response (feature ④)
-            const breathDur = options.breathEnabled ? beatDur * 1.5 : 0;
-
-            // Response starts after the Call Block + breath
-            const responseStartTime = cursor + phraseDur + breathDur;
+            // Response starts immediately after the call phrase (no extra breathDur needed)
+            const responseStartTime = cursor + callPhraseDur;
 
             const responseNotes = result.notes.map(n => ({
                 ...n,
@@ -374,8 +368,8 @@ export class PracticePatternGenerator {
             } as GhostNote));
             notes.push(...responseNotes);
 
-            // Total Block Time = PhraseDur (Call) + breathDur + PhraseDur (Response)
-            const totalBlockDur = phraseDur + breathDur + phraseDur;
+            // Symmetric block: response phrase has the same duration as call phrase
+            const totalBlockDur = callPhraseDur * 2;
 
             cursor += totalBlockDur;
             timeLeft = startTime + durationSec - cursor;
