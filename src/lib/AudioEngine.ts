@@ -167,7 +167,7 @@ export class AudioEngine {
             verticalZoom: 3.0,
             verticalOffset: 60,
             tempoFactor: 1.0,
-            pxPerSec: 100,
+            pxPerSec: 130,
             guideLineWidth: 4,
             showNoteNames: true,
             toleranceCents: 40,

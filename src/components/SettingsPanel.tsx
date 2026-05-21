@@ -1,7 +1,7 @@
 import { X, HelpCircle } from 'lucide-react';
 import { APP_VERSION } from '../constants';
 import { audioEngine } from '../lib/AudioEngine';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { HelpModal } from './HelpModal';
 import type { AudioEngineState } from '../lib/types';
 
@@ -9,9 +9,29 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
     const [state, setState] = useState(audioEngine.state);
     const [showHelp, setShowHelp] = useState(false);
     const [isCalibrating, setIsCalibrating] = useState(false);
+    const [micLevel, setMicLevel] = useState(0);
+    const rafRef = useRef<number | null>(null);
 
     useEffect(() => {
         return audioEngine.subscribe(() => setState(audioEngine.state));
+    }, []);
+
+    // Real-time mic level meter
+    useEffect(() => {
+        const tick = () => {
+            if (audioEngine.micAnalyser) {
+                const buf = new Float32Array(audioEngine.micAnalyser.fftSize);
+                audioEngine.micAnalyser.getFloatTimeDomainData(buf);
+                const rms = Math.sqrt(buf.reduce((s, v) => s + v * v, 0) / buf.length);
+                const dB = 20 * Math.log10(Math.max(rms, 1e-10));
+                setMicLevel(Math.max(0, Math.min(1, (dB + 80) / 80)));
+            } else {
+                setMicLevel(0);
+            }
+            rafRef.current = requestAnimationFrame(tick);
+        };
+        rafRef.current = requestAnimationFrame(tick);
+        return () => { if (rafRef.current) cancelAnimationFrame(rafRef.current); };
     }, []);
 
     const update = <K extends keyof AudioEngineState>(key: K, value: AudioEngineState[K]) => {
@@ -145,6 +165,24 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
                                 <p className="text-[10px] text-white/30">
                                     {state.micRenderMode === 'graph' ? '全点を繋いで描画（歌声・スラー向け）' : state.micRenderMode === 'segment' ? '音程の大きな跳躍で線を切る（ピアノ等向け）' : '各音程を点で描画'}
                                 </p>
+                            </div>
+
+                            {/* Tolerance — moved here from audio section */}
+                            <div className="space-y-2 pt-2 border-t border-white/5">
+                                <div className="flex justify-between text-sm items-center">
+                                    <span>判定許容誤差</span>
+                                    <span className="font-mono text-emerald-400 bg-emerald-400/10 px-2 py-0.5 rounded">±{state.toleranceCents} cent</span>
+                                </div>
+                                <input
+                                    type="range" min="10" max="100" step="5"
+                                    value={state.toleranceCents}
+                                    onChange={(e) => update('toleranceCents', parseFloat(e.target.value))}
+                                    onMouseDown={() => audioEngine.updateState({ showTolerancePreview: true })}
+                                    onTouchStart={() => audioEngine.updateState({ showTolerancePreview: true })}
+                                    onMouseUp={() => audioEngine.updateState({ showTolerancePreview: false })}
+                                    onTouchEnd={() => audioEngine.updateState({ showTolerancePreview: false })}
+                                    className="w-full h-2 bg-white/20 rounded-full appearance-none cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-4 [&::-webkit-slider-thumb]:h-4 [&::-webkit-slider-thumb]:bg-emerald-500 [&::-webkit-slider-thumb]:rounded-full hover:[&::-webkit-slider-thumb]:scale-110 transition-all"
+                                />
                             </div>
 
                             {/* Tuner Visibility */}
@@ -285,11 +323,34 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
                             オーディオ設定
                         </div>
                         <div className="p-4 space-y-6">
-                            {/* Mic Gate */}
+                            {/* Mic Gate + Level Meter */}
                             <div className="space-y-2">
                                 <div className="flex justify-between text-sm items-center">
                                     <span>マイク感度 (Gate)</span>
                                     <span className="font-mono text-red-400 bg-red-400/10 px-2 py-0.5 rounded">{state.gateThreshold} dB</span>
+                                </div>
+                                {/* Real-time level meter */}
+                                <div className="relative h-4 bg-black/40 rounded-full overflow-hidden border border-white/10">
+                                    {/* Level bar */}
+                                    <div
+                                        className="absolute left-0 top-0 h-full rounded-full transition-none"
+                                        style={{
+                                            width: `${micLevel * 100}%`,
+                                            background: micLevel > (state.gateThreshold + 80) / 80
+                                                ? 'linear-gradient(to right, #22c55e 60%, #f59e0b 80%, #ef4444 100%)'
+                                                : '#22c55e',
+                                        }}
+                                    />
+                                    {/* Threshold marker */}
+                                    <div
+                                        className="absolute top-0 h-full w-0.5 bg-white/80"
+                                        style={{ left: `${(state.gateThreshold + 80) / 80 * 100}%` }}
+                                    />
+                                </div>
+                                <div className="flex justify-between text-[10px] text-white/30">
+                                    <span>← 静か（感度高）</span>
+                                    <span className="text-white/50">↑ しきい値</span>
+                                    <span>うるさい（感度低）→</span>
                                 </div>
                                 <input
                                     type="range" min="-80" max="0" step="1"
@@ -297,6 +358,9 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
                                     onChange={(e) => update('gateThreshold', parseFloat(e.target.value))}
                                     className="w-full h-2 bg-white/20 rounded-full appearance-none cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-4 [&::-webkit-slider-thumb]:h-4 [&::-webkit-slider-thumb]:bg-red-500 [&::-webkit-slider-thumb]:rounded-full hover:[&::-webkit-slider-thumb]:scale-110 transition-all"
                                 />
+                                <p className="text-[10px] text-white/30">
+                                    バーがしきい値（白線）を超えると音として検出されます
+                                </p>
                             </div>
 
                             {/* Mic Latency */}
@@ -327,23 +391,6 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
                                 </button>
                             </div>
 
-                            {/* Tolerance */}
-                            <div className="space-y-2">
-                                <div className="flex justify-between text-sm items-center">
-                                    <span>判定許容誤差</span>
-                                    <span className="font-mono text-emerald-400 bg-emerald-400/10 px-2 py-0.5 rounded">±{state.toleranceCents} cent</span>
-                                </div>
-                                <input
-                                    type="range" min="10" max="100" step="5"
-                                    value={state.toleranceCents}
-                                    onChange={(e) => update('toleranceCents', parseFloat(e.target.value))}
-                                    onMouseDown={() => audioEngine.updateState({ showTolerancePreview: true })}
-                                    onTouchStart={() => audioEngine.updateState({ showTolerancePreview: true })}
-                                    onMouseUp={() => audioEngine.updateState({ showTolerancePreview: false })}
-                                    onTouchEnd={() => audioEngine.updateState({ showTolerancePreview: false })}
-                                    className="w-full h-2 bg-white/20 rounded-full appearance-none cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-4 [&::-webkit-slider-thumb]:h-4 [&::-webkit-slider-thumb]:bg-emerald-500 [&::-webkit-slider-thumb]:rounded-full hover:[&::-webkit-slider-thumb]:scale-110 transition-all"
-                                />
-                            </div>
                         </div>
                     </div>
 
