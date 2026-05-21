@@ -5,12 +5,10 @@ import { SettingsPanel } from './components/SettingsPanel';
 import { audioEngine } from './lib/AudioEngine';
 import { PracticeControlPanel } from './components/PracticeControlPanel';
 import { ScoreResultModal } from './components/ScoreResultModal';
-import { HistoryPanel } from './components/HistoryPanel';
 import { RecordingPlayer } from './components/RecordingPlayer';
 import { ResetConfirmModal } from './components/ResetConfirmModal';
 import { ToastContainer } from './components/Toast';
 import { PitchIndicator } from './components/PitchIndicator';
-import { StatsDashboard } from './components/StatsDashboard';
 import { PresetSongModal } from './components/PresetSongModal';
 import { SaveSongModal } from './components/SaveSongModal';
 import { ImportExportModal } from './components/ImportExportModal';
@@ -19,7 +17,7 @@ import { WelcomeModal } from './components/WelcomeModal';
 import { MicPermissionModal } from './components/MicPermissionModal';
 import { ResumeModal } from './components/ResumeModal';
 import { storage } from './lib/storage';
-import { Trophy, Trash2, BarChart3, BookOpen, Save, Mic, ArrowLeftRight, ListMusic, ChevronDown, Check } from 'lucide-react';
+import { Trophy, Trash2, BookOpen, Save, Mic, ArrowLeftRight, ListMusic, ChevronDown, Check } from 'lucide-react';
 import { cn } from './lib/utils';
 import { MidiTrackSelector } from './components/MidiTrackSelector';
 
@@ -31,9 +29,7 @@ function App() {
   const [showSettings, setShowSettings] = useState(false);
   const [showPractice, setShowPractice] = useState(false);
   const [showResult, setShowResult] = useState(false);
-  const [showHistory, setShowHistory] = useState(false);
   const [showReset, setShowReset] = useState(false);
-  const [showStats, setShowStats] = useState(false);
   const [showPresets, setShowPresets] = useState(false);
   const [showSaveModal, setShowSaveModal] = useState(false);
   const [showImportExport, setShowImportExport] = useState(false);
@@ -265,14 +261,6 @@ function App() {
             <span className="text-xs text-white/60 font-medium">BPM: {state.bpm}</span>
           </div>
 
-          {/* Stats Button */}
-          <button
-            onClick={() => setShowStats(true)}
-            className="h-8 w-8 rounded-full bg-blue-500/10 text-blue-400 hover:bg-blue-500/20 transition-all border border-blue-500/20 flex items-center justify-center"
-            title="練習統計"
-          >
-            <BarChart3 className="w-4 h-4" />
-          </button>
 
           {/* Reset Button */}
           <button
@@ -298,7 +286,6 @@ function App() {
           engine.stopPractice();
           setShowPractice(false);
         }} />}
-        {showHistory && <HistoryPanel onClose={() => setShowHistory(false)} />}
         {showReset && (
           <ResetConfirmModal
             open={showReset}
@@ -307,7 +294,6 @@ function App() {
             onResetPitchOnly={() => engine.resetSession('pitchOnly')}
           />
         )}
-        <StatsDashboard open={showStats} onClose={() => setShowStats(false)} />
         {showScalePractice && <ScalePracticeModal audioEngine={engine} onClose={() => setShowScalePractice(false)} />}
 
         <PresetSongModal open={showPresets} onClose={() => setShowPresets(false)} />
@@ -367,7 +353,6 @@ function App() {
               setShowPractice(true);
             }
           }}
-          onOpenHistory={() => setShowHistory(true)}
           onRecordingComplete={(blob) => setRecordingBlob(blob)}
           onOpenScalePractice={() => setShowScalePractice(true)}
         />
