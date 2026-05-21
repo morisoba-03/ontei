@@ -214,24 +214,24 @@ export function Controls({ onOpenSettings, onOpenPractice, onOpenHistory, onReco
                 <div className="flex items-center bg-white/5 border border-white/10 rounded-lg p-0.5 shrink-0">
                     <button
                         onClick={() => {
-                            const current = audioEngine.state.pxPerSec || 100;
+                            const current = audioEngine.state.pxPerSec || 130;
                             audioEngine.updateState({ pxPerSec: Math.max(20, current - 5) });
                         }}
                         className="p-1.5 md:p-2 hover:bg-white/10 rounded-md text-white/50 hover:text-white transition-colors"
-                        title="表示倍率ダウン (-5%)"
+                        title="表示倍率ダウン"
                     >
                         <Minus className="w-4 h-4" />
                     </button>
                     <div className="px-1 text-xs font-mono text-white/70 min-w-[3em] text-center">
-                        {Math.round(audioEngine.state.pxPerSec || 100)}%
+                        {Math.round((audioEngine.state.pxPerSec || 130) / 130 * 100)}%
                     </div>
                     <button
                         onClick={() => {
-                            const current = audioEngine.state.pxPerSec || 100;
+                            const current = audioEngine.state.pxPerSec || 130;
                             audioEngine.updateState({ pxPerSec: Math.min(400, current + 5) });
                         }}
                         className="p-1.5 md:p-2 hover:bg-white/10 rounded-md text-white/50 hover:text-white transition-colors"
-                        title="表示倍率アップ (+5%)"
+                        title="表示倍率アップ"
                     >
                         <Plus className="w-4 h-4" />
                     </button>
