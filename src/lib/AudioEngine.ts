@@ -79,7 +79,7 @@ export class AudioEngine {
     private lastFrameTime: number = 0;
 
     // Config
-    analysisRate: number = 20;
+    analysisRate: number = 60; // 60 Hz on all devices — smoother pitch history
 
     // Reactivity
     listeners: (() => void)[] = [];
@@ -292,11 +292,14 @@ export class AudioEngine {
                 this.micStream.getTracks().forEach(t => t.stop());
             }
 
+            // Use `ideal: false` instead of `false` so iOS Safari accepts the constraint
+            // without throwing an OverconstrainedError (it honours `exact` constraints strictly,
+            // ignores `ideal` ones it can't satisfy). PC browsers honour these fully either way.
             const constraints: MediaStreamConstraints = {
                 audio: {
-                    echoCancellation: false,
-                    noiseSuppression: false,
-                    autoGainControl: false,
+                    echoCancellation: { ideal: false },
+                    noiseSuppression: { ideal: false },
+                    autoGainControl: { ideal: false },
                     deviceId: deviceId ? { exact: deviceId } : undefined
                 }
             };
@@ -310,8 +313,8 @@ export class AudioEngine {
             // Connect: Source -> Analyser (no output to destination to avoid feedback)
             this.micSource.connect(this.micAnalyser);
 
-            // Init Processor
-            this.analysisProcessor.init(this.audioCtx.sampleRate);
+            // Init Processor — pass analysis rate so hold-frame count stays ~200 ms
+            this.analysisProcessor.init(this.audioCtx.sampleRate, this.analysisRate);
             this.analysisProcessor.onResult = (res) => this.handleAnalysisResult(res);
 
             this.startAnalysis();
