@@ -4,10 +4,16 @@ import { cn } from '../lib/utils';
 
 type ToastType = 'success' | 'error' | 'warning' | 'info';
 
+interface ToastAction {
+    label: string;
+    onClick: () => void;
+}
+
 interface Toast {
     id: string;
     message: string;
     type: ToastType;
+    action?: ToastAction;
 }
 
 // Global toast state and functions
@@ -19,16 +25,16 @@ const notifyListeners = () => {
 };
 
 export const toast = {
-    show: (message: string, type: ToastType = 'info') => {
+    show: (message: string, type: ToastType = 'info', options?: { action?: ToastAction; duration?: number }) => {
         const id = crypto.randomUUID();
-        toasts.push({ id, message, type });
+        toasts.push({ id, message, type, action: options?.action });
         notifyListeners();
 
-        // Auto-dismiss after 3 seconds
+        const duration = options?.duration ?? (options?.action ? 8000 : 3000);
         setTimeout(() => {
             toasts = toasts.filter(t => t.id !== id);
             notifyListeners();
-        }, 3000);
+        }, duration);
     },
     success: (message: string) => toast.show(message, 'success'),
     error: (message: string) => toast.show(message, 'error'),
@@ -48,6 +54,13 @@ const colorMap = {
     error: 'bg-red-500/20 border-red-500/40 text-red-300',
     warning: 'bg-yellow-500/20 border-yellow-500/40 text-yellow-300',
     info: 'bg-blue-500/20 border-blue-500/40 text-blue-300',
+};
+
+const actionColorMap = {
+    success: 'bg-emerald-500/30 hover:bg-emerald-500/50 text-emerald-200',
+    error: 'bg-red-500/30 hover:bg-red-500/50 text-red-200',
+    warning: 'bg-yellow-500/30 hover:bg-yellow-500/50 text-yellow-200',
+    info: 'bg-blue-500/30 hover:bg-blue-500/50 text-blue-200',
 };
 
 export function ToastContainer() {
@@ -76,16 +89,29 @@ export function ToastContainer() {
                     <div
                         key={t.id}
                         className={cn(
-                            "flex items-center gap-3 px-4 py-3 rounded-xl border backdrop-blur-md shadow-lg",
+                            "flex items-start gap-3 px-4 py-3 rounded-xl border backdrop-blur-md shadow-lg",
                             "animate-in slide-in-from-right duration-300",
                             colorMap[t.type]
                         )}
                     >
-                        <Icon className="w-5 h-5 shrink-0" />
-                        <span className="text-sm font-medium flex-1">{t.message}</span>
+                        <Icon className="w-5 h-5 shrink-0 mt-0.5" />
+                        <div className="flex-1 min-w-0">
+                            <span className="text-sm font-medium">{t.message}</span>
+                            {t.action && (
+                                <button
+                                    onClick={() => { t.action!.onClick(); dismiss(t.id); }}
+                                    className={cn(
+                                        "mt-2 w-full px-3 py-1.5 rounded-lg text-xs font-bold transition-colors",
+                                        actionColorMap[t.type]
+                                    )}
+                                >
+                                    {t.action.label}
+                                </button>
+                            )}
+                        </div>
                         <button
                             onClick={() => dismiss(t.id)}
-                            className="p-1 hover:bg-white/10 rounded-full transition-colors"
+                            className="p-1 hover:bg-white/10 rounded-full transition-colors shrink-0"
                         >
                             <X className="w-4 h-4" />
                         </button>

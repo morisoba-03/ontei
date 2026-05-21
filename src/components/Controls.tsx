@@ -1,10 +1,11 @@
-import { useState, useEffect } from 'react';
-import { Play, Square, MousePointer2, Hand, Pencil, Eraser, Settings, Activity, Clock, Repeat, SkipBack, Music2, Music, Volume2, X, Plus, Minus, ListMusic, Flag } from 'lucide-react';
+import { useState, useEffect, useRef } from 'react';
+import { Play, Square, MousePointer2, Hand, Pencil, Eraser, Settings, Activity, Clock, Repeat, SkipBack, Music2, Music, Volume2, X, Plus, Minus, ListMusic, Flag, Timer } from 'lucide-react';
 import { audioEngine } from '../lib/AudioEngine';
 import { MidiTrackSelector } from './MidiTrackSelector';
 import type { MidiTrackInfo } from './MidiTrackSelector';
 import type { AudioEngineState, Marker } from '../lib/types';
 import { cn } from '../lib/utils';
+import { toast } from './Toast';
 // Unused modal imports removed since they are handled by App.tsx callbacks
 
 interface ControlsProps {
@@ -27,6 +28,10 @@ export function Controls({ onOpenSettings, onOpenPractice, onOpenHistory, onReco
     const [availableTracks, setAvailableTracks] = useState<MidiTrackInfo[]>(audioEngine.state.midiAvailableTracks || []);
     const [currentTrackIndex, setCurrentTrackIndex] = useState(audioEngine.state.selectedMidiTrackId ?? audioEngine.state.melodyTrackIndex);
     const [markers, setMarkers] = useState<Marker[]>(audioEngine.state.markers);
+    const [countIn, setCountIn] = useState(audioEngine.state.countIn);
+    const [markerLoopAnchor, setMarkerLoopAnchor] = useState<string | null>(null);
+    const longPressTimer = useRef<number | null>(null);
+    const longPressActivated = useRef(false);
 
     useEffect(() => {
         const unsub = audioEngine.subscribe(() => {
@@ -38,6 +43,7 @@ export function Controls({ onOpenSettings, onOpenPractice, onOpenHistory, onReco
             setIsBackingOn(audioEngine.state.isBackingSoundEnabled);
             setCurrentTrackIndex(audioEngine.state.selectedMidiTrackId ?? audioEngine.state.melodyTrackIndex);
             setMarkers([...audioEngine.state.markers]);
+            setCountIn(audioEngine.state.countIn);
 
             if (audioEngine.state.midiAvailableTracks) {
                 setAvailableTracks(audioEngine.state.midiAvailableTracks);
@@ -68,6 +74,36 @@ export function Controls({ onOpenSettings, onOpenPractice, onOpenHistory, onReco
         audioEngine.importMidiTrack(trackId);
         audioEngine.startPractice({ mode: 'Midi' });
         setShowMidiSelector(false);
+    };
+
+    const handleMarkerLongPress = (marker: Marker) => {
+        longPressActivated.current = true;
+        if (!markerLoopAnchor) {
+            setMarkerLoopAnchor(marker.id);
+            toast.info(`マーカー ${marker.id} をループ開始点に設定。別のマーカーを長押しで区間確定。`);
+        } else {
+            const anchor = markers.find(m => m.id === markerLoopAnchor);
+            if (anchor) {
+                const [start, end] = anchor.time <= marker.time
+                    ? [anchor.time, marker.time]
+                    : [marker.time, anchor.time];
+                audioEngine.updateState({ loopEnabled: true, loopStart: start, loopEnd: end });
+                toast.success(`ループ設定: ${markerLoopAnchor}〜${marker.id}`);
+            }
+            setMarkerLoopAnchor(null);
+        }
+    };
+
+    const onMarkerPointerDown = (marker: Marker) => {
+        longPressActivated.current = false;
+        longPressTimer.current = window.setTimeout(() => handleMarkerLongPress(marker), 500);
+    };
+
+    const onMarkerPointerUp = () => {
+        if (longPressTimer.current !== null) {
+            clearTimeout(longPressTimer.current);
+            longPressTimer.current = null;
+        }
     };
 
     const toggleRecord = async () => {
@@ -278,6 +314,20 @@ export function Controls({ onOpenSettings, onOpenPractice, onOpenHistory, onReco
                     </div>
                 </button>
 
+                {/* Count-in Toggle */}
+                <button
+                    onClick={() => audioEngine.updateState({ countIn: !countIn })}
+                    className={cn(
+                        "p-1.5 md:p-2 rounded-lg border transition-all shrink-0",
+                        countIn
+                            ? "bg-violet-500/20 border-violet-500/40 text-violet-400"
+                            : "bg-white/5 border-white/10 text-white/50 hover:text-white hover:bg-white/10"
+                    )}
+                    title={countIn ? "カウントインON（4拍）— クリックでOFF" : "カウントインOFF — クリックでON"}
+                >
+                    <Timer className="w-4 h-4 md:w-5 md:h-5" />
+                </button>
+
                 {/* Add Marker Button */}
                 <button
                     onClick={() => audioEngine.addMarker()}
@@ -373,20 +423,34 @@ export function Controls({ onOpenSettings, onOpenPractice, onOpenHistory, onReco
             {/* Marker buttons row */}
             {markers.length > 0 && (
                 <div className="flex items-center gap-1.5 px-2 pb-1 overflow-x-auto no-scrollbar touch-pan-x">
-                    {markers.map(marker => (
-                        <button
-                            key={marker.id}
-                            onClick={() => {
-                                audioEngine.updateState({ playbackPosition: marker.time });
-                                audioEngine.onSeek(marker.time);
-                            }}
-                            onContextMenu={e => { e.preventDefault(); audioEngine.removeMarker(marker.id); }}
-                            className="flex items-center gap-1 px-2.5 py-1 rounded-full bg-amber-500/15 border border-amber-500/30 text-amber-300 text-xs font-bold hover:bg-amber-500/25 transition-all shrink-0"
-                            title={`マーカー ${marker.id} へ移動 (右クリックで削除)`}
-                        >
-                            {marker.id}
-                        </button>
-                    ))}
+                    {markers.map(marker => {
+                        const isAnchor = markerLoopAnchor === marker.id;
+                        return (
+                            <button
+                                key={marker.id}
+                                onClick={() => {
+                                    if (!longPressActivated.current) {
+                                        audioEngine.updateState({ playbackPosition: marker.time });
+                                        audioEngine.onSeek(marker.time);
+                                    }
+                                    longPressActivated.current = false;
+                                }}
+                                onPointerDown={() => onMarkerPointerDown(marker)}
+                                onPointerUp={onMarkerPointerUp}
+                                onPointerLeave={onMarkerPointerUp}
+                                onContextMenu={e => { e.preventDefault(); audioEngine.removeMarker(marker.id); setMarkerLoopAnchor(null); }}
+                                className={cn(
+                                    "flex items-center gap-1 px-2.5 py-1 rounded-full border text-xs font-bold transition-all shrink-0 select-none",
+                                    isAnchor
+                                        ? "bg-orange-500/30 border-orange-400 text-orange-300 ring-1 ring-orange-400"
+                                        : "bg-amber-500/15 border-amber-500/30 text-amber-300 hover:bg-amber-500/25"
+                                )}
+                                title={`マーカー ${marker.id}（クリック: シーク / 長押し: ループ端点 / 右クリック: 削除）`}
+                            >
+                                {marker.id}
+                            </button>
+                        );
+                    })}
                 </div>
             )}
 
