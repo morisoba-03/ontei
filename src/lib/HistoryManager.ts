@@ -60,21 +60,27 @@ class HistoryManager {
         localStorage.removeItem(STORAGE_KEY);
     }
 
-    public getStats(): { totalDuration: number; averageScore: number; bestScore: number; totalSessions: number } {
+    public getSongNames(): string[] {
         const records = this.getRecords();
-        if (records.length === 0) {
+        const names = [...new Set(records.map(r => r.songName))];
+        return names.sort();
+    }
+
+    public getStats(records?: HistoryRecord[]): { totalDuration: number; averageScore: number; bestScore: number; totalSessions: number } {
+        const data = records ?? this.getRecords();
+        if (data.length === 0) {
             return { totalDuration: 0, averageScore: 0, bestScore: 0, totalSessions: 0 };
         }
 
-        const totalDuration = records.reduce((sum, r) => sum + r.duration, 0);
-        const averageScore = records.reduce((sum, r) => sum + r.score, 0) / records.length;
-        const bestScore = Math.max(...records.map(r => r.score));
+        const totalDuration = data.reduce((sum, r) => sum + r.duration, 0);
+        const averageScore = data.reduce((sum, r) => sum + r.score, 0) / data.length;
+        const bestScore = Math.max(...data.map(r => r.score));
 
         return {
             totalDuration,
             averageScore,
             bestScore,
-            totalSessions: records.length
+            totalSessions: data.length
         };
     }
 }
