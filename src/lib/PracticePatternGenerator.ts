@@ -46,12 +46,16 @@ export class PracticePatternGenerator {
         type: ScaleType,
         bpm: number = 120,
         startTime: number = 0,
-        patternType: 'Ascending' | 'Descending' | 'AscDesc' = 'AscDesc'
+        patternType: 'Ascending' | 'Descending' | 'AscDesc' = 'AscDesc',
+        options?: PracticeConfig
     ): { notes: GhostNote[], duration: number } {
 
         const intervals = this.SCALES[type];
         const beatDur = 60 / bpm;
         const noteDur = beatDur / 2; // Eighth notes for scales
+        const artMult = options?.articulationType === 'legato' ? 0.99
+            : options?.articulationType === 'staccato' ? 0.25
+            : 0.90;
 
         const seq: number[] = [];
 
@@ -69,7 +73,7 @@ export class PracticePatternGenerator {
         const notes: GhostNote[] = seq.map((midi, idx) => ({
             midi,
             time: startTime + idx * noteDur,
-            duration: noteDur * 0.9,
+            duration: noteDur * artMult,
             role: 'practice',
             label: this.getNoteName(midi)
         }));
@@ -84,12 +88,16 @@ export class PracticePatternGenerator {
         type: ArpeggioType,
         bpm: number = 120,
         startTime: number = 0,
-        patternType: 'Ascending' | 'Descending' | 'AscDesc' = 'AscDesc'
+        patternType: 'Ascending' | 'Descending' | 'AscDesc' = 'AscDesc',
+        options?: PracticeConfig
     ): { notes: GhostNote[], duration: number } {
 
         const intervals = this.ARPEGGIOS[type];
         const beatDur = 60 / bpm;
         const noteDur = beatDur / 2; // Eighth notes for arpeggios
+        const artMult = options?.articulationType === 'legato' ? 0.99
+            : options?.articulationType === 'staccato' ? 0.25
+            : 0.90;
 
         const seq: number[] = [];
 
@@ -107,7 +115,7 @@ export class PracticePatternGenerator {
         const notes: GhostNote[] = seq.map((midi, idx) => ({
             midi,
             time: startTime + idx * noteDur,
-            duration: noteDur * 0.95,
+            duration: noteDur * artMult,
             role: 'practice',
             label: this.getNoteName(midi)
         }));
@@ -118,15 +126,46 @@ export class PracticePatternGenerator {
     }
 
     /**
+     * Generates a Glissando exercise (chromatic up 1 octave then down, 16th notes)
+     */
+    static generateGlissando(
+        rootMidi: number,
+        bpm: number = 120,
+        startTime: number = 0
+    ): GhostNote[] {
+        const beatDur = 60 / bpm;
+        const noteDur = beatDur / 4; // 16th notes
+        const artMult = 0.7;
+
+        const seq: number[] = [];
+        // Up chromatically 1 octave
+        for (let i = 0; i <= 12; i++) seq.push(rootMidi + i);
+        // Down chromatically (excluding top note already added)
+        for (let i = 11; i >= 0; i--) seq.push(rootMidi + i);
+
+        return seq.map((midi, idx) => ({
+            midi,
+            time: startTime + idx * noteDur,
+            duration: noteDur * artMult,
+            role: 'practice',
+            label: this.getNoteName(midi)
+        }));
+    }
+
+    /**
      * Generates Special Exercise Patterns
      */
     static generateExercise(
         rootMidi: number,
         type: import('./types').ExerciseType,
         bpm: number = 120,
-        startTime: number = 0
+        startTime: number = 0,
+        options?: PracticeConfig
     ): { notes: GhostNote[], duration: number } {
         const beatDur = 60 / bpm;
+        const artMult = options?.articulationType === 'legato' ? 0.99
+            : options?.articulationType === 'staccato' ? 0.25
+            : 0.90;
         const seq: { midi: number, dur: number }[] = [];
 
         if (type === 'LongTone') {
@@ -165,6 +204,11 @@ export class PracticePatternGenerator {
             seq.push({ midi: rootMidi, dur: beatDur * 2 });
             seq.push({ midi: rootMidi + 12, dur: beatDur * 2 });
             seq.push({ midi: rootMidi, dur: beatDur * 4 });
+        } else if (type === 'Glissando') {
+            // Handled in generateRandomBatch via generateGlissando
+            const noteDur = beatDur / 4; // 16th notes
+            for (let i = 0; i <= 12; i++) seq.push({ midi: rootMidi + i, dur: noteDur });
+            for (let i = 11; i >= 0; i--) seq.push({ midi: rootMidi + i, dur: noteDur });
         }
 
         const notes: GhostNote[] = [];
@@ -174,7 +218,7 @@ export class PracticePatternGenerator {
             notes.push({
                 midi: item.midi,
                 time: timeParams,
-                duration: item.dur * 0.95,
+                duration: item.dur * (type === 'Glissando' ? 0.7 : artMult),
                 role: 'practice',
                 label: this.getNoteName(item.midi)
             });
