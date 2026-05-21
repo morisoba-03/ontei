@@ -75,6 +75,7 @@ export class Visualizer {
         }
     }
 
+    // @ts-expect-error: 現在は呼び出していないが、再有効化できるよう残す
     private drawVibratoIndicators(
         ctx: CanvasRenderingContext2D,
         pts: { t: number; midi: number; conf: number; freq: number }[],
@@ -662,9 +663,10 @@ export class Visualizer {
             }
 
             // Vibrato Detection and Visualization
-            if (pts.length > 20) {
-                this.drawVibratoIndicators(ctx, pts, state, playX, pxSemi, vmin, h, w, eff, pxPerSec);
-            }
+            // (ビブラート波線アイコンは非表示にしています)
+            // if (pts.length > 20) {
+            //     this.drawVibratoIndicators(ctx, pts, state, playX, pxSemi, vmin, h, w, eff, pxPerSec);
+            // }
         }
 
         // Draw Live Pitch Cursor (Always, if signal present)
