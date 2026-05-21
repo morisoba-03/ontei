@@ -107,6 +107,8 @@ export class AudioEngine {
     nextMetronomeTime: number = 0;
     practiceQueue: GhostNote[] = [];
     nextNoteIndexToSchedule: number = 0;
+    private practiceBlocksGenerated: number = 0;
+    private practiceCompletedBlocks: number = 0;
 
     subscribe(cb: () => void) {
         this.listeners.push(cb);
@@ -489,6 +491,8 @@ export class AudioEngine {
         this.nextPracticeTime = 0;
         this.nextMetronomeTime = this.audioCtx.currentTime; // Init metronome
         this.nextNoteIndexToSchedule = 0;
+        this.practiceBlocksGenerated = 0;
+        this.practiceCompletedBlocks = 0;
 
         // Reset backing track index for practice
         this.nextBackingNoteIndex = 0;
@@ -559,6 +563,8 @@ export class AudioEngine {
 
         this.practiceQueue = [];
         this.nextNoteIndexToSchedule = 0;
+        this.practiceBlocksGenerated = 0;
+        this.practiceCompletedBlocks = 0;
         this.notify();
     }
 
@@ -583,12 +589,15 @@ export class AudioEngine {
                     generationStart,
                     15, // Generate 15s chunks
                     this.state.bpm || 120, // Use current BPM
-                    this.state.practiceConfig // Use stored config
+                    this.state.practiceConfig, // Use stored config
+                    undefined,
+                    this.practiceBlocksGenerated
                 );
 
                 if (batch.notes.length > 0) {
                     this.state.midiGhostNotes.push(...batch.notes);
                     this.nextPracticeTime = batch.nextStartTime;
+                    this.practiceBlocksGenerated += batch.blocksGenerated;
                     this.generatePhrases();
                     this.notify();
                 } else {
@@ -732,8 +741,52 @@ export class AudioEngine {
                     console.log(`Phrase finished: ${phraseResult.evaluation} (${phraseResult.score})`);
                     this.updateState({ lastPhraseResult: phraseResult });
                 }
+
+                // Analyze LongTone stability for resp phrases (feature ③)
+                if (this.state.isPracticing && phrase.notes.some(n => n.role === 'resp' && n.duration >= 2.0)) {
+                    this.analyzeLongToneStability(phrase);
+                }
+
+                // Tempo progression: increment completed blocks on resp phrase completion (feature ⑥)
+                if (this.state.isPracticing && phrase.notes.some(n => n.role === 'resp') &&
+                    this.state.practiceConfig?.tempoProgression) {
+                    this.practiceCompletedBlocks++;
+                    const every = this.state.practiceConfig?.tempoProgressionEvery ?? 2;
+                    const step = this.state.practiceConfig?.tempoProgressionStep ?? 5;
+                    const maxBpm = 200;
+                    if (this.practiceCompletedBlocks % every === 0) {
+                        const newBpm = Math.min(maxBpm, this.state.bpm + step);
+                        this.updateState({ bpm: newBpm, tempoFactor: newBpm / (this.state.baseBpm || newBpm) });
+                        toast.show(`テンポ上昇: ${newBpm} BPM`, 'info', { duration: 2000 });
+                    }
+                }
             }
         }
+    }
+
+    private analyzeLongToneStability(phrase: import('./types').Phrase) {
+        const respNote = phrase.notes.find(n => n.role === 'resp' && n.duration >= 2.0);
+        if (!respNote) return;
+        const targetFreq = 440 * Math.pow(2, (respNote.midi + (this.state.transposeOffset || 0) - 69) / 12);
+        const pts = this.state.pitchHistory.filter(p =>
+            p.conf >= 0.5 && p.time >= respNote.time && p.time <= respNote.time + respNote.duration
+        );
+        if (pts.length < 5) return;
+        const centsArr = pts.map(p => 1200 * Math.log2(p.freq / targetFreq));
+        const mean = centsArr.reduce((s, c) => s + c, 0) / centsArr.length;
+        const stdDev = Math.sqrt(centsArr.reduce((s, c) => s + (c - mean) ** 2, 0) / centsArr.length);
+        const third = Math.floor(centsArr.length / 3);
+        const drift = third > 0
+            ? (centsArr.slice(-third).reduce((s, c) => s + c, 0) / third) - (centsArr.slice(0, third).reduce((s, c) => s + c, 0) / third)
+            : 0;
+        let rating = '△ 要練習';
+        if (stdDev < 15 && Math.abs(mean) < 20) rating = '◎ 優秀';
+        else if (stdDev < 30 && Math.abs(mean) < 35) rating = '○ 良好';
+        else if (stdDev < 50) rating = '△ 普通';
+        const driftStr = Math.abs(drift) > 8
+            ? (drift > 0 ? ` ／ 後半↓${drift.toFixed(0)}¢` : ` ／ 後半↑${Math.abs(drift).toFixed(0)}¢`)
+            : '';
+        toast.show(`ロングトーン ${rating}  安定度±${stdDev.toFixed(0)}¢${driftStr}`, 'info', { duration: 4000 });
     }
 
     syncBackingTrack() {

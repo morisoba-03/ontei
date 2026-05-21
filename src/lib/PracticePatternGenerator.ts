@@ -235,18 +235,21 @@ export class PracticePatternGenerator {
         startTime: number,
         durationSec: number = 60,
         bpm: number = 120,
-        options: PracticeConfig = { mode: 'Mix' }
-    ): { notes: GhostNote[], nextStartTime: number } {
+        options: PracticeConfig = { mode: 'Mix' },
+        _unused: undefined = undefined,
+        startBlockIndex: number = 0
+    ): { notes: GhostNote[], nextStartTime: number, blocksGenerated: number } {
 
         const notes: GhostNote[] = [];
         let cursor = startTime;
         let timeLeft = durationSec;
+        let blockIndex = 0;
 
         const MIN_MIDI = 72;  // C5
         const MAX_MIDI = options.maxPitch ?? 103; // Default G7 if undefined
 
         // Safe loop to prevent infinite retry
-        const generateSafePattern = (baseCursor: number, maxRetries = 20): { notes: GhostNote[], duration: number } | null => {
+        const generateSafePattern = (baseCursor: number, chromaticRoot?: number, maxRetries = 20): { notes: GhostNote[], duration: number } | null => {
             for (let i = 0; i < maxRetries; i++) {
                 // Determine type
                 let isScale = false;
@@ -262,14 +265,18 @@ export class PracticePatternGenerator {
                     else isScale = false;
                 }
 
-                // Random Root Calculation
-                // Ensure root is low enough to fit pattern within MAX_MIDI
-                // Assuming typical pattern range is ~1.5 octaves (approx 19 semitones worst case)
-                const safeHeadroom = 15;
-                const rootMax = Math.max(MIN_MIDI, MAX_MIDI - safeHeadroom);
-                const rootRange = rootMax - MIN_MIDI;
-
-                const root = MIN_MIDI + Math.floor(Math.random() * (rootRange + 1));
+                // Root Calculation
+                let root: number;
+                if (chromaticRoot !== undefined) {
+                    root = chromaticRoot;
+                } else {
+                    // Ensure root is low enough to fit pattern within MAX_MIDI
+                    // Assuming typical pattern range is ~1.5 octaves (approx 19 semitones worst case)
+                    const safeHeadroom = 15;
+                    const rootMax = Math.max(MIN_MIDI, MAX_MIDI - safeHeadroom);
+                    const rootRange = rootMax - MIN_MIDI;
+                    root = MIN_MIDI + Math.floor(Math.random() * (rootRange + 1));
+                }
 
                 let result: { notes: GhostNote[], duration: number };
 
@@ -278,19 +285,27 @@ export class PracticePatternGenerator {
                         ? options.allowedExercises
                         : ['LongTone', 'FiveNote', 'Triad'];
                     const t = types[Math.floor(Math.random() * types.length)];
-                    result = this.generateExercise(root, t, bpm, baseCursor);
+                    if (t === 'Glissando') {
+                        const glissNotes = this.generateGlissando(root, bpm, baseCursor);
+                        const dur = glissNotes.length > 0
+                            ? (glissNotes[glissNotes.length - 1].time + (60 / bpm / 4)) - baseCursor
+                            : 0;
+                        result = { notes: glissNotes, duration: dur };
+                    } else {
+                        result = this.generateExercise(root, t, bpm, baseCursor, options);
+                    }
                 } else if (isScale) {
                     const types: ScaleType[] = options.allowedScales?.length
                         ? options.allowedScales
                         : ['Major', 'NaturalMinor', 'MajorPentatonic'];
                     const t = types[Math.floor(Math.random() * types.length)];
-                    result = this.generateScale(root, t, bpm, baseCursor, 'AscDesc');
+                    result = this.generateScale(root, t, bpm, baseCursor, 'AscDesc', options);
                 } else {
                     const types: ArpeggioType[] = options.allowedArpeggios?.length
                         ? options.allowedArpeggios
                         : ['Major', 'Minor'];
                     const t = types[Math.floor(Math.random() * types.length)];
-                    result = this.generateArpeggio(root, t, bpm, baseCursor, 'AscDesc');
+                    result = this.generateArpeggio(root, t, bpm, baseCursor, 'AscDesc', options);
                 }
 
                 // CHECK RANGE
@@ -298,7 +313,9 @@ export class PracticePatternGenerator {
                 if (maxNote <= MAX_MIDI) {
                     return result;
                 }
-                // If failed, loop retry with (likely) specific root
+                // If failed and using chromatic root, break out to avoid infinite loop
+                if (chromaticRoot !== undefined) break;
+                // Otherwise retry with different random root
             }
 
             // Fallback: If random attempts fail, generate a very safe low pattern
@@ -318,10 +335,14 @@ export class PracticePatternGenerator {
             const beatDur = 60 / bpm;
             const measureDur = beatDur * 4;
 
-            // Align cursor to start of a measure if not already (for safety)
-            // But we handle phrase alignment below.
+            // Compute chromatic root if chromatic mode is enabled
+            let chromaticRoot: number | undefined;
+            if (options.chromaticMode) {
+                // Cycle through 12 semitones starting from C5 (MIDI 72)
+                chromaticRoot = MIN_MIDI + ((startBlockIndex + blockIndex) % 12);
+            }
 
-            const result = generateSafePattern(cursor);
+            const result = generateSafePattern(cursor, chromaticRoot);
             // Result is now guaranteed by fallback
             if (!result) {
                 cursor += measureDur; // Should not happen
@@ -340,10 +361,11 @@ export class PracticePatternGenerator {
             const callMeasures = Math.ceil(callDur / measureDur);
             const phraseDur = callMeasures * measureDur; // Duration of the Call Block
 
-            // Response starts after the Call Block
-            // Actually, we usually want Call (Measure 1) -> Response (Measure 2).
-            // Even if Call is 3 beats, Response starts at Measure 2 Beat 1.
-            const responseStartTime = cursor + phraseDur;
+            // Breath gap between call and response (feature ④)
+            const breathDur = options.breathEnabled ? beatDur * 1.5 : 0;
+
+            // Response starts after the Call Block + breath
+            const responseStartTime = cursor + phraseDur + breathDur;
 
             const responseNotes = result.notes.map(n => ({
                 ...n,
@@ -352,14 +374,14 @@ export class PracticePatternGenerator {
             } as GhostNote));
             notes.push(...responseNotes);
 
-            // Total Block Time = PhraseDur (Call) + PhraseDur (Response)
-            // e.g. 1 Measure Call + 1 Measure Response = 2 Measures.
-            const totalBlockDur = phraseDur * 2;
+            // Total Block Time = PhraseDur (Call) + breathDur + PhraseDur (Response)
+            const totalBlockDur = phraseDur + breathDur + phraseDur;
 
             cursor += totalBlockDur;
             timeLeft = startTime + durationSec - cursor;
+            blockIndex++;
         }
 
-        return { notes, nextStartTime: cursor };
+        return { notes, nextStartTime: cursor, blocksGenerated: blockIndex };
     }
 }
