@@ -27,8 +27,8 @@ export const ScoreResultModal: React.FC<Props> = ({ result, onClose }) => {
             historyManager.saveRecord({
                 score: result.totalScore,
                 accuracy: result.radar.pitch,
-                songName: "Unknown Song",
-                duration: 0
+                songName: audioEngine.state.loadedMidiFileName || '練習曲',
+                duration: audioEngine.state.playbackPosition || 0
             });
 
             // Save to practice statistics

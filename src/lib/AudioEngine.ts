@@ -641,15 +641,73 @@ export class AudioEngine {
             this.backingSource = null;
         }
 
+        // Save playback position for session restore
+        try {
+            const pos = this.state.playbackPosition;
+            if (pos > 1) localStorage.setItem('ontei-session-pos', String(pos));
+        } catch { /* ignore */ }
+
         if (this.scoreAnalyzer) {
             const result = this.scoreAnalyzer.summarize(this.state.phrases);
-            this.updateState({
-                scoreResult: result
-            });
+            this.updateState({ scoreResult: result });
+
+            // Suggest difficult section loop after a brief delay
+            if (result && result.totalScore > 0 && result.totalScore < 95) {
+                setTimeout(() => this.suggestDifficultSection(), 800);
+            }
         }
         this.checkPhraseCompletion();
         this.draw();
         this.notify();
+    }
+
+    private detectDifficultSection(): { start: number; end: number } | null {
+        const { pitchHistory, midiGhostNotes, toleranceCents, transposeOffset } = this.state;
+        if (pitchHistory.length < 10 || midiGhostNotes.length === 0) return null;
+
+        const badTimes: number[] = [];
+        for (const p of pitchHistory) {
+            if (p.conf < 0.5 || p.time < 0) continue;
+            const note = midiGhostNotes.find(n => p.time >= n.time && p.time <= n.time + n.duration);
+            if (!note) continue;
+            const transposedMidi = note.midi + (transposeOffset || 0);
+            const expectedFreq = 440 * Math.pow(2, (transposedMidi - 69) / 12);
+            const cents = 1200 * Math.log2(p.freq / expectedFreq);
+            if (Math.abs(cents) > toleranceCents) badTimes.push(p.time);
+        }
+
+        if (badTimes.length < 5) return null;
+
+        const WIN = 5;
+        let bestStart = 0, bestCount = 0;
+        for (const t of badTimes) {
+            const count = badTimes.filter(pt => pt >= t && pt < t + WIN).length;
+            if (count > bestCount) { bestCount = count; bestStart = t; }
+        }
+
+        if (bestCount < 3) return null;
+        return { start: Math.max(0, bestStart - 0.5), end: bestStart + WIN };
+    }
+
+    private suggestDifficultSection() {
+        const section = this.detectDifficultSection();
+        if (!section) return;
+        const fmt = (s: number) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
+        toast.show(
+            `難所を検出しました（${fmt(section.start)}〜${fmt(section.end)}）`,
+            'info',
+            {
+                action: {
+                    label: 'この区間をループ練習',
+                    onClick: () => this.updateState({
+                        loopEnabled: true,
+                        loopStart: section.start,
+                        loopEnd: section.end
+                    })
+                },
+                duration: 10000
+            }
+        );
     }
 
     private checkPhraseCompletion() {
@@ -1687,6 +1745,15 @@ export class AudioEngine {
     // Session Restoration from IndexedDB
     async initFromStorage() {
         try {
+            // Restore playback position
+            try {
+                const savedPos = parseFloat(localStorage.getItem('ontei-session-pos') || '0');
+                if (savedPos > 1) {
+                    this.state.playbackPosition = savedPos;
+                    console.log(`[AudioEngine] Restored playback position: ${savedPos.toFixed(1)}s`);
+                }
+            } catch { /* ignore */ }
+
             const midiData = await storage.loadMidi();
             if (midiData) {
                 console.log('[AudioEngine] Restoring MIDI from storage...');
@@ -1765,6 +1832,8 @@ export class AudioEngine {
             this.processedPhrases.clear();
 
             this.state.markers = [];
+            this.state.playbackPosition = 0;
+            try { localStorage.removeItem('ontei-session-pos'); } catch { /* ignore */ }
 
             // Clear storage
             storage.saveMidi(new ArrayBuffer(0)).catch(() => { });

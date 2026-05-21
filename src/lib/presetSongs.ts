@@ -27,6 +27,7 @@ export interface PresetSong {
     lastPlayed?: number;
     playCount?: number;
     markers?: Marker[];
+    loop?: { enabled: boolean; start: number; end: number };
 }
 
 export const presetSongs: PresetSong[] = [];
