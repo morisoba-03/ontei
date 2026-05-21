@@ -69,6 +69,7 @@ export function SaveSongModal({ open, onClose }: SaveSongModalProps) {
                 transposeOffset: audioEngine.state.transposeOffset,
                 toleranceCents: audioEngine.state.toleranceCents,
             };
+            const markers = [...audioEngine.state.markers];
             const current = await storage.loadUserPresets();
 
             if (saveType === 'new') {
@@ -81,6 +82,7 @@ export function SaveSongModal({ open, onClose }: SaveSongModalProps) {
                     notes,
                     hasMidiData,
                     settings,
+                    markers,
                     createdAt: Date.now(),
                     playCount: 0,
                 };
@@ -89,7 +91,7 @@ export function SaveSongModal({ open, onClose }: SaveSongModalProps) {
             } else {
                 const target = current.find(s => s.id === selectedOverwriteId);
                 const updated = current.map(s => s.id === selectedOverwriteId
-                    ? { ...s, notes, hasMidiData, settings, bpm: audioEngine.state.bpm || s.bpm }
+                    ? { ...s, notes, hasMidiData, settings, markers, bpm: audioEngine.state.bpm || s.bpm }
                     : s);
                 await storage.saveUserPresets(updated);
                 toast.success(`「${target?.name}」を上書き保存しました${hasMidiData ? '（MIDI更新済）' : ''}`);

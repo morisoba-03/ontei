@@ -128,13 +128,14 @@ export function PresetSongModal({ open, onClose }: PresetSongModalProps) {
                 audioEngine.updateState({ bpm: song.bpm });
             }
 
-            // B案: Restore per-song settings
+            // B案: Restore per-song settings + markers
             audioEngine.updateState({
                 guideOctaveOffset: song.settings?.guideOctaveOffset ?? 0,
                 transposeOffset: song.settings?.transposeOffset ?? 0,
                 ...(song.settings?.toleranceCents !== undefined
                     ? { toleranceCents: song.settings.toleranceCents }
                     : {}),
+                markers: song.markers ?? [],
             });
 
             // C案: Update practice metadata

@@ -1,6 +1,6 @@
 // Built-in preset songs for practice
 
-import type { GhostNote } from './types';
+import type { GhostNote, Marker } from './types';
 
 export interface SongSettings {
     guideOctaveOffset?: number;
@@ -26,6 +26,7 @@ export interface PresetSong {
     createdAt?: number;
     lastPlayed?: number;
     playCount?: number;
+    markers?: Marker[];
 }
 
 export const presetSongs: PresetSong[] = [];
