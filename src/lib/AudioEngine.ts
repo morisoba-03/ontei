@@ -733,13 +733,15 @@ export class AudioEngine {
                 // Phrase finished
                 this.processedPhrases.add(phrase.id);
 
-                // Calculate score for just this phrase
-                // Note: summarize overwrites phraseScores but that's fine as we recalc at the end
-                const result = this.scoreAnalyzer.summarize([phrase]);
-                if (result.phraseScores.length > 0) {
-                    const phraseResult = result.phraseScores[0];
-                    console.log(`Phrase finished: ${phraseResult.evaluation} (${phraseResult.score})`);
-                    this.updateState({ lastPhraseResult: phraseResult });
+                // In practice mode, skip scoring for call-only phrases (player is listening, not playing)
+                const isCallOnly = this.state.isPracticing && phrase.notes.every(n => n.role === 'call');
+                if (!isCallOnly) {
+                    const result = this.scoreAnalyzer.summarize([phrase]);
+                    if (result.phraseScores.length > 0) {
+                        const phraseResult = result.phraseScores[0];
+                        console.log(`Phrase finished: ${phraseResult.evaluation} (${phraseResult.score})`);
+                        this.updateState({ lastPhraseResult: phraseResult });
+                    }
                 }
 
                 // Analyze LongTone stability for resp phrases (feature ③)
@@ -1608,6 +1610,8 @@ export class AudioEngine {
         let phraseStartTime = notes[0].time;
 
         const GAP_THRESHOLD = 1.5; // seconds
+        // In practice mode, also split when call→resp or resp→call role changes
+        const hasRoleMix = notes.some(n => n.role === 'resp');
 
         for (let i = 0; i < notes.length; i++) {
             const note = notes[i];
@@ -1615,10 +1619,10 @@ export class AudioEngine {
 
             const nextNote = notes[i + 1];
 
-            // Should split if:
-            // 1. Last note
-            // 2. Gap to next note is large enough
-            const shouldSplit = !nextNote || (nextNote.time - (note.time + note.duration) > GAP_THRESHOLD);
+            const roleChange = hasRoleMix && !!nextNote && note.role !== nextNote.role;
+            const shouldSplit = !nextNote ||
+                (nextNote.time - (note.time + note.duration) > GAP_THRESHOLD) ||
+                roleChange;
 
             if (shouldSplit) {
                 const phraseEndTime = note.time + note.duration;
