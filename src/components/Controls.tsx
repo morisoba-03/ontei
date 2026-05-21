@@ -1,9 +1,9 @@
 import { useState, useEffect } from 'react';
-import { Play, Square, MousePointer2, Hand, Pencil, Eraser, Settings, Activity, Clock, Repeat, SkipBack, Music2, Music, Volume2, X, Plus, Minus, ListMusic } from 'lucide-react';
+import { Play, Square, MousePointer2, Hand, Pencil, Eraser, Settings, Activity, Clock, Repeat, SkipBack, Music2, Music, Volume2, X, Plus, Minus, ListMusic, Flag } from 'lucide-react';
 import { audioEngine } from '../lib/AudioEngine';
 import { MidiTrackSelector } from './MidiTrackSelector';
 import type { MidiTrackInfo } from './MidiTrackSelector';
-import type { AudioEngineState } from '../lib/types';
+import type { AudioEngineState, Marker } from '../lib/types';
 import { cn } from '../lib/utils';
 // Unused modal imports removed since they are handled by App.tsx callbacks
 
@@ -26,6 +26,7 @@ export function Controls({ onOpenSettings, onOpenPractice, onOpenHistory, onReco
     const [isBackingOn, setIsBackingOn] = useState(audioEngine.state.isBackingSoundEnabled);
     const [availableTracks, setAvailableTracks] = useState<MidiTrackInfo[]>(audioEngine.state.midiAvailableTracks || []);
     const [currentTrackIndex, setCurrentTrackIndex] = useState(audioEngine.state.selectedMidiTrackId ?? audioEngine.state.melodyTrackIndex);
+    const [markers, setMarkers] = useState<Marker[]>(audioEngine.state.markers);
 
     useEffect(() => {
         const unsub = audioEngine.subscribe(() => {
@@ -36,6 +37,7 @@ export function Controls({ onOpenSettings, onOpenPractice, onOpenHistory, onReco
             setIsGuideOn(audioEngine.state.isGuideSoundEnabled);
             setIsBackingOn(audioEngine.state.isBackingSoundEnabled);
             setCurrentTrackIndex(audioEngine.state.selectedMidiTrackId ?? audioEngine.state.melodyTrackIndex);
+            setMarkers([...audioEngine.state.markers]);
 
             if (audioEngine.state.midiAvailableTracks) {
                 setAvailableTracks(audioEngine.state.midiAvailableTracks);
@@ -276,6 +278,21 @@ export function Controls({ onOpenSettings, onOpenPractice, onOpenHistory, onReco
                     </div>
                 </button>
 
+                {/* Add Marker Button */}
+                <button
+                    onClick={() => audioEngine.addMarker()}
+                    disabled={markers.length >= 26}
+                    className={cn(
+                        "p-1.5 md:p-2 rounded-lg border transition-all shrink-0",
+                        markers.length >= 26
+                            ? "bg-white/5 border-white/10 text-white/20 cursor-not-allowed"
+                            : "bg-amber-500/10 border-amber-500/30 text-amber-400 hover:bg-amber-500/20"
+                    )}
+                    title="現在位置にマーカーを追加"
+                >
+                    <Flag className="w-4 h-4 md:w-5 md:h-5" />
+                </button>
+
                 {/* Center: Tools */}
                 <div className="flex items-center bg-white/5 rounded-full p-0.5 gap-0.5 shrink-0">
                     {[
@@ -352,6 +369,26 @@ export function Controls({ onOpenSettings, onOpenPractice, onOpenHistory, onReco
                     )}
                 </div>
             </div>
+
+            {/* Marker buttons row */}
+            {markers.length > 0 && (
+                <div className="flex items-center gap-1.5 px-2 pb-1 overflow-x-auto no-scrollbar touch-pan-x">
+                    {markers.map(marker => (
+                        <button
+                            key={marker.id}
+                            onClick={() => {
+                                audioEngine.updateState({ playbackPosition: marker.time });
+                                audioEngine.onSeek(marker.time);
+                            }}
+                            onContextMenu={e => { e.preventDefault(); audioEngine.removeMarker(marker.id); }}
+                            className="flex items-center gap-1 px-2.5 py-1 rounded-full bg-amber-500/15 border border-amber-500/30 text-amber-300 text-xs font-bold hover:bg-amber-500/25 transition-all shrink-0"
+                            title={`マーカー ${marker.id} へ移動 (右クリックで削除)`}
+                        >
+                            {marker.id}
+                        </button>
+                    ))}
+                </div>
+            )}
 
             {/* MIDI Selector Modal */}
             {showMidiSelector && (

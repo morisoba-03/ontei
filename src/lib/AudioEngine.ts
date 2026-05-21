@@ -206,7 +206,8 @@ export class AudioEngine {
             countIn: false,
             showPitchDeviation: true,
             showTuner: true,
-            showTolerancePreview: false
+            showTolerancePreview: false,
+            markers: []
         };
         this.loadSettings();
         // Start loading piano samples immediately
@@ -1729,6 +1730,22 @@ export class AudioEngine {
     }
 
     // Reset Session
+    addMarker() {
+        const LABELS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+        const used = new Set(this.state.markers.map(m => m.id));
+        const id = LABELS.split('').find(l => !used.has(l));
+        if (!id) return; // All 26 slots used
+        const time = this.state.playbackPosition;
+        const markers = [...this.state.markers, { id, time }].sort((a, b) => a.time - b.time);
+        this.state.markers = markers;
+        this.notify();
+    }
+
+    removeMarker(id: string) {
+        this.state.markers = this.state.markers.filter(m => m.id !== id);
+        this.notify();
+    }
+
     resetSession(mode: 'all' | 'pitchOnly') {
         this.stopPlayback();
         this.stopPractice();
@@ -1746,6 +1763,8 @@ export class AudioEngine {
             this.loadedMidi = null;
             this.originalGhostNotes = null;
             this.processedPhrases.clear();
+
+            this.state.markers = [];
 
             // Clear storage
             storage.saveMidi(new ArrayBuffer(0)).catch(() => { });

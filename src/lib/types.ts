@@ -45,6 +45,11 @@ export interface ScoreStats {
     }[];
 }
 
+export interface Marker {
+    id: string; // 'A' through 'Z'
+    time: number; // seconds
+}
+
 export interface AudioEngineState {
     isPlaying: boolean;
     isPracticing: boolean;
@@ -105,6 +110,7 @@ export interface AudioEngineState {
     showPitchDeviation: boolean;
     showTuner: boolean;
     showTolerancePreview: boolean;
+    markers: Marker[];
 }
 
 export type ScaleType = 'Major' | 'NaturalMinor' | 'HarmonicMinor' | 'MelodicMinor' | 'MajorPentatonic' | 'MinorPentatonic' | 'Chromatic' | 'Dorian' | 'Mixolydian' | 'Blues';
