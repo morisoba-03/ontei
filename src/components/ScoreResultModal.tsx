@@ -1,7 +1,7 @@
 
 import type { ScoreResult } from '../lib/ScoreAnalyzer';
 import { audioEngine } from '../lib/AudioEngine';
-import { X, Trophy, Activity, Target, Music, Zap } from 'lucide-react';
+import { X, Trophy, Activity, Target, Music, Zap, TrendingUp, TrendingDown, AlertCircle, CheckCircle, Info } from 'lucide-react';
 import { cn } from '../lib/utils';
 
 interface Props {
@@ -9,22 +9,32 @@ interface Props {
     onClose: () => void;
 }
 
-// Helper
 const formatTime = (sec: number) => {
     const m = Math.floor(sec / 60);
     const s = Math.floor(sec % 60);
     return `${m}:${s.toString().padStart(2, '0')}`;
 };
 
-export const ScoreResultModal: React.FC<Props> = ({ result, onClose }) => {
+const getGrade = (score: number): { letter: string; color: string; bg: string; border: string; desc: string } => {
+    if (score >= 95) return { letter: 'S', color: 'text-yellow-300', bg: 'bg-yellow-500/20', border: 'border-yellow-400/50', desc: '完璧' };
+    if (score >= 85) return { letter: 'A', color: 'text-emerald-300', bg: 'bg-emerald-500/20', border: 'border-emerald-400/50', desc: '優秀' };
+    if (score >= 75) return { letter: 'B', color: 'text-blue-300', bg: 'bg-blue-500/20', border: 'border-blue-400/50', desc: '良好' };
+    if (score >= 60) return { letter: 'C', color: 'text-purple-300', bg: 'bg-purple-500/20', border: 'border-purple-400/50', desc: '普通' };
+    if (score >= 45) return { letter: 'D', color: 'text-orange-300', bg: 'bg-orange-500/20', border: 'border-orange-400/50', desc: '要練習' };
+    return { letter: 'F', color: 'text-red-300', bg: 'bg-red-500/20', border: 'border-red-400/50', desc: '要基礎練習' };
+};
 
-    // Radar Chart Logic
+const radarLabel = (key: string) => ({ pitch: '音程', stability: '安定性', expressiveness: '表現力', rhythm: 'リズム', technique: '技術' })[key] ?? key;
+
+export const ScoreResultModal: React.FC<Props> = ({ result, onClose }) => {
+    const grade = getGrade(result.totalScore);
+
     const radarData = [
-        { label: '音程', val: result.radar.pitch, full: 100 },
-        { label: '安定性', val: result.radar.stability, full: 100 },
-        { label: '表現力', val: result.radar.expressiveness, full: 100 },
-        { label: 'リズム', val: result.radar.rhythm, full: 100 },
-        { label: '技術', val: result.radar.technique, full: 100 },
+        { label: '音程', val: result.radar.pitch },
+        { label: '安定性', val: result.radar.stability },
+        { label: '表現力', val: result.radar.expressiveness },
+        { label: 'リズム', val: result.radar.rhythm },
+        { label: '技術', val: result.radar.technique },
     ];
 
     const radius = 80;
@@ -32,201 +42,241 @@ export const ScoreResultModal: React.FC<Props> = ({ result, onClose }) => {
     const points = radarData.map((d, i) => {
         const angle = (Math.PI * 2 * i) / 5 - Math.PI / 2;
         const r = (d.val / 100) * radius;
-        const x = center + r * Math.cos(angle);
-        const y = center + r * Math.sin(angle);
-        return `${x},${y}`;
+        return `${center + r * Math.cos(angle)},${center + r * Math.sin(angle)}`;
     }).join(' ');
 
     const fullPoints = radarData.map((_, i) => {
         const angle = (Math.PI * 2 * i) / 5 - Math.PI / 2;
-        const x = center + radius * Math.cos(angle);
-        const y = center + radius * Math.sin(angle);
-        return `${x},${y}`;
+        return `${center + radius * Math.cos(angle)},${center + radius * Math.sin(angle)}`;
     }).join(' ');
+
+    // 最も低いスコアと最も高いスコアの項目
+    const radarEntries = Object.entries(result.radar) as [string, number][];
+    const bestArea = radarEntries.reduce((a, b) => b[1] > a[1] ? b : a);
+    const worstArea = radarEntries.reduce((a, b) => b[1] < a[1] ? b : a);
 
     return (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-sm animate-in fade-in duration-300 p-4">
             <div className="w-full max-w-4xl bg-[#1a1a1e] rounded-3xl border border-white/10 shadow-2xl overflow-hidden animate-in zoom-in-95 duration-300 flex flex-col max-h-[90dvh]">
+
                 {/* Header */}
                 <div className="bg-gradient-to-r from-indigo-900/50 to-purple-900/50 p-4 md:p-6 flex items-center justify-between border-b border-white/10 shrink-0">
                     <h2 className="text-xl md:text-2xl font-bold flex items-center gap-2 text-white">
                         <Trophy className="text-yellow-400 fill-yellow-400" />
-                        診断結果
+                        演奏診断結果
                     </h2>
                     <button onClick={onClose} className="p-2 bg-white/5 hover:bg-white/10 rounded-full transition-colors text-white/80 hover:text-white">
                         <X size={20} />
                     </button>
                 </div>
 
-                <div className="p-6 md:p-8 grid grid-cols-1 md:grid-cols-2 gap-8 overflow-y-auto overscroll-contain">
-                    {/* Left: Score & Comment */}
-                    <div className="space-y-6 text-center md:text-left">
-                        <div className="space-y-2">
-                            <span className="text-sm font-bold tracking-widest text-white/40 uppercase">Total Score</span>
-                            <div className="text-8xl font-black text-transparent bg-clip-text bg-gradient-to-br from-white to-white/50 shadow-glow">
-                                {result.totalScore}
-                                <span className="text-2xl text-white/30 font-normal ml-2">pts</span>
+                <div className="p-5 md:p-8 grid grid-cols-1 md:grid-cols-2 gap-6 md:gap-8 overflow-y-auto overscroll-contain custom-scrollbar">
+
+                    {/* ── 左カラム ── */}
+                    <div className="space-y-5">
+
+                        {/* スコア + グレード */}
+                        <div className="flex items-center gap-5">
+                            <div>
+                                <div className="text-xs font-bold tracking-widest text-white/40 uppercase mb-1">Total Score</div>
+                                <div className="text-7xl font-black text-transparent bg-clip-text bg-gradient-to-br from-white to-white/40 leading-none">
+                                    {result.totalScore}
+                                    <span className="text-xl text-white/30 font-normal ml-1">pts</span>
+                                </div>
+                            </div>
+                            <div className={cn(
+                                "w-20 h-20 rounded-2xl border-2 flex flex-col items-center justify-center shrink-0",
+                                grade.bg, grade.border
+                            )}>
+                                <span className={cn("text-4xl font-black leading-none", grade.color)}>{grade.letter}</span>
+                                <span className={cn("text-[10px] font-bold mt-0.5", grade.color)}>{grade.desc}</span>
                             </div>
                         </div>
 
-                        <div className="p-4 bg-white/5 rounded-2xl border border-white/5">
-                            <h3 className="text-sm font-bold text-blue-300 mb-1">アドバイス</h3>
-                            <p className="text-white/80 leading-relaxed text-sm">
-                                {result.comment}
-                            </p>
+                        {/* アドバイスコメント */}
+                        <div className="p-4 bg-white/5 rounded-2xl border border-white/8">
+                            <h3 className="text-xs font-bold text-blue-300 uppercase tracking-widest mb-2 flex items-center gap-1.5">
+                                <Music size={12} />
+                                今回の総評
+                            </h3>
+                            <p className="text-white/85 leading-relaxed text-sm">{result.comment}</p>
                         </div>
 
-                        {/* Tendency Bar */}
-                        <div className="space-y-2">
-                            <div className="flex justify-between text-xs text-white/40 uppercase font-bold">
-                                <span>Flat (♭)</span>
+                        {/* ベスト・改善点サマリー */}
+                        <div className="grid grid-cols-2 gap-3">
+                            <div className="p-3 bg-emerald-500/10 rounded-xl border border-emerald-500/25">
+                                <div className="text-[10px] font-bold text-emerald-400 uppercase tracking-widest mb-1 flex items-center gap-1">
+                                    <CheckCircle size={10} /> 最も良かった点
+                                </div>
+                                <div className="text-sm font-bold text-white/90">{radarLabel(bestArea[0])}</div>
+                                <div className="text-lg font-black text-emerald-400 leading-none">{bestArea[1]}<span className="text-xs font-normal text-emerald-400/60">点</span></div>
+                            </div>
+                            <div className="p-3 bg-orange-500/10 rounded-xl border border-orange-500/25">
+                                <div className="text-[10px] font-bold text-orange-400 uppercase tracking-widest mb-1 flex items-center gap-1">
+                                    <AlertCircle size={10} /> 重点強化ポイント
+                                </div>
+                                <div className="text-sm font-bold text-white/90">{radarLabel(worstArea[0])}</div>
+                                <div className="text-lg font-black text-orange-400 leading-none">{worstArea[1]}<span className="text-xs font-normal text-orange-400/60">点</span></div>
+                            </div>
+                        </div>
+
+                        {/* ピッチ傾向バー */}
+                        <div className="space-y-1.5">
+                            <div className="flex justify-between text-[10px] text-white/40 uppercase font-bold">
+                                <span>♭ Flat</span>
                                 <span>Perfect</span>
-                                <span>Sharp (♯)</span>
+                                <span>Sharp ♯</span>
                             </div>
-                            <div className="h-4 bg-black/50 rounded-full relative overflow-hidden">
-                                <div className="absolute top-0 bottom-0 w-0.5 bg-white/30 left-1/2 -ml-[0.5px]" />
-                                {/* Bar */}
+                            <div className="h-3 bg-black/50 rounded-full relative overflow-hidden">
+                                <div className="absolute top-0 bottom-0 w-px bg-white/30 left-1/2" />
                                 <div
                                     className={cn(
-                                        "absolute top-1 bottom-1 rounded-full transition-all",
+                                        "absolute top-0.5 bottom-0.5 rounded-full transition-all",
                                         result.tendency > 0 ? "bg-red-500 left-1/2" : "bg-blue-500 right-1/2"
                                     )}
-                                    style={{
-                                        [result.tendency > 0 ? 'width' : 'width']: `${Math.min(50, Math.abs(result.tendency))}%`
-                                    }}
+                                    style={{ width: `${Math.min(50, Math.abs(result.tendency / 2))}%` }}
                                 />
-                                {/* If tendency is 0, nothing shows. If 20 (sharp), width 20% from center to right. */}
                             </div>
-                            <div className="text-center text-xs text-white/30 font-mono">
-                                傾向: {Math.abs(result.tendency).toFixed(1)} cent {result.tendency > 0 ? '高め' : result.tendency < 0 ? '低め' : ''}
+                            <div className="text-center text-[10px] text-white/30 font-mono">
+                                {Math.abs(result.tendency) < 5
+                                    ? "ピッチ傾向：ほぼ中央 ✓"
+                                    : `ピッチ傾向：${Math.abs(result.tendency).toFixed(1)} cent ${result.tendency > 0 ? '高め (Sharp)' : '低め (Flat)'}`
+                                }
                             </div>
                         </div>
 
-                        {/* Expert Advice List */}
+                        {/* Expert Advice */}
                         {result.advice && result.advice.length > 0 && (
-                            <div className="space-y-3 pt-4 border-t border-white/10">
-                                <h3 className="text-sm font-bold text-white/50 uppercase tracking-widest flex items-center gap-2">
-                                    <Zap size={14} className="text-yellow-400" />
-                                    Expert Analysis
+                            <div className="space-y-2 pt-3 border-t border-white/8">
+                                <h3 className="text-xs font-bold text-white/50 uppercase tracking-widest flex items-center gap-1.5">
+                                    <Zap size={12} className="text-yellow-400" />
+                                    詳細アドバイス
                                 </h3>
-                                <div className="space-y-2 max-h-[150px] overflow-y-auto pr-2 custom-scrollbar">
-                                    {result.advice.map((adv, i) => (
-                                        <div key={i} className={cn(
-                                            "flex items-start gap-3 p-3 rounded-lg border text-sm",
-                                            adv.level === 'warning' ? "bg-red-500/10 border-red-500/30 text-red-200" :
-                                                adv.level === 'positive' ? "bg-green-500/10 border-green-500/30 text-green-200" :
-                                                    "bg-blue-500/10 border-blue-500/30 text-blue-200"
-                                        )}>
-                                            <div className="mt-0.5 shrink-0">
-                                                {adv.level === 'warning' ? <X size={16} /> :
-                                                    adv.level === 'positive' ? <Trophy size={16} /> :
-                                                        <Music size={16} />}
+                                <div className="space-y-2">
+                                    {result.advice.map((adv, i) => {
+                                        const Icon = adv.level === 'warning' ? AlertCircle
+                                            : adv.level === 'positive' ? CheckCircle
+                                            : Info;
+                                        const colors = adv.level === 'warning'
+                                            ? "bg-red-500/10 border-red-500/25 text-red-200"
+                                            : adv.level === 'positive'
+                                            ? "bg-emerald-500/10 border-emerald-500/25 text-emerald-200"
+                                            : "bg-blue-500/10 border-blue-500/25 text-blue-200";
+                                        const iconColor = adv.level === 'warning' ? "text-red-400"
+                                            : adv.level === 'positive' ? "text-emerald-400"
+                                            : "text-blue-400";
+                                        return (
+                                            <div key={i} className={cn("flex items-start gap-2.5 p-3 rounded-xl border text-xs leading-relaxed", colors)}>
+                                                <Icon size={14} className={cn("shrink-0 mt-0.5", iconColor)} />
+                                                <span>{adv.message}</span>
                                             </div>
-                                            <span className="leading-snug">{adv.message}</span>
-                                        </div>
-                                    ))}
+                                        );
+                                    })}
                                 </div>
                             </div>
                         )}
                     </div>
 
-                    {/* Right: Radar & Details */}
-                    <div className="relative">
-                        {/* Radar Chart SVG */}
-                        <div className="aspect-square w-full max-w-[280px] mx-auto relative">
-                            <svg viewBox="-30 -30 260 260" className="w-full h-full drop-shadow-2xl">
-                                {/* Grid Background */}
-                                <polygon points={fullPoints} fill="#ffffff05" stroke="#ffffff20" strokeWidth="1" />
-                                {[0.8, 0.6, 0.4, 0.2].map(scale => (
-                                    <polygon
-                                        key={scale}
-                                        points={radarData.map((_, i) => {
-                                            const angle = (Math.PI * 2 * i) / 5 - Math.PI / 2;
-                                            const r = scale * radius;
-                                            return `${center + r * Math.cos(angle)},${center + r * Math.sin(angle)}`;
-                                        }).join(' ')}
-                                        fill="none"
-                                        stroke="#ffffff10"
-                                        strokeWidth="1"
-                                    />
-                                ))}
+                    {/* ── 右カラム ── */}
+                    <div className="space-y-5">
 
-                                {/* Data Polygon */}
-                                <polygon points={points} fill="rgba(99, 102, 241, 0.4)" stroke="#818cf8" strokeWidth="2" />
-
-                                {/* Labels */}
-                                {radarData.map((d, i) => {
-                                    const angle = (Math.PI * 2 * i) / 5 - Math.PI / 2;
-                                    const r = radius + 20;
-                                    const x = center + r * Math.cos(angle);
-                                    const y = center + r * Math.sin(angle);
-                                    return (
-                                        <text
-                                            key={i}
-                                            x={x} y={y}
-                                            fill="white"
-                                            fontSize="10"
-                                            textAnchor="middle"
-                                            dominantBaseline="middle"
-                                        >
-                                            {d.label}
-                                        </text>
-                                    );
-                                })}
-                            </svg>
-                        </div>
-
-                        {/* Stats Grid */}
-                        <div className="grid grid-cols-2 gap-3 mt-4">
-                            <div className="bg-white/5 p-3 rounded-xl flex items-center gap-3 border border-white/5">
-                                <div className="p-2 bg-pink-500/20 rounded-lg text-pink-400"><Activity size={16} /></div>
-                                <div>
-                                    <div className="text-[10px] text-white/40 uppercase">Vibrato</div>
-                                    <div className="font-bold text-white">{result.vibratoCount}回 <span className="text-xs font-normal text-white/40">({result.vibratoSec.toFixed(1)}s)</span></div>
-                                </div>
+                        {/* レーダーチャート */}
+                        <div>
+                            <div className="text-xs font-bold text-white/40 uppercase tracking-widest mb-2 flex items-center gap-1.5">
+                                <Activity size={12} />
+                                パフォーマンスレーダー
                             </div>
-                            <div className="bg-white/5 p-3 rounded-xl flex items-center gap-3 border border-white/5">
-                                <div className="p-2 bg-emerald-500/20 rounded-lg text-emerald-400"><Target size={16} /></div>
-                                <div>
-                                    <div className="text-[10px] text-white/40 uppercase">Accuracy</div>
-                                    <div className="font-bold text-white">{result.radar.pitch}<span className="text-xs">%</span></div>
-                                </div>
+                            <div className="aspect-square w-full max-w-[260px] mx-auto">
+                                <svg viewBox="-30 -30 260 260" className="w-full h-full drop-shadow-2xl">
+                                    <polygon points={fullPoints} fill="#ffffff05" stroke="#ffffff20" strokeWidth="1" />
+                                    {[0.8, 0.6, 0.4, 0.2].map(scale => (
+                                        <polygon
+                                            key={scale}
+                                            points={radarData.map((_, i) => {
+                                                const angle = (Math.PI * 2 * i) / 5 - Math.PI / 2;
+                                                const r = scale * radius;
+                                                return `${center + r * Math.cos(angle)},${center + r * Math.sin(angle)}`;
+                                            }).join(' ')}
+                                            fill="none" stroke="#ffffff10" strokeWidth="1"
+                                        />
+                                    ))}
+                                    <polygon points={points} fill="rgba(99,102,241,0.35)" stroke="#818cf8" strokeWidth="2" />
+                                    {radarData.map((d, i) => {
+                                        const angle = (Math.PI * 2 * i) / 5 - Math.PI / 2;
+                                        const r = radius + 22;
+                                        return (
+                                            <text key={i} x={center + r * Math.cos(angle)} y={center + r * Math.sin(angle)}
+                                                fill="rgba(255,255,255,0.7)" fontSize="10" textAnchor="middle" dominantBaseline="middle">
+                                                {d.label}
+                                            </text>
+                                        );
+                                    })}
+                                </svg>
                             </div>
                         </div>
 
-                        {/* Pitch Tendency Analysis */}
+                        {/* スコア詳細グリッド */}
+                        <div className="grid grid-cols-2 gap-2">
+                            {radarData.map(d => (
+                                <div key={d.label} className="bg-white/5 px-3 py-2 rounded-xl border border-white/5 flex items-center justify-between">
+                                    <span className="text-xs text-white/50">{d.label}</span>
+                                    <div className="flex items-center gap-1.5">
+                                        <div className="w-16 h-1.5 bg-white/10 rounded-full overflow-hidden">
+                                            <div
+                                                className={cn("h-full rounded-full transition-all",
+                                                    d.val >= 85 ? "bg-emerald-400" : d.val >= 65 ? "bg-blue-400" : d.val >= 45 ? "bg-yellow-400" : "bg-red-400"
+                                                )}
+                                                style={{ width: `${d.val}%` }}
+                                            />
+                                        </div>
+                                        <span className={cn("text-sm font-bold w-8 text-right",
+                                            d.val >= 85 ? "text-emerald-400" : d.val >= 65 ? "text-blue-300" : d.val >= 45 ? "text-yellow-300" : "text-red-300"
+                                        )}>{d.val}</span>
+                                    </div>
+                                </div>
+                            ))}
+                            <div className="bg-white/5 px-3 py-2 rounded-xl border border-white/5 flex items-center justify-between">
+                                <span className="text-xs text-white/50">ビブラート</span>
+                                <span className="text-sm font-bold text-pink-300">{result.vibratoCount}回</span>
+                            </div>
+                            <div className="bg-white/5 px-3 py-2 rounded-xl border border-white/5 flex items-center justify-between">
+                                <span className="text-xs text-white/50">正確度</span>
+                                <span className="text-sm font-bold text-emerald-300">{result.radar.pitch}%</span>
+                            </div>
+                        </div>
+
+                        {/* 苦手な音 */}
                         {result.weakNotes && result.weakNotes.length > 0 && (
-                            <div className="mt-4 bg-white/5 p-4 rounded-xl border border-white/5">
-                                <h3 className="text-sm font-bold text-white/50 uppercase tracking-widest mb-3 flex items-center gap-2">
-                                    <Target size={14} className="text-red-400" />
-                                    Weak Point Analysis
+                            <div className="bg-white/5 p-4 rounded-xl border border-white/5">
+                                <h3 className="text-xs font-bold text-white/50 uppercase tracking-widest mb-3 flex items-center gap-1.5">
+                                    <Target size={12} className="text-red-400" />
+                                    ピッチが外れやすかった音
                                 </h3>
                                 <div className="space-y-2">
                                     {result.weakNotes.map((stat, i) => {
                                         const alpha = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
                                         const kata = ['ド', 'ド#', 'レ', 'レ#', 'ミ', 'ファ', 'ファ#', 'ソ', 'ソ#', 'ラ', 'ラ#', 'シ'];
-                                        // Access audio engine state via global or prop? 
-                                        // ScoreResultModal doesn't have direct access to state unless passed or imported.
-                                        // App.tsx passes `state`? No, just result.
-                                        // We can direct import audioEngine state.
                                         const notation = audioEngine.state.noteNotation || 'alphabet';
                                         const name = notation === 'katakana' ? kata[stat.noteIndex] : alpha[stat.noteIndex];
+                                        const isSharp = stat.diff > 0;
+                                        const TrendIcon = isSharp ? TrendingUp : TrendingDown;
 
                                         return (
-                                            <div key={i} className="flex items-center justify-between text-sm">
-                                                <div className="flex items-center gap-2">
-                                                    <span className="font-bold w-12 h-6 flex items-center justify-center bg-white/10 rounded text-white/80 text-xs">{name}</span>
-                                                    <span className="text-white/60">が</span>
-                                                    <span className={cn(
-                                                        "font-bold",
-                                                        stat.diff > 0 ? "text-red-400" : "text-blue-400"
-                                                    )}>
-                                                        {stat.diff > 0 ? "高くなる" : "低くなる"}
-                                                    </span>
-                                                    <span className="text-white/60">傾向があります</span>
-                                                </div>
-                                                <div className="font-mono text-xs opacity-50">
-                                                    {stat.diff > 0 ? '+' : ''}{stat.diff.toFixed(1)} cent
+                                            <div key={i} className="flex items-center gap-3 text-sm">
+                                                <span className="font-bold w-10 h-7 flex items-center justify-center bg-white/10 rounded-lg text-white/85 text-xs shrink-0">{name}</span>
+                                                <div className="flex-1">
+                                                    <div className="flex items-center gap-1.5">
+                                                        <TrendIcon size={13} className={isSharp ? "text-red-400" : "text-blue-400"} />
+                                                        <span className={cn("font-bold text-xs", isSharp ? "text-red-300" : "text-blue-300")}>
+                                                            {isSharp ? '高め' : '低め'}
+                                                        </span>
+                                                        <span className="text-white/40 text-xs">（平均 {isSharp ? '+' : ''}{stat.diff.toFixed(0)} ¢）</span>
+                                                    </div>
+                                                    <div className="text-[10px] text-white/30 mt-0.5">
+                                                        {isSharp
+                                                            ? '息の圧力を少し緩めて吹きましょう'
+                                                            : '息のスピードを少し上げてみましょう'}
+                                                    </div>
                                                 </div>
                                             </div>
                                         );
@@ -235,33 +285,35 @@ export const ScoreResultModal: React.FC<Props> = ({ result, onClose }) => {
                             </div>
                         )}
 
-                        {/* Phrase Breakdown */}
+                        {/* フレーズ別評価 */}
                         {result.phraseScores && result.phraseScores.length > 0 && (
-                            <div className="mt-6 space-y-3">
-                                <h3 className="text-sm font-bold text-white/50 uppercase tracking-widest flex items-center gap-2">
-                                    <Activity size={14} className="text-blue-400" />
-                                    Phrase Analysis
+                            <div>
+                                <h3 className="text-xs font-bold text-white/40 uppercase tracking-widest mb-2 flex items-center gap-1.5">
+                                    <Activity size={12} className="text-blue-400" />
+                                    フレーズ別評価
                                 </h3>
-                                <div className="space-y-2 max-h-[200px] overflow-y-auto custom-scrollbar pr-2">
-                                    {result.phraseScores.map(p => (
-                                        <div key={p.phraseId} className="flex items-center justify-between p-3 bg-white/5 rounded-lg border border-white/5 hover:bg-white/10 transition-colors">
-                                            <div className="flex items-center gap-3">
-                                                <span className="text-xs font-mono text-white/50">
-                                                    {formatTime(p.startTime)}
-                                                    <span className="mx-1">~</span>
-                                                </span>
-                                                <span className={cn(
-                                                    "text-xs font-bold px-2 py-0.5 rounded-full border",
-                                                    p.evaluation === 'Perfect' ? "bg-yellow-500/20 text-yellow-300 border-yellow-500/30" :
-                                                        p.evaluation === 'Good' ? "bg-green-500/20 text-green-300 border-green-500/30" :
-                                                            "bg-white/10 text-white/40 border-white/10"
-                                                )}>
-                                                    {p.evaluation}
-                                                </span>
+                                <div className="space-y-1.5 max-h-[160px] overflow-y-auto custom-scrollbar pr-1">
+                                    {result.phraseScores.map((p, idx) => (
+                                        <div key={p.phraseId} className="flex items-center gap-2 p-2.5 bg-white/5 rounded-lg border border-white/5 hover:bg-white/8 transition-colors">
+                                            <span className="text-[10px] font-mono text-white/35 w-10 shrink-0">#{idx + 1}</span>
+                                            <span className="text-[10px] font-mono text-white/40 shrink-0">{formatTime(p.startTime)}〜</span>
+                                            <span className={cn(
+                                                "text-[10px] font-bold px-2 py-0.5 rounded-full border shrink-0",
+                                                p.evaluation === 'Perfect' ? "bg-yellow-500/20 text-yellow-300 border-yellow-500/30" :
+                                                    p.evaluation === 'Good' ? "bg-emerald-500/20 text-emerald-300 border-emerald-500/30" :
+                                                        "bg-white/8 text-white/35 border-white/10"
+                                            )}>
+                                                {p.evaluation}
+                                            </span>
+                                            <div className="flex-1 h-1.5 bg-white/10 rounded-full overflow-hidden">
+                                                <div
+                                                    className={cn("h-full rounded-full",
+                                                        p.score >= 90 ? "bg-yellow-400" : p.score >= 70 ? "bg-emerald-400" : "bg-white/30"
+                                                    )}
+                                                    style={{ width: `${p.score}%` }}
+                                                />
                                             </div>
-                                            <div className="font-bold text-white">
-                                                {p.score} <span className="text-xs font-normal text-white/30">pts</span>
-                                            </div>
+                                            <span className="text-xs font-bold text-white/60 w-8 text-right shrink-0">{p.score}</span>
                                         </div>
                                     ))}
                                 </div>
