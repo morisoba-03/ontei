@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { Play, Square, MousePointer2, Hand, Pencil, Eraser, Settings, Activity, Clock, Repeat, SkipBack, Music2, Music, Volume2, X, Plus, Minus, ListMusic, Flag, Timer } from 'lucide-react';
+import { Play, Square, MousePointer2, Hand, Pencil, Eraser, Settings, Activity, Repeat, SkipBack, Music2, Music, Volume2, X, Plus, Minus, ListMusic, Flag, Timer } from 'lucide-react';
 import { audioEngine } from '../lib/AudioEngine';
 import { MidiTrackSelector } from './MidiTrackSelector';
 import type { MidiTrackInfo } from './MidiTrackSelector';
@@ -11,12 +11,11 @@ import { toast } from './Toast';
 interface ControlsProps {
     onOpenSettings: () => void;
     onOpenPractice: () => void; // Not used here yet but in props
-    onOpenHistory?: () => void;
     onRecordingComplete?: (blob: Blob) => void;
     onOpenScalePractice?: () => void;
 }
 
-export function Controls({ onOpenSettings, onOpenPractice, onOpenHistory, onRecordingComplete, onOpenScalePractice }: ControlsProps) {
+export function Controls({ onOpenSettings, onOpenPractice, onRecordingComplete, onOpenScalePractice }: ControlsProps) {
     const [isPlaying, setIsPlaying] = useState(audioEngine.state.isPlaying);
     const [isRecording, setIsRecording] = useState(audioEngine.isRecording);
     const [editTool, setEditTool] = useState(audioEngine.state.editTool);
@@ -409,15 +408,6 @@ export function Controls({ onOpenSettings, onOpenPractice, onOpenHistory, onReco
                         </button>
                     )}
 
-                    {onOpenHistory && (
-                        <button
-                            onClick={onOpenHistory}
-                            className="p-1.5 md:p-2.5 rounded-lg border border-white/10 bg-white/5 text-white/70 hover:text-white hover:bg-white/10 transition-all shrink-0"
-                            title="履歴と分析"
-                        >
-                            <Clock className="w-4 h-4 md:w-5 md:h-5" />
-                        </button>
-                    )}
                 </div>
             </div>
             </div>{/* end scroll inner */}
