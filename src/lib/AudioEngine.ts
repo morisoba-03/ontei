@@ -79,7 +79,14 @@ export class AudioEngine {
     private lastFrameTime: number = 0;
 
     // Config
-    analysisRate: number = 30; // 30 Hz → 33 ms intervals, finer pitch history resolution
+    analysisRate: number = 30; // default; overridden per-device in initMic
+
+    private static isMobileDevice(): boolean {
+        return (
+            ('ontouchstart' in window || navigator.maxTouchPoints > 0) &&
+            window.matchMedia('(pointer: coarse)').matches
+        );
+    }
 
     // Reactivity
     listeners: (() => void)[] = [];
@@ -313,8 +320,14 @@ export class AudioEngine {
             // Connect: Source -> Analyser (no output to destination to avoid feedback)
             this.micSource.connect(this.micAnalyser);
 
-            // Init Processor
-            this.analysisProcessor.init(this.audioCtx.sampleRate);
+            // Adapt analysis rate to device: 60 Hz on mobile, 30 Hz on PC.
+            // Mobile needs more detections/sec to compensate for intermittent signal;
+            // MCM pitch detection on 2048 samples completes in <5 ms so the worker
+            // can comfortably handle 60 Hz even on mid-range phones.
+            this.analysisRate = AudioEngine.isMobileDevice() ? 60 : 30;
+
+            // Init Processor (rate forwarded so hold-frame count stays ~200 ms)
+            this.analysisProcessor.init(this.audioCtx.sampleRate, this.analysisRate);
             this.analysisProcessor.onResult = (res) => this.handleAnalysisResult(res);
 
             this.startAnalysis();

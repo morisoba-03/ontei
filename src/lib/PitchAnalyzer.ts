@@ -5,9 +5,8 @@ export interface PitchResult {
     conf: number;
 }
 
-// Confidence value emitted for held (bridged) frames.
-// Must be above the Visualizer display threshold (0.5) but clearly
-// distinguishable from a genuine detection (typically 0.85+).
+// Max frames to bridge a dropout — kept at ~200 ms regardless of analysis rate.
+// setAnalysisRate() recalculates this when the rate is known.
 const HOLD_CONF = 0.55;
 
 export class PitchAnalyzer {
@@ -16,10 +15,12 @@ export class PitchAnalyzer {
     private lastStableFreq: number = 0;
     private holdFramesLeft: number = 0;
     private consecutiveSilence = 0;
+    private maxHoldFrames = 6; // default: ~200ms at 30 Hz
 
-    // Max frames to bridge a dropout before giving up (~200ms at 30 Hz).
-    // Short enough that genuine pauses between notes won't produce ghost dots.
-    private readonly MAX_HOLD_FRAMES = 6;
+    // Called by the worker when the analysis rate is known
+    setAnalysisRate(hz: number) {
+        this.maxHoldFrames = Math.max(3, Math.round(hz * 0.2)); // 200ms at any rate
+    }
 
     reset() {
         this.lastStableFreq = 0;
@@ -95,7 +96,7 @@ export class PitchAnalyzer {
         }
 
         // Good detection — reset hold counter
-        this.holdFramesLeft = this.MAX_HOLD_FRAMES;
+        this.holdFramesLeft = this.maxHoldFrames;
         this.lastStableFreq = finalFreq;
         return { freq: finalFreq, conf: finalConf };
     }
