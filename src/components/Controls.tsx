@@ -123,7 +123,8 @@ export function Controls({ onOpenSettings, onOpenPractice, onOpenHistory, onReco
             className="fixed bottom-0 left-0 right-0 bg-neutral-900 border-t border-white/10 z-50 shadow-2xl"
             style={{ paddingBottom: 'max(0.5rem, env(safe-area-inset-bottom))' }}
         >
-            <div className="w-full flex items-center justify-start md:justify-center gap-1.5 md:gap-4 px-2 md:px-4 py-2 md:py-4 overflow-x-auto no-scrollbar touch-pan-x">
+            <div className="w-full overflow-x-auto no-scrollbar touch-pan-x">
+              <div className="flex items-center justify-start gap-1.5 md:gap-4 px-2 md:px-4 py-2 md:py-4 min-w-max md:mx-auto">
 
                 {/* Left: Playback & Recording */}
                 <div className="flex items-center gap-2 shrink-0">
@@ -419,6 +420,7 @@ export function Controls({ onOpenSettings, onOpenPractice, onOpenHistory, onReco
                     )}
                 </div>
             </div>
+            </div>{/* end scroll inner */}
 
             {/* Marker buttons row */}
             {markers.length > 0 && (

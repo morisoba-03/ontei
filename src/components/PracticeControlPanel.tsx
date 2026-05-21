@@ -12,7 +12,7 @@ interface Props {
 
 const SCALE_TYPES: ScaleType[] = ['Major', 'NaturalMinor', 'HarmonicMinor', 'MelodicMinor', 'MajorPentatonic', 'MinorPentatonic', 'Chromatic', 'Dorian', 'Mixolydian', 'Blues'];
 const ARP_TYPES: ArpeggioType[] = ['Major', 'Minor', 'Major7', 'Minor7', 'Dominant7'];
-const EXERCISE_TYPES: import('../lib/types').ExerciseType[] = ['LongTone', 'FiveNote', 'Triad', 'Thirds', 'Octave'];
+const EXERCISE_TYPES: import('../lib/types').ExerciseType[] = ['LongTone', 'FiveNote', 'Triad', 'Thirds', 'Octave', 'Glissando'];
 
 export const PracticeControlPanel: React.FC<Props> = ({ audioEngine, isPracticing, onClose }) => {
     const [mode, setMode] = useState<'Mix' | 'Scale' | 'Arpeggio' | 'Exercise'>('Exercise');
@@ -21,6 +21,16 @@ export const PracticeControlPanel: React.FC<Props> = ({ audioEngine, isPracticin
     const [selectedExercises, setSelectedExercises] = useState<import('../lib/types').ExerciseType[]>(['LongTone', 'FiveNote', 'Triad']);
     const [maxPitch, setMaxPitch] = useState<number>(103); // Default G7
     const [showConfig, setShowConfig] = useState(true); // Always show config on start
+    // Feature ② 半音移調モード
+    const [chromaticMode, setChromaticMode] = useState(false);
+    // Feature ④ ブレス休符
+    const [breathEnabled, setBreathEnabled] = useState(false);
+    // Feature ⑤ アーティキュレーション
+    const [articulationType, setArticulationType] = useState<'normal' | 'legato' | 'staccato'>('normal');
+    // Feature ⑥ テンポ段階的上昇
+    const [tempoProgression, setTempoProgression] = useState(false);
+    const [tempoProgressionStep, setTempoProgressionStep] = useState(5);
+    const [tempoProgressionEvery, setTempoProgressionEvery] = useState(2);
 
     const handleStart = () => {
         const config: PracticeConfig = {
@@ -28,7 +38,13 @@ export const PracticeControlPanel: React.FC<Props> = ({ audioEngine, isPracticin
             allowedScales: selectedScales,
             allowedArpeggios: selectedArps,
             allowedExercises: selectedExercises,
-            maxPitch // Pass selected max pitch
+            maxPitch,
+            chromaticMode,
+            breathEnabled,
+            articulationType,
+            tempoProgression,
+            tempoProgressionStep,
+            tempoProgressionEvery,
         };
         audioEngine.startPractice(config);
         setShowConfig(false);
@@ -204,7 +220,8 @@ export const PracticeControlPanel: React.FC<Props> = ({ audioEngine, isPracticin
                                                     : t === 'FiveNote' ? '5音スケール'
                                                         : t === 'Triad' ? 'トライアド (3和音)'
                                                             : t === 'Thirds' ? '3度進行'
-                                                                : 'オクターブ跳躍'}
+                                                                : t === 'Octave' ? 'オクターブ跳躍'
+                                                                    : 'グリッサンド'}
                                             </span>
                                             {selectedExercises.includes(t) && <Check size={10} />}
                                         </button>
@@ -234,6 +251,130 @@ export const PracticeControlPanel: React.FC<Props> = ({ audioEngine, isPracticin
                                     </button>
                                 ))}
                             </div>
+                        </div>
+
+                        {/* Feature ②: 半音移調モード */}
+                        <div className="space-y-1">
+                            <button
+                                onClick={() => setChromaticMode(!chromaticMode)}
+                                className={cn(
+                                    "w-full flex items-center justify-between px-3 py-2 rounded-lg border text-xs transition-all",
+                                    chromaticMode
+                                        ? "bg-yellow-500/20 border-yellow-500/30 text-yellow-300"
+                                        : "bg-white/5 border-white/5 text-white/50 hover:bg-white/10"
+                                )}
+                            >
+                                <span className="font-medium">半音移調モード</span>
+                                <span className={cn("w-4 h-4 rounded border flex items-center justify-center shrink-0",
+                                    chromaticMode ? "bg-yellow-500 border-yellow-400" : "border-white/20"
+                                )}>
+                                    {chromaticMode && <Check size={10} className="text-black" />}
+                                </span>
+                            </button>
+                            {chromaticMode && (
+                                <p className="text-[10px] text-yellow-300/60 px-1">各フレーズごとに半音ずつ移調します</p>
+                            )}
+                        </div>
+
+                        {/* Feature ④: ブレス休符 */}
+                        <div className="space-y-1">
+                            <button
+                                onClick={() => setBreathEnabled(!breathEnabled)}
+                                className={cn(
+                                    "w-full flex items-center justify-between px-3 py-2 rounded-lg border text-xs transition-all",
+                                    breathEnabled
+                                        ? "bg-cyan-500/20 border-cyan-500/30 text-cyan-300"
+                                        : "bg-white/5 border-white/5 text-white/50 hover:bg-white/10"
+                                )}
+                            >
+                                <span className="font-medium">ブレス休符を入れる</span>
+                                <span className={cn("w-4 h-4 rounded border flex items-center justify-center shrink-0",
+                                    breathEnabled ? "bg-cyan-500 border-cyan-400" : "border-white/20"
+                                )}>
+                                    {breathEnabled && <Check size={10} className="text-black" />}
+                                </span>
+                            </button>
+                        </div>
+
+                        {/* Feature ⑤: アーティキュレーション */}
+                        <div className="space-y-2">
+                            <label className="text-xs font-bold text-white/40 uppercase tracking-wider">アーティキュレーション</label>
+                            <div className="flex bg-black/40 p-1 rounded-lg">
+                                {([
+                                    { label: 'ノーマル', val: 'normal' as const },
+                                    { label: 'レガート', val: 'legato' as const },
+                                    { label: 'スタッカート', val: 'staccato' as const },
+                                ]).map(opt => (
+                                    <button
+                                        key={opt.val}
+                                        onClick={() => setArticulationType(opt.val)}
+                                        className={cn(
+                                            "flex-1 py-1.5 text-[10px] font-medium rounded-md transition-all",
+                                            articulationType === opt.val ? "bg-white/20 text-white shadow-sm" : "text-white/40 hover:text-white/60"
+                                        )}
+                                    >
+                                        {opt.label}
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+
+                        {/* Feature ⑥: テンポ段階的上昇 */}
+                        <div className="space-y-2">
+                            <button
+                                onClick={() => setTempoProgression(!tempoProgression)}
+                                className={cn(
+                                    "w-full flex items-center justify-between px-3 py-2 rounded-lg border text-xs transition-all",
+                                    tempoProgression
+                                        ? "bg-orange-500/20 border-orange-500/30 text-orange-300"
+                                        : "bg-white/5 border-white/5 text-white/50 hover:bg-white/10"
+                                )}
+                            >
+                                <span className="font-medium">テンポ段階的上昇</span>
+                                <span className={cn("w-4 h-4 rounded border flex items-center justify-center shrink-0",
+                                    tempoProgression ? "bg-orange-500 border-orange-400" : "border-white/20"
+                                )}>
+                                    {tempoProgression && <Check size={10} className="text-black" />}
+                                </span>
+                            </button>
+                            {tempoProgression && (
+                                <div className="space-y-2 pl-1">
+                                    <div className="flex items-center gap-2">
+                                        <span className="text-[10px] text-white/40 w-16 shrink-0">ステップ</span>
+                                        <div className="flex bg-black/40 p-0.5 rounded-lg flex-1">
+                                            {[3, 5, 10].map(s => (
+                                                <button
+                                                    key={s}
+                                                    onClick={() => setTempoProgressionStep(s)}
+                                                    className={cn(
+                                                        "flex-1 py-1 text-[10px] font-medium rounded-md transition-all",
+                                                        tempoProgressionStep === s ? "bg-white/20 text-white" : "text-white/40 hover:text-white/60"
+                                                    )}
+                                                >
+                                                    {s} BPM
+                                                </button>
+                                            ))}
+                                        </div>
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                        <span className="text-[10px] text-white/40 w-16 shrink-0">間隔</span>
+                                        <div className="flex bg-black/40 p-0.5 rounded-lg flex-1">
+                                            {[1, 2, 4].map(n => (
+                                                <button
+                                                    key={n}
+                                                    onClick={() => setTempoProgressionEvery(n)}
+                                                    className={cn(
+                                                        "flex-1 py-1 text-[10px] font-medium rounded-md transition-all",
+                                                        tempoProgressionEvery === n ? "bg-white/20 text-white" : "text-white/40 hover:text-white/60"
+                                                    )}
+                                                >
+                                                    {n}ブロック
+                                                </button>
+                                            ))}
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
                         </div>
                     </div>
                 )}
