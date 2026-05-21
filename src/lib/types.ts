@@ -115,7 +115,7 @@ export interface AudioEngineState {
 
 export type ScaleType = 'Major' | 'NaturalMinor' | 'HarmonicMinor' | 'MelodicMinor' | 'MajorPentatonic' | 'MinorPentatonic' | 'Chromatic' | 'Dorian' | 'Mixolydian' | 'Blues';
 export type ArpeggioType = 'Major' | 'Minor' | 'Major7' | 'Minor7' | 'Dominant7';
-export type ExerciseType = 'LongTone' | 'Thirds' | 'Triad' | 'FiveNote' | 'Octave';
+export type ExerciseType = 'LongTone' | 'Thirds' | 'Triad' | 'FiveNote' | 'Octave' | 'Glissando';
 
 export interface PracticeConfig {
     mode: 'Mix' | 'Scale' | 'Arpeggio' | 'Exercise' | 'Midi';
@@ -124,6 +124,12 @@ export interface PracticeConfig {
     allowedExercises?: ExerciseType[];
     rootNote?: number | 'Random';
     maxPitch?: number; // MIDI note number maximum
+    chromaticMode?: boolean;
+    breathEnabled?: boolean;
+    articulationType?: 'normal' | 'legato' | 'staccato';
+    tempoProgression?: boolean;
+    tempoProgressionStep?: number;   // default 5 BPM
+    tempoProgressionEvery?: number;  // increment every N blocks, default 2
 }
 
 export interface Phrase {
