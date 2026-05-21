@@ -19,7 +19,7 @@ import { WelcomeModal } from './components/WelcomeModal';
 import { MicPermissionModal } from './components/MicPermissionModal';
 import { ResumeModal } from './components/ResumeModal';
 import { storage } from './lib/storage';
-import { Trophy, Trash2, BarChart3, BookOpen, Save, Mic, ArrowLeftRight, ListMusic } from 'lucide-react';
+import { Trophy, Trash2, BarChart3, BookOpen, Save, Mic, ArrowLeftRight, ListMusic, ChevronDown, Check } from 'lucide-react';
 import { cn } from './lib/utils';
 import { MidiTrackSelector } from './components/MidiTrackSelector';
 
@@ -42,6 +42,8 @@ function App() {
   const [showMicPermission, setShowMicPermission] = useState(false);
   const [showResume, setShowResume] = useState(false);
   const [showTrackSelector, setShowTrackSelector] = useState(false);
+  const [showMicSelector, setShowMicSelector] = useState(false);
+  const [micDevices, setMicDevices] = useState<MediaDeviceInfo[]>([]);
   const [recordingBlob, setRecordingBlob] = useState<Blob | null>(null);
   const [state, setState] = useState(audioEngine.state);
   const [isMicOn, setIsMicOn] = useState(!!audioEngine.micStream);
@@ -99,6 +101,18 @@ function App() {
       } else {
         await audioEngine.initMic();
       }
+    }
+  }, []);
+
+  const openMicSelector = useCallback(async () => {
+    try {
+      const all = await navigator.mediaDevices.enumerateDevices();
+      const inputs = all.filter(d => d.kind === 'audioinput');
+      setMicDevices(inputs);
+      setShowMicSelector(true);
+    } catch {
+      setMicDevices([]);
+      setShowMicSelector(true);
     }
   }, []);
 
@@ -205,20 +219,74 @@ function App() {
 
         {/* Right: always-visible controls */}
         <div className="flex items-center gap-1.5 shrink-0 px-2 border-l border-white/10">
-          {/* Mic Button */}
-          <button
-            onClick={toggleMic}
-            className={cn(
-              "h-11 w-11 rounded-lg text-[9px] transition-all border flex flex-col items-center justify-center gap-0.5 leading-none",
-              isMicOn
-                ? "bg-red-500 text-white border-red-500 shadow-lg shadow-red-500/30 animate-pulse"
-                : "bg-white/5 border-white/10 text-white/70 hover:bg-white/10 hover:text-white"
+          {/* Mic Button + Device Selector */}
+          <div className="relative">
+            <div className="flex items-center">
+              <button
+                onClick={toggleMic}
+                className={cn(
+                  "h-11 rounded-l-lg text-[9px] transition-all border-y border-l flex flex-col items-center justify-center gap-0.5 leading-none px-2",
+                  isMicOn
+                    ? "bg-red-500 text-white border-red-500 shadow-lg shadow-red-500/30 animate-pulse"
+                    : "bg-white/5 border-white/10 text-white/70 hover:bg-white/10 hover:text-white"
+                )}
+                title={isMicOn ? `マイクOFF (M)${audioEngine.micStream?.getAudioTracks()[0]?.label ? ` — ${audioEngine.micStream.getAudioTracks()[0].label}` : ''}` : "マイクON (M)"}
+              >
+                <Mic className="w-5 h-5" />
+                <span>{isMicOn ? 'ON' : 'MIC'}</span>
+              </button>
+              <button
+                onClick={openMicSelector}
+                className={cn(
+                  "h-11 w-5 rounded-r-lg border transition-all flex items-center justify-center",
+                  isMicOn
+                    ? "bg-red-600 text-white border-red-500"
+                    : "bg-white/5 border-white/10 text-white/40 hover:text-white hover:bg-white/10"
+                )}
+                title="マイクデバイスを選択"
+              >
+                <ChevronDown className="w-3 h-3" />
+              </button>
+            </div>
+
+            {/* Mic device dropdown */}
+            {showMicSelector && (
+              <div className="absolute right-0 top-full mt-1 z-[200] bg-zinc-900 border border-white/15 rounded-xl shadow-2xl min-w-[220px] max-w-[300px] overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+                <div className="px-3 py-2 border-b border-white/10 text-[10px] text-white/40 font-medium">マイクデバイス</div>
+                {micDevices.length === 0 ? (
+                  <div className="px-3 py-3 text-xs text-white/40">デバイスが見つかりません</div>
+                ) : (
+                  micDevices.map(d => {
+                    const label = d.label || `マイク (${d.deviceId.slice(0, 6)}…)`;
+                    const isActive = isMicOn && audioEngine.micStream?.getAudioTracks()[0]?.label === d.label;
+                    return (
+                      <button
+                        key={d.deviceId}
+                        onClick={async () => {
+                          setShowMicSelector(false);
+                          await audioEngine.initMic(d.deviceId);
+                        }}
+                        className={cn(
+                          "w-full text-left px-3 py-2.5 text-xs flex items-center gap-2 transition-colors",
+                          isActive
+                            ? "bg-red-500/20 text-red-300"
+                            : "text-white/70 hover:bg-white/10 hover:text-white"
+                        )}
+                      >
+                        <Check className={cn("w-3.5 h-3.5 shrink-0", isActive ? "opacity-100 text-red-400" : "opacity-0")} />
+                        <span className="truncate">{label}</span>
+                      </button>
+                    );
+                  })
+                )}
+              </div>
             )}
-            title={isMicOn ? `マイクOFF (M)${audioEngine.micStream?.getAudioTracks()[0]?.label ? ` — ${audioEngine.micStream.getAudioTracks()[0].label}` : ''}` : "マイクON (M)"}
-          >
-            <Mic className="w-5 h-5" />
-            <span>{isMicOn ? 'ON' : 'MIC'}</span>
-          </button>
+
+            {/* Click-outside overlay */}
+            {showMicSelector && (
+              <div className="fixed inset-0 z-[199]" onClick={() => setShowMicSelector(false)} />
+            )}
+          </div>
 
           {/* BPM - hidden on mobile */}
           <div className="hidden md:flex items-center gap-2 bg-black/20 rounded-full px-3 py-1 border border-white/10">
