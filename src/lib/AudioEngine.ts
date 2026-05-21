@@ -621,6 +621,7 @@ export class AudioEngine {
         if (this.audioCtx.state === 'suspended') this.audioCtx.resume();
 
         this.state.isPlaying = true;
+        this._stopProcessed = false; // 停止フラグをリセット（次回の停止で1回だけ難所検出される）
         this.state.scoreResult = null; // Clear previous score
         this.scoreAnalyzer.reset();
 
@@ -640,7 +641,13 @@ export class AudioEngine {
         this.notify();
     }
 
+    private _stopProcessed = false;
+
     stopPlayback() {
+        // 既に停止処理済みなら何もしない（同フレーム内で複数回呼ばれる対策）
+        if (!this.state.isPlaying && this._stopProcessed) return;
+        this._stopProcessed = true;
+
         this.state.isPlaying = false;
         if (this.reqFrameId) cancelAnimationFrame(this.reqFrameId);
         this.reqFrameId = null;
@@ -660,7 +667,7 @@ export class AudioEngine {
             const result = this.scoreAnalyzer.summarize(this.state.phrases);
             this.updateState({ scoreResult: result });
 
-            // Suggest difficult section loop after a brief delay
+            // Suggest difficult section loop after a brief delay (1回のみ)
             if (result && result.totalScore > 0 && result.totalScore < 95) {
                 setTimeout(() => this.suggestDifficultSection(), 800);
             }
