@@ -21,8 +21,8 @@ export class AnalysisProcessor {
         };
     }
 
-    init(sampleRate: number) {
-        this.worker.postMessage({ type: 'init', payload: { sampleRate } });
+    init(sampleRate: number, analysisRate?: number) {
+        this.worker.postMessage({ type: 'init', payload: { sampleRate, analysisRate } });
     }
 
     processAsync(inputBuffer: Float32Array, guideFreq: number = 0, minRms?: number) {

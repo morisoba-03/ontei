@@ -9,6 +9,7 @@ self.onmessage = (e: MessageEvent) => {
 
     if (type === 'init') {
         sampleRate = payload.sampleRate;
+        if (payload.analysisRate) analyzer.setAnalysisRate(payload.analysisRate);
     } else if (type === 'process') {
         const { buffer, guideFreq, minRms } = payload;
         // buffer is a Float32Array

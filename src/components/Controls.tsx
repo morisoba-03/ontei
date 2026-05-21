@@ -162,6 +162,15 @@ export function Controls({ onOpenSettings, onOpenPractice, onOpenHistory, onReco
                     <Volume2 className="w-4 h-4 md:w-5 md:h-5" />
                 </button>
 
+                {/* Settings — placed between backing and scale for quick access */}
+                <button
+                    onClick={onOpenSettings}
+                    className="p-1.5 md:p-2 rounded-lg border border-white/10 bg-white/5 text-white/70 hover:text-white hover:bg-white/10 transition-all shrink-0"
+                    title="設定"
+                >
+                    <Settings className="w-4 h-4 md:w-5 md:h-5" />
+                </button>
+
                 {/* Tempo Control (Simple +/-) */}
                 {/* Display Scale Control (visual zoom only) */}
                 <div className="flex items-center bg-white/5 border border-white/10 rounded-lg p-0.5 shrink-0">
@@ -341,14 +350,6 @@ export function Controls({ onOpenSettings, onOpenPractice, onOpenHistory, onReco
                             <Clock className="w-4 h-4 md:w-5 md:h-5" />
                         </button>
                     )}
-
-                    <button
-                        onClick={onOpenSettings}
-                        className="p-1.5 md:p-2.5 rounded-lg border border-white/10 bg-white/5 text-white/70 hover:text-white hover:bg-white/10 transition-all shrink-0"
-                        title="設定"
-                    >
-                        <Settings className="w-4 h-4 md:w-5 md:h-5" />
-                    </button>
                 </div>
             </div>
 

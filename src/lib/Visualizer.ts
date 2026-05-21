@@ -520,7 +520,9 @@ export class Visualizer {
                 if (t > drawUntil) continue;
                 // if (isCallAt(t)) continue; // Allow drawing over guide notes
 
-                if (p.conf < 0.8) continue; // Filter low confidence
+                // Threshold 0.5: passes held (bridged) frames from mobile (HOLD_CONF=0.55)
+                // while still filtering stray noise. PC clarity is normally 0.85+ so unaffected.
+                if (p.conf < 0.5) continue;
                 const midi = (69 + 12 * Math.log2(Math.max(1e-9, p.freq) / A4Frequency));
                 if (midi < vmin || midi > vmax) continue;
                 pts.push({ t, midi, conf: p.conf, freq: p.freq });
