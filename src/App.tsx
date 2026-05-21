@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { CanvasView } from './components/CanvasView';
 import { Controls } from './components/Controls';
 import { SettingsPanel } from './components/SettingsPanel';
@@ -44,6 +44,8 @@ function App() {
   const [showTrackSelector, setShowTrackSelector] = useState(false);
   const [showMicSelector, setShowMicSelector] = useState(false);
   const [micDevices, setMicDevices] = useState<MediaDeviceInfo[]>([]);
+  const [micDropdownPos, setMicDropdownPos] = useState<{ top: number; right: number } | null>(null);
+  const micChevronRef = useRef<HTMLButtonElement>(null);
   const [recordingBlob, setRecordingBlob] = useState<Blob | null>(null);
   const [state, setState] = useState(audioEngine.state);
   const [isMicOn, setIsMicOn] = useState(!!audioEngine.micStream);
@@ -105,6 +107,11 @@ function App() {
   }, []);
 
   const openMicSelector = useCallback(async () => {
+    const btn = micChevronRef.current;
+    if (btn) {
+      const rect = btn.getBoundingClientRect();
+      setMicDropdownPos({ top: rect.bottom + 4, right: window.innerWidth - rect.right });
+    }
     try {
       const all = await navigator.mediaDevices.enumerateDevices();
       const inputs = all.filter(d => d.kind === 'audioinput');
@@ -236,6 +243,7 @@ function App() {
                 <span>{isMicOn ? 'ON' : 'MIC'}</span>
               </button>
               <button
+                ref={micChevronRef}
                 onClick={openMicSelector}
                 className={cn(
                   "h-11 w-5 rounded-r-lg border transition-all flex items-center justify-center",
@@ -249,43 +257,7 @@ function App() {
               </button>
             </div>
 
-            {/* Mic device dropdown */}
-            {showMicSelector && (
-              <div className="absolute right-0 top-full mt-1 z-[200] bg-zinc-900 border border-white/15 rounded-xl shadow-2xl min-w-[220px] max-w-[300px] overflow-hidden animate-in fade-in zoom-in-95 duration-150">
-                <div className="px-3 py-2 border-b border-white/10 text-[10px] text-white/40 font-medium">マイクデバイス</div>
-                {micDevices.length === 0 ? (
-                  <div className="px-3 py-3 text-xs text-white/40">デバイスが見つかりません</div>
-                ) : (
-                  micDevices.map(d => {
-                    const label = d.label || `マイク (${d.deviceId.slice(0, 6)}…)`;
-                    const isActive = isMicOn && audioEngine.micStream?.getAudioTracks()[0]?.label === d.label;
-                    return (
-                      <button
-                        key={d.deviceId}
-                        onClick={async () => {
-                          setShowMicSelector(false);
-                          await audioEngine.initMic(d.deviceId);
-                        }}
-                        className={cn(
-                          "w-full text-left px-3 py-2.5 text-xs flex items-center gap-2 transition-colors",
-                          isActive
-                            ? "bg-red-500/20 text-red-300"
-                            : "text-white/70 hover:bg-white/10 hover:text-white"
-                        )}
-                      >
-                        <Check className={cn("w-3.5 h-3.5 shrink-0", isActive ? "opacity-100 text-red-400" : "opacity-0")} />
-                        <span className="truncate">{label}</span>
-                      </button>
-                    );
-                  })
-                )}
-              </div>
-            )}
-
-            {/* Click-outside overlay */}
-            {showMicSelector && (
-              <div className="fixed inset-0 z-[199]" onClick={() => setShowMicSelector(false)} />
-            )}
+            {/* Mic device dropdown is rendered at app root level to escape overflow-hidden */}
           </div>
 
           {/* BPM - hidden on mobile */}
@@ -423,6 +395,48 @@ function App() {
       )}
       {/* Toast Notifications */}
       <ToastContainer />
+
+      {/* Mic device dropdown — fixed position to escape overflow-hidden top bar */}
+      {showMicSelector && micDropdownPos && (
+        <>
+          <div
+            className="fixed inset-0 z-[9998]"
+            onClick={() => setShowMicSelector(false)}
+          />
+          <div
+            style={{ position: 'fixed', top: micDropdownPos.top, right: micDropdownPos.right, zIndex: 9999 }}
+            className="bg-zinc-900 border border-white/15 rounded-xl shadow-2xl min-w-[220px] max-w-[300px] overflow-hidden animate-in fade-in zoom-in-95 duration-150"
+          >
+            <div className="px-3 py-2 border-b border-white/10 text-[10px] text-white/40 font-medium">マイクデバイス</div>
+            {micDevices.length === 0 ? (
+              <div className="px-3 py-3 text-xs text-white/40">デバイスが見つかりません</div>
+            ) : (
+              micDevices.map(d => {
+                const label = d.label || `マイク (${d.deviceId.slice(0, 6)}…)`;
+                const isActive = isMicOn && audioEngine.micStream?.getAudioTracks()[0]?.label === d.label;
+                return (
+                  <button
+                    key={d.deviceId}
+                    onClick={async () => {
+                      setShowMicSelector(false);
+                      await audioEngine.initMic(d.deviceId);
+                    }}
+                    className={cn(
+                      "w-full text-left px-3 py-2.5 text-xs flex items-center gap-2 transition-colors",
+                      isActive
+                        ? "bg-red-500/20 text-red-300"
+                        : "text-white/70 hover:bg-white/10 hover:text-white"
+                    )}
+                  >
+                    <Check className={cn("w-3.5 h-3.5 shrink-0", isActive ? "opacity-100 text-red-400" : "opacity-0")} />
+                    <span className="truncate">{label}</span>
+                  </button>
+                );
+              })
+            )}
+          </div>
+        </>
+      )}
     </div>
   )
 }

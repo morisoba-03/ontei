@@ -192,6 +192,7 @@ export class Visualizer {
         this.drawBpmMarkers(state);
         this.drawLoopRegion(state);
         this.drawPhraseBoundaries(state);
+        this.drawMarkers(state);
 
         // Check for new phrase result
         if (state.lastPhraseResult && state.lastPhraseResult.phraseId !== this.lastPhraseId) {
@@ -971,6 +972,47 @@ export class Visualizer {
             this.ctx.fillText(`BPM ${Math.round(tm.bpm)}`, x + 4, 25);
         }
 
+        this.ctx.restore();
+    }
+
+    drawMarkers(state: AudioEngineState) {
+        if (!state.markers || state.markers.length === 0) return;
+        if (!this.ctx) return;
+
+        const { width, height } = this.canvas;
+        const { timelineOffsetSec, playbackPosition, pxPerSec } = state;
+        const playX = getPlayX(width);
+        const eff = playbackPosition + timelineOffsetSec;
+
+        this.ctx.save();
+        for (const marker of state.markers) {
+            const x = playX + (marker.time - eff) * pxPerSec;
+            if (x < -20 || x > width + 20) continue;
+
+            // Vertical line
+            this.ctx.strokeStyle = 'rgba(251, 191, 36, 0.75)';
+            this.ctx.lineWidth = 1.5;
+            this.ctx.setLineDash([4, 3]);
+            this.ctx.beginPath();
+            this.ctx.moveTo(x, 0);
+            this.ctx.lineTo(x, height);
+            this.ctx.stroke();
+            this.ctx.setLineDash([]);
+
+            // Label badge at top
+            this.ctx.font = 'bold 10px sans-serif';
+            const textW = this.ctx.measureText(marker.id).width;
+            const badgeW = textW + 8;
+            const badgeH = 16;
+            this.ctx.fillStyle = 'rgba(251, 191, 36, 0.85)';
+            this.ctx.beginPath();
+            this.ctx.roundRect(x - badgeW / 2, 2, badgeW, badgeH, 3);
+            this.ctx.fill();
+            this.ctx.fillStyle = '#1a1a1a';
+            this.ctx.textAlign = 'center';
+            this.ctx.textBaseline = 'middle';
+            this.ctx.fillText(marker.id, x, 2 + badgeH / 2);
+        }
         this.ctx.restore();
     }
 
