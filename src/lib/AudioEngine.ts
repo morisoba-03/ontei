@@ -195,6 +195,8 @@ export class AudioEngine {
             isGuideSoundEnabled: true,
             isBackingSoundEnabled: true,
             tempoMap: [],
+            timeSignatureMap: [],
+            currentBpm: 120,
             // Loop Practice
             loopEnabled: false,
             loopStart: 0,
@@ -626,7 +628,8 @@ export class AudioEngine {
         this.scoreAnalyzer.reset();
 
         if (this.state.countIn) {
-            const beatDur = 60 / (this.state.bpm || 120);
+            // カウントイン4拍は再生開始位置のBPM（テンポマップ先頭）で計算
+            const beatDur = 60 / this.getBpmAt(Math.max(0, this.state.playbackPosition));
             this.state.playbackPosition -= beatDur * 4;
         }
 
@@ -838,8 +841,8 @@ export class AudioEngine {
         if (this.audioCtx) {
             this.playbackStartTime = this.audioCtx.currentTime - newTime;
             this.lastFrameTime = this.audioCtx.currentTime;
-            // Sync metronome to next beat in track time
-            const beatDur = 60 / (this.state.bpm || 120);
+            // Sync metronome to next beat in track time（シーク先の位置のBPMで計算）
+            const beatDur = 60 / this.getBpmAt(Math.max(0, newTime));
             this.nextMetronomeTime = Math.ceil(newTime / beatDur) * beatDur;
         }
 
@@ -1027,6 +1030,14 @@ export class AudioEngine {
             if (dt < 0.5) { // Skip large gaps
                 this.state.playbackPosition += dt * this.state.tempoFactor;
             }
+
+            // 再生位置に応じて表示用currentBpmを更新（state.bpmはユーザー設定なので触らない）
+            if (this.state.tempoMap && this.state.tempoMap.length > 1) {
+                const bpmHere = Math.round(this.getBpmAt(Math.max(0, this.state.playbackPosition)));
+                if (bpmHere !== this.state.currentBpm) {
+                    this.state.currentBpm = bpmHere;
+                }
+            }
         }
 
         // Loop Practice: Auto-rewind if past loop end
@@ -1090,22 +1101,55 @@ export class AudioEngine {
         this.reqFrameId = requestAnimationFrame(() => this.loop());
     }
 
+    // テンポマップから指定時刻のBPMを取得（テンポチェンジ未満の最後のエントリ）
+    getBpmAt(time: number): number {
+        const map = this.state.tempoMap;
+        if (!map || map.length === 0) return this.state.bpm || 120;
+        let bpm = map[0].bpm;
+        for (let i = 0; i < map.length; i++) {
+            if (map[i].time <= time) bpm = map[i].bpm;
+            else break;
+        }
+        return bpm;
+    }
+
+    // 拍子マップから指定時刻の拍子を取得
+    getTimeSigAt(time: number): { numerator: number, denominator: number } {
+        const map = this.state.timeSignatureMap;
+        if (!map || map.length === 0) return { numerator: 4, denominator: 4 };
+        let sig = { numerator: map[0].numerator, denominator: map[0].denominator };
+        for (let i = 0; i < map.length; i++) {
+            if (map[i].time <= time) sig = { numerator: map[i].numerator, denominator: map[i].denominator };
+            else break;
+        }
+        return sig;
+    }
+
     private scheduleMetronome() {
         if (this.state.metronomeMode === 'off' || !this.audioCtx) return;
 
         const currentPos = this.state.playbackPosition;
-        const beatDuration = 60 / (this.state.bpm || 120);
+
+        // 現在位置のBPMでビート長を計算（テンポ変化に追従）
+        const beatDurationAtPos = 60 / this.getBpmAt(Math.max(0, currentPos));
 
         // Ensure nextMetronomeTime is valid (track time)
         if (this.nextMetronomeTime < currentPos - 0.2) {
-            this.nextMetronomeTime = Math.ceil(currentPos / beatDuration) * beatDuration;
+            this.nextMetronomeTime = Math.ceil(currentPos / beatDurationAtPos) * beatDurationAtPos;
         }
 
         const lookahead = 0.2; // Short lookahead
 
         while (this.nextMetronomeTime < currentPos + lookahead) {
-            const beatIndex = Math.round(this.nextMetronomeTime / beatDuration);
-            const isMeasureStart = beatIndex % 4 === 0;
+            // 各拍ごとに、その時点でのBPM/拍子を引き直す
+            const bpmHere = this.getBpmAt(Math.max(0, this.nextMetronomeTime));
+            const beatDuration = 60 / bpmHere;
+            const sigHere = this.getTimeSigAt(Math.max(0, this.nextMetronomeTime));
+
+            // 小節内の拍位置を判定（直近の拍子変化時刻からの拍数で算出）
+            const sigStart = this.findTimeSigStart(this.nextMetronomeTime);
+            const beatsSinceSigStart = Math.round((this.nextMetronomeTime - sigStart) / beatDuration);
+            const isMeasureStart = ((beatsSinceSigStart % sigHere.numerator) + sigHere.numerator) % sigHere.numerator === 0;
 
             let playSound = false;
 
@@ -1124,6 +1168,18 @@ export class AudioEngine {
 
             this.nextMetronomeTime += beatDuration;
         }
+    }
+
+    // 指定時刻が属する拍子区間の開始時刻
+    private findTimeSigStart(time: number): number {
+        const map = this.state.timeSignatureMap;
+        if (!map || map.length === 0) return 0;
+        let start = map[0].time;
+        for (let i = 0; i < map.length; i++) {
+            if (map[i].time <= time) start = map[i].time;
+            else break;
+        }
+        return start;
     }
 
     private playClick(time: number, isHigh: boolean) {
@@ -1679,8 +1735,18 @@ export class AudioEngine {
             this.state.bpm = Math.round(tempos[0].bpm);
             this.state.baseBpm = this.state.bpm;
             this.state.tempoFactor = 1.0;
+            this.state.currentBpm = this.state.bpm;
         }
         this.state.tempoMap = tempos;
+
+        // Time signatures (default 4/4 if absent)
+        const header = this.loadedMidi.header;
+        const timeSigs = (header.timeSignatures || []).map(ts => ({
+            time: header.ticksToSeconds(ts.ticks || 0),
+            numerator: ts.timeSignature?.[0] ?? 4,
+            denominator: ts.timeSignature?.[1] ?? 4,
+        }));
+        this.state.timeSignatureMap = timeSigs.length > 0 ? timeSigs : [{ time: 0, numerator: 4, denominator: 4 }];
 
         const ghostNotes: GhostNote[] = track.notes.map(n => ({
             midi: n.midi + transpose,
@@ -1701,6 +1767,7 @@ export class AudioEngine {
             timestamp: new Date().toISOString(),
             bpm: this.state.bpm,
             tempoMap: this.state.tempoMap,
+            timeSignatureMap: this.state.timeSignatureMap,
             practiceConfig: this.state.practiceConfig,
             ghostNotes: this.state.midiGhostNotes
         };
@@ -1756,6 +1823,7 @@ export class AudioEngine {
             // Legacy format: plain session JSON
             if (json.bpm) this.state.bpm = json.bpm;
             if (json.tempoMap) this.state.tempoMap = json.tempoMap;
+            if (json.timeSignatureMap) this.state.timeSignatureMap = json.timeSignatureMap;
             if (json.practiceConfig) this.state.practiceConfig = json.practiceConfig;
             if (json.ghostNotes) {
                 this.state.midiGhostNotes = json.ghostNotes;
