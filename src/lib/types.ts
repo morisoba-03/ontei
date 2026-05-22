@@ -90,6 +90,8 @@ export interface AudioEngineState {
     isGuideSoundEnabled: boolean;
     isBackingSoundEnabled: boolean;
     tempoMap?: { time: number, bpm: number }[];
+    timeSignatureMap?: { time: number, numerator: number, denominator: number }[];
+    currentBpm?: number; // 再生位置に対応する実効BPM（表示用）
     // Loop Practice
     loopEnabled: boolean;
     loopStart: number; // seconds

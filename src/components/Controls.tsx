@@ -251,7 +251,14 @@ export function Controls({ onOpenSettings, onOpenPractice, onRecordingComplete, 
                         <Minus className="w-4 h-4" />
                     </button>
                     <div className="px-1 text-xs font-mono text-white/70 min-w-[4.5em] text-center leading-tight">
-                        <div>{audioEngine.state.bpm}</div>
+                        <div>
+                            {audioEngine.state.bpm}
+                            {audioEngine.state.tempoMap && audioEngine.state.tempoMap.length > 1
+                                && audioEngine.state.currentBpm
+                                && audioEngine.state.currentBpm !== audioEngine.state.bpm && (
+                                <span className="text-[10px] text-yellow-300 ml-0.5">→{audioEngine.state.currentBpm}</span>
+                            )}
+                        </div>
                         <div className="text-[9px] text-white/40">BPM</div>
                     </div>
                     <button
