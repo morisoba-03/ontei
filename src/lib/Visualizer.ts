@@ -234,32 +234,59 @@ export class Visualizer {
         const visStart = eff - (playX / pxPerSec) - visMarginSec;
         const visEnd = eff + ((w - playX) / pxPerSec) + visMarginSec;
 
-        // Draw Measure Lines
-        const beatDur = 60 / (state.baseBpm || state.bpm || 120);
-        const barDur = beatDur * 4;
+        // Draw Measure Lines — テンポマップ・拍子マップに沿って可変間隔で描画
+        {
+            const tempoMap = (state.tempoMap && state.tempoMap.length > 0)
+                ? state.tempoMap
+                : [{ time: 0, bpm: state.baseBpm || state.bpm || 120 }];
+            const tsMap = (state.timeSignatureMap && state.timeSignatureMap.length > 0)
+                ? state.timeSignatureMap
+                : [{ time: 0, numerator: 4, denominator: 4 }];
+            const bpmAt = (t: number): number => {
+                let b = tempoMap[0].bpm;
+                for (const tm of tempoMap) { if (tm.time <= t) b = tm.bpm; else break; }
+                return b;
+            };
+            const tsAt = (t: number): { time: number, numerator: number } => {
+                let cur = { time: tsMap[0].time, numerator: tsMap[0].numerator };
+                for (const ts of tsMap) { if (ts.time <= t) cur = { time: ts.time, numerator: ts.numerator }; else break; }
+                return cur;
+            };
 
-        ctx.save();
-        ctx.strokeStyle = 'rgba(255, 255, 255, 0.15)';
-        ctx.lineWidth = 1;
-        ctx.beginPath();
+            ctx.save();
+            ctx.strokeStyle = 'rgba(255, 255, 255, 0.15)';
+            ctx.lineWidth = 1;
+            ctx.beginPath();
 
-        const tStartVis = visStart;
-        const tEndVis = visEnd;
-        const barStartIdx = Math.floor(tStartVis / barDur);
-        const barEndIdx = Math.ceil(tEndVis / barDur);
-
-        for (let b = barStartIdx; b <= barEndIdx; b++) {
-            if (b < 0) continue;
-            const t = b * barDur;
-            const x = playX + (t - eff) * pxPerSec;
-            if (x >= 0 && x <= w) {
-                ctx.moveTo(x, 0); ctx.lineTo(x, h);
-                ctx.fillStyle = 'rgba(255,255,255,0.3)';
-                ctx.fillText(String(b + 1), x + 4, 10);
+            // 曲頭から小節ごとに進んで可視範囲を描画。小節番号は1から開始
+            let measureIdx = 1;
+            let cur = 0;
+            let safety = 0;
+            // 可視範囲開始まで早送り
+            while (cur < visStart && safety < 200000) {
+                const sigHere = tsAt(cur);
+                const beatDur = 60 / bpmAt(cur);
+                cur += beatDur * sigHere.numerator;
+                measureIdx++;
+                safety++;
             }
+            // 描画
+            while (cur <= visEnd && safety < 200000) {
+                const x = playX + (cur - eff) * pxPerSec;
+                if (x >= 0 && x <= w) {
+                    ctx.moveTo(x, 0); ctx.lineTo(x, h);
+                    ctx.fillStyle = 'rgba(255,255,255,0.3)';
+                    ctx.fillText(String(measureIdx), x + 4, 10);
+                }
+                const sigHere = tsAt(cur);
+                const beatDur = 60 / bpmAt(cur);
+                cur += beatDur * sigHere.numerator;
+                measureIdx++;
+                safety++;
+            }
+            ctx.stroke();
+            ctx.restore();
         }
-        ctx.stroke();
-        ctx.restore();
 
         // Helper
 
@@ -854,25 +881,61 @@ export class Visualizer {
             }
         }
 
-        // Vertical Lines (Time)
-        const beatInterval = 60 / (baseBpm || bpm || 120);
-
-        // Calculate visible time range based on playback position
+        // Vertical Lines (Time) — テンポマップ・拍子マップに沿って可変間隔で描画
         const playX = getPlayX(width);
         const eff = state.playbackPosition + timelineOffsetSec;
-        // Inverse of x calculation: t = eff + (x - playX) / pxPerSec
-        // visible x from 0 to width
         const visStartT = eff + (0 - playX) / pxPerSec;
         const visEndT = eff + (width - playX) / pxPerSec;
 
-        const startBeat = Math.floor(visStartT / beatInterval);
-        const endBeat = Math.ceil(visEndT / beatInterval);
+        const tempoMap = (state.tempoMap && state.tempoMap.length > 0)
+            ? state.tempoMap
+            : [{ time: 0, bpm: baseBpm || bpm || 120 }];
+        const tsMap = (state.timeSignatureMap && state.timeSignatureMap.length > 0)
+            ? state.timeSignatureMap
+            : [{ time: 0, numerator: 4, denominator: 4 }];
 
-        for (let b = startBeat; b <= endBeat; b++) {
-            const t = b * beatInterval;
+        const bpmAt = (t: number): number => {
+            let b = tempoMap[0].bpm;
+            for (const tm of tempoMap) { if (tm.time <= t) b = tm.bpm; else break; }
+            return b;
+        };
+        const tsAt = (t: number): { time: number, numerator: number } => {
+            let cur = { time: tsMap[0].time, numerator: tsMap[0].numerator };
+            for (const ts of tsMap) { if (ts.time <= t) cur = { time: ts.time, numerator: ts.numerator }; else break; }
+            return cur;
+        };
+
+        // 拍子区間の開始時刻から、可視範囲開始までの拍数を数えて開始位置を決める
+        const startTs = tsAt(visStartT);
+        let curBeatStart = startTs.time;
+        // 拍を進めて visStartT 直前に到達
+        let safetyCounter = 0;
+        while (curBeatStart + 60 / bpmAt(curBeatStart) <= visStartT && safetyCounter < 100000) {
+            curBeatStart += 60 / bpmAt(curBeatStart);
+            safetyCounter++;
+        }
+
+        // 拍インデックス（拍子区間内）も同期して計算
+        let beatIdxInSig = Math.round((curBeatStart - startTs.time) / (60 / bpmAt(curBeatStart)));
+        let curSigStart = startTs.time;
+        let curNumerator = startTs.numerator;
+
+        // 描画ループ
+        let t = curBeatStart;
+        safetyCounter = 0;
+        while (t <= visEndT && safetyCounter < 100000) {
+            // 拍子変化を跨いだら拍カウントをリセット
+            const sigHere = tsAt(t);
+            if (sigHere.time !== curSigStart) {
+                curSigStart = sigHere.time;
+                curNumerator = sigHere.numerator;
+                beatIdxInSig = Math.round((t - curSigStart) / (60 / bpmAt(t)));
+            }
+
             const x = playX + (t - eff) * pxPerSec;
+            const isMeasureStart = ((beatIdxInSig % curNumerator) + curNumerator) % curNumerator === 0;
 
-            if (b % 4 === 0) {
+            if (isMeasureStart) {
                 this.ctx.strokeStyle = 'rgba(255, 255, 255, 0.3)';
             } else {
                 this.ctx.strokeStyle = 'rgba(255, 255, 255, 0.1)';
@@ -882,6 +945,10 @@ export class Visualizer {
             this.ctx.moveTo(x, 0);
             this.ctx.lineTo(x, height);
             this.ctx.stroke();
+
+            t += 60 / bpmAt(t);
+            beatIdxInSig++;
+            safetyCounter++;
         }
     }
 
@@ -942,38 +1009,60 @@ export class Visualizer {
     }
 
     drawBpmMarkers(state: AudioEngineState) {
-        if (!this.ctx || !state.tempoMap || state.tempoMap.length === 0) return;
+        if (!this.ctx) return;
+        const hasTempo = state.tempoMap && state.tempoMap.length > 0;
+        const hasTs = state.timeSignatureMap && state.timeSignatureMap.length > 0;
+        if (!hasTempo && !hasTs) return;
+
         const { width, height } = this.canvas;
         const { timelineOffsetSec, playbackPosition, pxPerSec } = state;
 
         const playX = getPlayX(width);
         const eff = playbackPosition + timelineOffsetSec;
-        // inverse: t = eff + (x - playX) / pxPerSec
 
         this.ctx.save();
         this.ctx.font = 'bold 12px sans-serif';
         this.ctx.textBaseline = 'top';
 
-        for (const tm of state.tempoMap) {
-            const x = playX + (tm.time - eff) * pxPerSec;
+        // テンポ変化マーカー（金色）— 2点以上ある時のみ表示（先頭の1点だけなら情報量ゼロ）
+        if (hasTempo && state.tempoMap!.length > 1) {
+            for (const tm of state.tempoMap!) {
+                const x = playX + (tm.time - eff) * pxPerSec;
+                if (x < -50 || x > width + 50) continue;
 
-            // Check visibility
-            if (x < -50 || x > width + 50) continue;
+                this.ctx.beginPath();
+                this.ctx.strokeStyle = 'rgba(255, 215, 0, 0.7)';
+                this.ctx.lineWidth = 1;
+                this.ctx.setLineDash([5, 5]);
+                this.ctx.moveTo(x, 0);
+                this.ctx.lineTo(x, height);
+                this.ctx.stroke();
 
-            // Draw Marker Line
-            this.ctx.beginPath();
-            this.ctx.strokeStyle = 'rgba(255, 215, 0, 0.7)'; // Gold
-            this.ctx.lineWidth = 1;
-            this.ctx.setLineDash([5, 5]);
-            this.ctx.moveTo(x, 0);
-            this.ctx.lineTo(x, height);
-            this.ctx.stroke();
-
-            // Draw Label
-            this.ctx.fillStyle = 'rgba(255, 215, 0, 1)';
-            this.ctx.fillText(`BPM ${Math.round(tm.bpm)}`, x + 4, 25);
+                this.ctx.fillStyle = 'rgba(255, 215, 0, 1)';
+                this.ctx.fillText(`BPM ${Math.round(tm.bpm)}`, x + 4, 25);
+            }
         }
 
+        // 拍子変化マーカー（シアン）— 2点以上ある時のみ表示
+        if (hasTs && state.timeSignatureMap!.length > 1) {
+            for (const ts of state.timeSignatureMap!) {
+                const x = playX + (ts.time - eff) * pxPerSec;
+                if (x < -50 || x > width + 50) continue;
+
+                this.ctx.beginPath();
+                this.ctx.strokeStyle = 'rgba(0, 220, 220, 0.7)';
+                this.ctx.lineWidth = 1;
+                this.ctx.setLineDash([3, 3]);
+                this.ctx.moveTo(x, 0);
+                this.ctx.lineTo(x, height);
+                this.ctx.stroke();
+
+                this.ctx.fillStyle = 'rgba(0, 220, 220, 1)';
+                this.ctx.fillText(`${ts.numerator}/${ts.denominator}`, x + 4, 42);
+            }
+        }
+
+        this.ctx.setLineDash([]);
         this.ctx.restore();
     }
 
