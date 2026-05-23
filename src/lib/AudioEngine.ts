@@ -1852,6 +1852,22 @@ export class AudioEngine {
         }));
 
         this.state.midiGhostNotes = ghostNotes;
+
+        // 音域全体が見えるよう verticalOffset を自動調整（縦ズームは変えない）
+        if (ghostNotes.length > 0) {
+            const midiNums = ghostNotes.map(n => n.midi);
+            const minMidi = Math.min(...midiNums);
+            const maxMidi = Math.max(...midiNums);
+            const centerMidi = (minMidi + maxMidi) / 2;
+            const total = this.state.verticalZoom * 12;
+            const range = 132 - 36 - total;
+            if (range > 0) {
+                const vminDesired = centerMidi - total / 2;
+                const offset = (vminDesired - 36) / range * 100;
+                this.state.verticalOffset = Math.max(0, Math.min(100, offset));
+            }
+        }
+
         this.state.playbackPosition = 0; // Reset so instructions start from 0
         this.state.selectedMidiTrackId = trackIndex;
         this.notify();
