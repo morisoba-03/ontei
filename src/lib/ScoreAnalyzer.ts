@@ -27,6 +27,15 @@ export interface ScoreResult {
     advice: import('./PerformanceAdvisor').ExpertAdvice[];
     phraseScores: import('./types').PhraseResult[];
     weakNotes: { noteIndex: number; diff: number; count: number }[];
+    // 反復練習のための苦手区間（複数）
+    difficultSections?: {
+        start: number;          // 苦手区間の生の開始時刻（秒）
+        end: number;            // 苦手区間の生の終了時刻（秒）
+        extendedStart: number;  // 前後 2 小節を含めたループ練習開始時刻
+        extendedEnd: number;    // 前後 2 小節を含めたループ練習終了時刻
+        badRatio: number;       // この区間の悪さの度合い（0-1）
+        avgCents: number;       // 区間内のセント誤差平均（絶対値）
+    }[];
 }
 
 import { PerformanceAdvisor } from './PerformanceAdvisor';

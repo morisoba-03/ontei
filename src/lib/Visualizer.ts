@@ -234,55 +234,31 @@ export class Visualizer {
         const visStart = eff - (playX / pxPerSec) - visMarginSec;
         const visEnd = eff + ((w - playX) / pxPerSec) + visMarginSec;
 
-        // Draw Measure Lines — テンポマップ・拍子マップに沿って可変間隔で描画
-        {
-            const tempoMap = (state.tempoMap && state.tempoMap.length > 0)
-                ? state.tempoMap
-                : [{ time: 0, bpm: state.baseBpm || state.bpm || 120 }];
-            const tsMap = (state.timeSignatureMap && state.timeSignatureMap.length > 0)
-                ? state.timeSignatureMap
-                : [{ time: 0, numerator: 4, denominator: 4 }];
-            const bpmAt = (t: number): number => {
-                let b = tempoMap[0].bpm;
-                for (const tm of tempoMap) { if (tm.time <= t) b = tm.bpm; else break; }
-                return b;
-            };
-            const tsAt = (t: number): { time: number, numerator: number } => {
-                let cur = { time: tsMap[0].time, numerator: tsMap[0].numerator };
-                for (const ts of tsMap) { if (ts.time <= t) cur = { time: ts.time, numerator: ts.numerator }; else break; }
-                return cur;
-            };
-
+        // Draw Measure Lines — MIDI から事前計算した正確な小節時刻を使う
+        if (state.measureTimes && state.measureTimes.length > 0) {
             ctx.save();
             ctx.strokeStyle = 'rgba(255, 255, 255, 0.15)';
             ctx.lineWidth = 1;
             ctx.beginPath();
 
-            // 曲頭から小節ごとに進んで可視範囲を描画。小節番号は1から開始
-            let measureIdx = 1;
-            let cur = 0;
-            let safety = 0;
-            // 可視範囲開始まで早送り
-            while (cur < visStart && safety < 200000) {
-                const sigHere = tsAt(cur);
-                const beatDur = 60 / bpmAt(cur);
-                cur += beatDur * sigHere.numerator;
-                measureIdx++;
-                safety++;
+            // 可視範囲の開始 index を二分探索（昇順前提）
+            const mt = state.measureTimes;
+            let lo = 0, hi = mt.length - 1, startIdx = mt.length;
+            while (lo <= hi) {
+                const mid = (lo + hi) >> 1;
+                if (mt[mid] >= visStart) { startIdx = mid; hi = mid - 1; } else lo = mid + 1;
             }
-            // 描画
-            while (cur <= visEnd && safety < 200000) {
-                const x = playX + (cur - eff) * pxPerSec;
+            // 1 つ前から描画（左端の小節番号が見切れないように）
+            startIdx = Math.max(0, startIdx - 1);
+            for (let i = startIdx; i < mt.length; i++) {
+                const t = mt[i];
+                if (t > visEnd) break;
+                const x = playX + (t - eff) * pxPerSec;
                 if (x >= 0 && x <= w) {
                     ctx.moveTo(x, 0); ctx.lineTo(x, h);
                     ctx.fillStyle = 'rgba(255,255,255,0.3)';
-                    ctx.fillText(String(measureIdx), x + 4, 10);
+                    ctx.fillText(String(i + 1), x + 4, 10);
                 }
-                const sigHere = tsAt(cur);
-                const beatDur = 60 / bpmAt(cur);
-                cur += beatDur * sigHere.numerator;
-                measureIdx++;
-                safety++;
             }
             ctx.stroke();
             ctx.restore();
@@ -881,74 +857,52 @@ export class Visualizer {
             }
         }
 
-        // Vertical Lines (Time) — テンポマップ・拍子マップに沿って可変間隔で描画
+        // Vertical Lines (Time) — MIDI から事前計算した正確なビート/小節時刻を使う
         const playX = getPlayX(width);
         const eff = state.playbackPosition + timelineOffsetSec;
         const visStartT = eff + (0 - playX) / pxPerSec;
         const visEndT = eff + (width - playX) / pxPerSec;
 
-        const tempoMap = (state.tempoMap && state.tempoMap.length > 0)
-            ? state.tempoMap
-            : [{ time: 0, bpm: baseBpm || bpm || 120 }];
-        const tsMap = (state.timeSignatureMap && state.timeSignatureMap.length > 0)
-            ? state.timeSignatureMap
-            : [{ time: 0, numerator: 4, denominator: 4 }];
+        const beatTimes = state.beatTimes && state.beatTimes.length > 0 ? state.beatTimes : null;
+        const measureTimes = state.measureTimes && state.measureTimes.length > 0 ? state.measureTimes : null;
 
-        const bpmAt = (t: number): number => {
-            let b = tempoMap[0].bpm;
-            for (const tm of tempoMap) { if (tm.time <= t) b = tm.bpm; else break; }
-            return b;
-        };
-        const tsAt = (t: number): { time: number, numerator: number } => {
-            let cur = { time: tsMap[0].time, numerator: tsMap[0].numerator };
-            for (const ts of tsMap) { if (ts.time <= t) cur = { time: ts.time, numerator: ts.numerator }; else break; }
-            return cur;
-        };
+        if (beatTimes) {
+            // 小節開始時刻のセット（O(1) 判定用）
+            const measureSet = new Set<number>(measureTimes || []);
 
-        // 拍子区間の開始時刻から、可視範囲開始までの拍数を数えて開始位置を決める
-        const startTs = tsAt(visStartT);
-        let curBeatStart = startTs.time;
-        // 拍を進めて visStartT 直前に到達
-        let safetyCounter = 0;
-        while (curBeatStart + 60 / bpmAt(curBeatStart) <= visStartT && safetyCounter < 100000) {
-            curBeatStart += 60 / bpmAt(curBeatStart);
-            safetyCounter++;
-        }
-
-        // 拍インデックス（拍子区間内）も同期して計算
-        let beatIdxInSig = Math.round((curBeatStart - startTs.time) / (60 / bpmAt(curBeatStart)));
-        let curSigStart = startTs.time;
-        let curNumerator = startTs.numerator;
-
-        // 描画ループ
-        let t = curBeatStart;
-        safetyCounter = 0;
-        while (t <= visEndT && safetyCounter < 100000) {
-            // 拍子変化を跨いだら拍カウントをリセット
-            const sigHere = tsAt(t);
-            if (sigHere.time !== curSigStart) {
-                curSigStart = sigHere.time;
-                curNumerator = sigHere.numerator;
-                beatIdxInSig = Math.round((t - curSigStart) / (60 / bpmAt(t)));
+            // 二分探索で可視範囲の開始インデックスを得る
+            let lo = 0, hi = beatTimes.length - 1, startIdx = beatTimes.length;
+            while (lo <= hi) {
+                const mid = (lo + hi) >> 1;
+                if (beatTimes[mid] >= visStartT) { startIdx = mid; hi = mid - 1; } else lo = mid + 1;
             }
+            startIdx = Math.max(0, startIdx - 1);
 
-            const x = playX + (t - eff) * pxPerSec;
-            const isMeasureStart = ((beatIdxInSig % curNumerator) + curNumerator) % curNumerator === 0;
-
-            if (isMeasureStart) {
-                this.ctx.strokeStyle = 'rgba(255, 255, 255, 0.3)';
-            } else {
-                this.ctx.strokeStyle = 'rgba(255, 255, 255, 0.1)';
+            for (let i = startIdx; i < beatTimes.length; i++) {
+                const t = beatTimes[i];
+                if (t > visEndT) break;
+                const x = playX + (t - eff) * pxPerSec;
+                const isMeasureStart = measureSet.has(t);
+                this.ctx.strokeStyle = isMeasureStart ? 'rgba(255, 255, 255, 0.3)' : 'rgba(255, 255, 255, 0.1)';
+                this.ctx.beginPath();
+                this.ctx.moveTo(x, 0);
+                this.ctx.lineTo(x, height);
+                this.ctx.stroke();
             }
-
-            this.ctx.beginPath();
-            this.ctx.moveTo(x, 0);
-            this.ctx.lineTo(x, height);
-            this.ctx.stroke();
-
-            t += 60 / bpmAt(t);
-            beatIdxInSig++;
-            safetyCounter++;
+        } else {
+            // フォールバック：MIDI 未読込時は単純な等間隔グリッド
+            const beatInterval = 60 / (baseBpm || bpm || 120);
+            const startBeat = Math.floor(visStartT / beatInterval);
+            const endBeat = Math.ceil(visEndT / beatInterval);
+            for (let b = startBeat; b <= endBeat; b++) {
+                const t = b * beatInterval;
+                const x = playX + (t - eff) * pxPerSec;
+                this.ctx.strokeStyle = (b % 4 === 0) ? 'rgba(255, 255, 255, 0.3)' : 'rgba(255, 255, 255, 0.1)';
+                this.ctx.beginPath();
+                this.ctx.moveTo(x, 0);
+                this.ctx.lineTo(x, height);
+                this.ctx.stroke();
+            }
         }
     }
 
