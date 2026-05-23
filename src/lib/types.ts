@@ -92,6 +92,9 @@ export interface AudioEngineState {
     tempoMap?: { time: number, bpm: number }[];
     timeSignatureMap?: { time: number, numerator: number, denominator: number }[];
     currentBpm?: number; // 再生位置に対応する実効BPM（表示用）
+    // テンポ・拍子変化を反映した正確な絶対時刻（秒）
+    beatTimes?: number[];
+    measureTimes?: number[];
     // Loop Practice
     loopEnabled: boolean;
     loopStart: number; // seconds

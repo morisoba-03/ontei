@@ -1,7 +1,9 @@
 
+import { useState } from 'react';
 import type { ScoreResult } from '../lib/ScoreAnalyzer';
 import { audioEngine } from '../lib/AudioEngine';
-import { X, Trophy, Activity, Target, Music, Zap, TrendingUp, TrendingDown, AlertCircle, CheckCircle, Info } from 'lucide-react';
+import { toast } from './Toast';
+import { X, Trophy, Activity, Target, Music, Zap, TrendingUp, TrendingDown, AlertCircle, CheckCircle, Info, Repeat, ListChecks, Play } from 'lucide-react';
 import { cn } from '../lib/utils';
 
 interface Props {
@@ -28,6 +30,26 @@ const radarLabel = (key: string) => ({ pitch: '音程', stability: '安定性', 
 
 export const ScoreResultModal: React.FC<Props> = ({ result, onClose }) => {
     const grade = getGrade(result.totalScore);
+    const [showOvercomingList, setShowOvercomingList] = useState(false);
+
+    const difficultSections = result.difficultSections ?? [];
+
+    const startLoopPractice = (section: { extendedStart: number; extendedEnd: number; start: number; end: number }) => {
+        audioEngine.updateState({
+            loopEnabled: true,
+            loopStart: section.extendedStart,
+            loopEnd: section.extendedEnd,
+            playbackPosition: section.extendedStart,
+        });
+        // 練習開始
+        audioEngine.startPlayback();
+        toast.show(
+            `${formatTime(section.extendedStart)} 〜 ${formatTime(section.extendedEnd)} をループ練習開始`,
+            'info',
+            { duration: 2500 }
+        );
+        onClose();
+    };
 
     const radarData = [
         { label: '音程', val: result.radar.pitch },
@@ -60,14 +82,29 @@ export const ScoreResultModal: React.FC<Props> = ({ result, onClose }) => {
             <div className="w-full max-w-4xl bg-[#1a1a1e] rounded-3xl border border-white/10 shadow-2xl overflow-hidden animate-in zoom-in-95 duration-300 flex flex-col max-h-[90dvh]">
 
                 {/* Header */}
-                <div className="bg-gradient-to-r from-indigo-900/50 to-purple-900/50 p-4 md:p-6 flex items-center justify-between border-b border-white/10 shrink-0">
+                <div className="bg-gradient-to-r from-indigo-900/50 to-purple-900/50 p-4 md:p-6 flex items-center justify-between border-b border-white/10 shrink-0 gap-3">
                     <h2 className="text-xl md:text-2xl font-bold flex items-center gap-2 text-white">
                         <Trophy className="text-yellow-400 fill-yellow-400" />
                         演奏診断結果
                     </h2>
-                    <button onClick={onClose} className="p-2 bg-white/5 hover:bg-white/10 rounded-full transition-colors text-white/80 hover:text-white">
-                        <X size={20} />
-                    </button>
+                    <div className="flex items-center gap-2">
+                        {difficultSections.length > 0 && (
+                            <button
+                                onClick={() => setShowOvercomingList(true)}
+                                className="px-3 md:px-4 py-2 rounded-xl bg-orange-500/20 hover:bg-orange-500/30 text-orange-200 font-bold text-sm transition-colors border border-orange-500/30 flex items-center gap-1.5"
+                                title="苦手区間をリスト形式で表示"
+                            >
+                                <ListChecks size={16} />
+                                <span className="hidden sm:inline">克服リスト</span>
+                                <span className="bg-orange-500/40 text-orange-100 text-[10px] font-bold px-1.5 py-0.5 rounded-full">
+                                    {difficultSections.length}
+                                </span>
+                            </button>
+                        )}
+                        <button onClick={onClose} className="p-2 bg-white/5 hover:bg-white/10 rounded-full transition-colors text-white/80 hover:text-white">
+                            <X size={20} />
+                        </button>
+                    </div>
                 </div>
 
                 <div className="p-5 md:p-8 grid grid-cols-1 md:grid-cols-2 gap-6 md:gap-8 overflow-y-auto overscroll-contain custom-scrollbar">
@@ -285,6 +322,51 @@ export const ScoreResultModal: React.FC<Props> = ({ result, onClose }) => {
                             </div>
                         )}
 
+                        {/* 苦手区間（克服リスト・トップ3） */}
+                        {difficultSections.length > 0 && (
+                            <div className="bg-orange-500/5 p-4 rounded-xl border border-orange-500/20">
+                                <div className="flex items-center justify-between mb-3">
+                                    <h3 className="text-xs font-bold text-orange-300 uppercase tracking-widest flex items-center gap-1.5">
+                                        <Repeat size={12} />
+                                        反復練習したい苦手区間
+                                    </h3>
+                                    {difficultSections.length > 3 && (
+                                        <button
+                                            onClick={() => setShowOvercomingList(true)}
+                                            className="text-[10px] text-orange-300/80 hover:text-orange-200 underline"
+                                        >
+                                            すべて見る ({difficultSections.length})
+                                        </button>
+                                    )}
+                                </div>
+                                <div className="space-y-1.5">
+                                    {difficultSections.slice(0, 3).map((s, i) => (
+                                        <button
+                                            key={i}
+                                            onClick={() => startLoopPractice(s)}
+                                            className="w-full flex items-center gap-2 p-2.5 bg-white/5 hover:bg-orange-500/15 rounded-lg border border-white/5 hover:border-orange-500/30 transition-all text-left group"
+                                        >
+                                            <div className="w-7 h-7 rounded-full bg-orange-500/20 flex items-center justify-center text-orange-300 font-bold text-xs shrink-0 group-hover:bg-orange-500/40">
+                                                {i + 1}
+                                            </div>
+                                            <div className="flex-1 min-w-0">
+                                                <div className="text-xs font-bold text-white/90">
+                                                    {formatTime(s.start)} 〜 {formatTime(s.end)}
+                                                    <span className="text-[10px] text-white/40 ml-2 font-normal">
+                                                        （練習範囲 {formatTime(s.extendedStart)}〜{formatTime(s.extendedEnd)}）
+                                                    </span>
+                                                </div>
+                                                <div className="text-[10px] text-orange-300/70 mt-0.5">
+                                                    平均ズレ ±{Math.round(s.avgCents)}¢
+                                                </div>
+                                            </div>
+                                            <Play size={14} className="text-orange-300/60 group-hover:text-orange-300 shrink-0" />
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+
                         {/* フレーズ別評価 */}
                         {result.phraseScores && result.phraseScores.length > 0 && (
                             <div>
@@ -332,6 +414,71 @@ export const ScoreResultModal: React.FC<Props> = ({ result, onClose }) => {
                     </button>
                 </div>
             </div>
+
+            {/* 克服リスト全表示オーバーレイ */}
+            {showOvercomingList && (
+                <div
+                    className="fixed inset-0 z-[110] flex items-center justify-center bg-black/85 backdrop-blur-md p-4 animate-in fade-in duration-200"
+                    onClick={() => setShowOvercomingList(false)}
+                >
+                    <div
+                        className="w-full max-w-2xl bg-[#1a1a1e] rounded-2xl border border-orange-500/30 shadow-2xl overflow-hidden max-h-[85dvh] flex flex-col animate-in zoom-in-95 duration-200"
+                        onClick={(e) => e.stopPropagation()}
+                    >
+                        <div className="p-5 border-b border-white/10 bg-gradient-to-r from-orange-900/40 to-red-900/40 flex items-center justify-between shrink-0">
+                            <h2 className="text-lg md:text-xl font-bold flex items-center gap-2 text-white">
+                                <ListChecks className="text-orange-300" />
+                                克服リスト
+                                <span className="text-xs font-normal text-white/50">
+                                    （{difficultSections.length}件の苦手区間）
+                                </span>
+                            </h2>
+                            <button
+                                onClick={() => setShowOvercomingList(false)}
+                                className="p-2 bg-white/5 hover:bg-white/10 rounded-full text-white/80 hover:text-white transition-colors"
+                            >
+                                <X size={18} />
+                            </button>
+                        </div>
+                        <div className="p-5 overflow-y-auto custom-scrollbar space-y-2">
+                            <p className="text-xs text-white/60 mb-3 leading-relaxed">
+                                各項目をクリックすると、前後2小節を含めた範囲でループ練習を開始します。
+                            </p>
+                            {difficultSections.map((s, i) => (
+                                <button
+                                    key={i}
+                                    onClick={() => startLoopPractice(s)}
+                                    className="w-full flex items-center gap-3 p-3 bg-white/5 hover:bg-orange-500/15 rounded-xl border border-white/10 hover:border-orange-500/40 transition-all text-left group"
+                                >
+                                    <div className="w-10 h-10 rounded-xl bg-orange-500/20 flex items-center justify-center text-orange-300 font-black text-base shrink-0 group-hover:bg-orange-500/40">
+                                        {i + 1}
+                                    </div>
+                                    <div className="flex-1 min-w-0">
+                                        <div className="text-sm font-bold text-white/95">
+                                            苦手区間：{formatTime(s.start)} 〜 {formatTime(s.end)}
+                                        </div>
+                                        <div className="text-[11px] text-white/50 mt-0.5">
+                                            練習範囲（前後2小節）：{formatTime(s.extendedStart)} 〜 {formatTime(s.extendedEnd)}
+                                        </div>
+                                        <div className="flex items-center gap-3 mt-1.5 text-[10px]">
+                                            <span className="text-orange-300/90">
+                                                平均ピッチズレ <span className="font-bold">±{Math.round(s.avgCents)}¢</span>
+                                            </span>
+                                            <span className="text-white/40">
+                                                苦手度 <span className="font-bold text-orange-300">{Math.round(s.badRatio * 100)}%</span>
+                                            </span>
+                                        </div>
+                                    </div>
+                                    <div className="flex flex-col items-center justify-center bg-orange-500/20 group-hover:bg-orange-500/40 rounded-lg px-3 py-2 shrink-0 transition-colors">
+                                        <Play size={16} className="text-orange-200" />
+                                        <span className="text-[9px] text-orange-200 font-bold mt-0.5">練習</span>
+                                    </div>
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 };
