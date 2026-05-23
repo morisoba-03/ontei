@@ -14,8 +14,6 @@ const HOLD_CONF = 0.55;
 const OCTAVE_CONFIRM_FRAMES = 3;
 // 中規模ジャンプ確定に必要な連続フレーム数（誤検出を弾くため）
 const LARGE_JUMP_CONFIRM_FRAMES = 2;
-// ガイド消滅後も「直近の期待周波数」を保持する最大フレーム数（30fps で約 0.5 秒）
-const RECENT_GUIDE_MAX_FRAMES = 15;
 
 export class PitchAnalyzer {
     private detector: PitchDetector<Float32Array> | null = null;
@@ -37,10 +35,6 @@ export class PitchAnalyzer {
     private rawHistory: number[] = [];
     private readonly RAW_HISTORY_SIZE = 7;
 
-    // ガイド消滅後の参照フリーズ
-    private recentExpectedFreq: number = 0;
-    private framesSinceGuide: number = 999;
-
     setAnalysisRate(hz: number) {
         this.maxHoldFrames = Math.max(3, Math.round(hz * 0.2));
     }
@@ -54,8 +48,6 @@ export class PitchAnalyzer {
         this.pendingLargeJumpFreq = 0;
         this.pendingLargeJumpCount = 0;
         this.rawHistory = [];
-        this.recentExpectedFreq = 0;
-        this.framesSinceGuide = 999;
     }
 
     private getMedian(arr: number[]): number {
@@ -72,20 +64,8 @@ export class PitchAnalyzer {
             this.detector.minVolumeDecibels = -60;
         }
 
-        // 0. ガイド参照の更新（消滅後も短時間は保持）
-        if (options.guideFreq && options.guideFreq > 0) {
-            this.recentExpectedFreq = options.guideFreq;
-            this.framesSinceGuide = 0;
-        } else {
-            this.framesSinceGuide++;
-            if (this.framesSinceGuide > RECENT_GUIDE_MAX_FRAMES) {
-                this.recentExpectedFreq = 0;
-            }
-        }
-        // 有効ガイド：現フレームのガイド > 直近の期待値
-        const effectiveGuide = (options.guideFreq && options.guideFreq > 0)
-            ? options.guideFreq
-            : (this.framesSinceGuide <= RECENT_GUIDE_MAX_FRAMES ? this.recentExpectedFreq : 0);
+        // 有効ガイド：現フレームのガイドのみ参照（前ノートの残留は使わない）
+        const effectiveGuide = (options.guideFreq && options.guideFreq > 0) ? options.guideFreq : 0;
 
         // 1. RMS Gate (silence detection)
         let rms = 0;
