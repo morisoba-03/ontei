@@ -197,6 +197,8 @@ export class AudioEngine {
             tempoMap: [],
             timeSignatureMap: [],
             currentBpm: 120,
+            beatTimes: [],
+            measureTimes: [],
             // Loop Practice
             loopEnabled: false,
             loopStart: 0,
@@ -668,6 +670,10 @@ export class AudioEngine {
 
         if (this.scoreAnalyzer) {
             const result = this.scoreAnalyzer.summarize(this.state.phrases);
+            // 複数の苦手区間を検出して結果に添付
+            if (result) {
+                result.difficultSections = this.detectDifficultSections();
+            }
             this.updateState({ scoreResult: result });
 
             // Suggest difficult section loop after a brief delay (1回のみ)
@@ -681,10 +687,24 @@ export class AudioEngine {
     }
 
     private detectDifficultSection(): { start: number; end: number } | null {
-        const { pitchHistory, midiGhostNotes, toleranceCents, transposeOffset } = this.state;
-        if (pitchHistory.length < 10 || midiGhostNotes.length === 0) return null;
+        const sections = this.detectDifficultSections();
+        if (sections.length === 0) return null;
+        return { start: sections[0].extendedStart, end: sections[0].extendedEnd };
+    }
 
-        const badTimes: number[] = [];
+    // 複数の苦手区間を検出（克服リスト用）。前後 2 小節を含めた拡張範囲も返す。
+    detectDifficultSections(): {
+        start: number;
+        end: number;
+        extendedStart: number;
+        extendedEnd: number;
+        badRatio: number;
+        avgCents: number;
+    }[] {
+        const { pitchHistory, midiGhostNotes, toleranceCents, transposeOffset, measureTimes } = this.state;
+        if (pitchHistory.length < 10 || midiGhostNotes.length === 0) return [];
+
+        const badEntries: { time: number; cents: number }[] = [];
         for (const p of pitchHistory) {
             if (p.conf < 0.5 || p.time < 0) continue;
             const note = midiGhostNotes.find(n => p.time >= n.time && p.time <= n.time + n.duration);
@@ -692,20 +712,52 @@ export class AudioEngine {
             const transposedMidi = note.midi + (transposeOffset || 0);
             const expectedFreq = 440 * Math.pow(2, (transposedMidi - 69) / 12);
             const cents = 1200 * Math.log2(p.freq / expectedFreq);
-            if (Math.abs(cents) > toleranceCents) badTimes.push(p.time);
+            if (Math.abs(cents) > toleranceCents) badEntries.push({ time: p.time, cents });
         }
 
-        if (badTimes.length < 5) return null;
+        if (badEntries.length < 5) return [];
+        badEntries.sort((a, b) => a.time - b.time);
 
-        const WIN = 5;
-        let bestStart = 0, bestCount = 0;
-        for (const t of badTimes) {
-            const count = badTimes.filter(pt => pt >= t && pt < t + WIN).length;
-            if (count > bestCount) { bestCount = count; bestStart = t; }
+        // 連続する悪フレームを 1.5 秒以内のギャップでクラスター化
+        const clusters: { time: number; cents: number }[][] = [];
+        let current: typeof badEntries = [badEntries[0]];
+        for (let i = 1; i < badEntries.length; i++) {
+            if (badEntries[i].time - badEntries[i - 1].time < 1.5) {
+                current.push(badEntries[i]);
+            } else {
+                if (current.length >= 3) clusters.push(current);
+                current = [badEntries[i]];
+            }
         }
+        if (current.length >= 3) clusters.push(current);
 
-        if (bestCount < 3) return null;
-        return { start: Math.max(0, bestStart - 0.5), end: bestStart + WIN };
+        // 前後 2 小節を含む範囲を計算
+        const ext = (t: number, dir: -1 | 1): number => {
+            if (!measureTimes || measureTimes.length === 0) {
+                return Math.max(0, t + dir * 2); // フォールバック ±2 秒
+            }
+            let idx = 0;
+            for (let i = 0; i < measureTimes.length; i++) {
+                if (measureTimes[i] <= t) idx = i; else break;
+            }
+            const tgt = dir === -1 ? Math.max(0, idx - 2) : Math.min(measureTimes.length - 1, idx + 2);
+            return measureTimes[tgt];
+        };
+
+        const totalBad = badEntries.length;
+        return clusters.map(c => {
+            const start = c[0].time;
+            const end = c[c.length - 1].time;
+            const avgCents = c.reduce((s, e) => s + Math.abs(e.cents), 0) / c.length;
+            return {
+                start,
+                end,
+                extendedStart: ext(start, -1),
+                extendedEnd: ext(end, 1),
+                badRatio: c.length / Math.max(1, totalBad),
+                avgCents,
+            };
+        }).sort((a, b) => b.badRatio - a.badRatio);
     }
 
     private suggestDifficultSection() {
@@ -1747,6 +1799,50 @@ export class AudioEngine {
             denominator: ts.timeSignature?.[1] ?? 4,
         }));
         this.state.timeSignatureMap = timeSigs.length > 0 ? timeSigs : [{ time: 0, numerator: 4, denominator: 4 }];
+
+        // ビート/小節の絶対時刻を事前計算（テンポ・拍子変化を ticksToSeconds() で正確に反映）
+        {
+            const ppq = header.ppq;
+            let endTick = 0;
+            for (const tr of this.loadedMidi.tracks) {
+                for (const n of tr.notes) endTick = Math.max(endTick, n.ticks + n.durationTicks);
+            }
+            // 終端に少し余裕を持たせる
+            endTick += ppq * 16;
+
+            // 拍子イベントを ticks 昇順にソートし、先頭に 0/4 が無ければ補う
+            const tsEvts = (header.timeSignatures || []).slice().sort((a, b) => a.ticks - b.ticks);
+            if (tsEvts.length === 0 || tsEvts[0].ticks > 0) {
+                tsEvts.unshift({ ticks: 0, timeSignature: [4, 4] } as typeof tsEvts[number]);
+            }
+
+            const beatTimes: number[] = [];
+            const measureTimes: number[] = [];
+
+            for (let i = 0; i < tsEvts.length; i++) {
+                const ts = tsEvts[i];
+                const [num, den] = ts.timeSignature;
+                const segStart = ts.ticks;
+                const segEnd = (i + 1 < tsEvts.length) ? tsEvts[i + 1].ticks : endTick;
+
+                const beatTicks = ppq * 4 / den; // 1 拍の tick 数
+                const measureTicks = beatTicks * num;
+
+                for (let tick = segStart; tick < segEnd; tick += measureTicks) {
+                    measureTimes.push(header.ticksToSeconds(tick));
+                    for (let b = 0; b < num; b++) {
+                        const beatTick = tick + b * beatTicks;
+                        if (beatTick >= segEnd) break;
+                        beatTimes.push(header.ticksToSeconds(beatTick));
+                    }
+                    if (beatTimes.length > 200000) break; // 安全弁
+                }
+                if (beatTimes.length > 200000) break;
+            }
+
+            this.state.beatTimes = beatTimes;
+            this.state.measureTimes = measureTimes;
+        }
 
         const ghostNotes: GhostNote[] = track.notes.map(n => ({
             midi: n.midi + transpose,

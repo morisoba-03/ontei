@@ -7,12 +7,15 @@ export interface PitchResult {
 
 // オクターブ飛び対策入り実装。
 // 元の実装は PitchAnalyzer.legacy.ts として保存してあります。
-// 戻したい場合は legacy.ts の中身をこのファイルに丸ごとコピーしてください。
 
 const HOLD_CONF = 0.55;
 
 // オクターブジャンプ確定に必要な連続フレーム数
 const OCTAVE_CONFIRM_FRAMES = 3;
+// 中規模ジャンプ確定に必要な連続フレーム数（誤検出を弾くため）
+const LARGE_JUMP_CONFIRM_FRAMES = 2;
+// ガイド消滅後も「直近の期待周波数」を保持する最大フレーム数（30fps で約 0.5 秒）
+const RECENT_GUIDE_MAX_FRAMES = 15;
 
 export class PitchAnalyzer {
     private detector: PitchDetector<Float32Array> | null = null;
@@ -22,13 +25,21 @@ export class PitchAnalyzer {
     private consecutiveSilence = 0;
     private maxHoldFrames = 6;
 
-    // オクターブジャンプ確認バッファ（3フレーム確認方式）
+    // オクターブジャンプ確認バッファ（3フレーム確認）
     private pendingOctaveJumpFreq: number = 0;
     private pendingOctaveJumpCount: number = 0;
+
+    // 中規模（5〜10半音）非オクターブジャンプ確認バッファ（2フレーム確認）
+    private pendingLargeJumpFreq: number = 0;
+    private pendingLargeJumpCount: number = 0;
 
     // 直近の確定周波数の履歴（中央値計算に利用、最大 7）
     private rawHistory: number[] = [];
     private readonly RAW_HISTORY_SIZE = 7;
+
+    // ガイド消滅後の参照フリーズ
+    private recentExpectedFreq: number = 0;
+    private framesSinceGuide: number = 999;
 
     setAnalysisRate(hz: number) {
         this.maxHoldFrames = Math.max(3, Math.round(hz * 0.2));
@@ -40,7 +51,11 @@ export class PitchAnalyzer {
         this.consecutiveSilence = 0;
         this.pendingOctaveJumpFreq = 0;
         this.pendingOctaveJumpCount = 0;
+        this.pendingLargeJumpFreq = 0;
+        this.pendingLargeJumpCount = 0;
         this.rawHistory = [];
+        this.recentExpectedFreq = 0;
+        this.framesSinceGuide = 999;
     }
 
     private getMedian(arr: number[]): number {
@@ -57,6 +72,21 @@ export class PitchAnalyzer {
             this.detector.minVolumeDecibels = -60;
         }
 
+        // 0. ガイド参照の更新（消滅後も短時間は保持）
+        if (options.guideFreq && options.guideFreq > 0) {
+            this.recentExpectedFreq = options.guideFreq;
+            this.framesSinceGuide = 0;
+        } else {
+            this.framesSinceGuide++;
+            if (this.framesSinceGuide > RECENT_GUIDE_MAX_FRAMES) {
+                this.recentExpectedFreq = 0;
+            }
+        }
+        // 有効ガイド：現フレームのガイド > 直近の期待値
+        const effectiveGuide = (options.guideFreq && options.guideFreq > 0)
+            ? options.guideFreq
+            : (this.framesSinceGuide <= RECENT_GUIDE_MAX_FRAMES ? this.recentExpectedFreq : 0);
+
         // 1. RMS Gate (silence detection)
         let rms = 0;
         for (let i = 0; i < buf.length; i++) rms += buf[i] * buf[i];
@@ -70,6 +100,8 @@ export class PitchAnalyzer {
                 this.holdFramesLeft = 0;
                 this.pendingOctaveJumpFreq = 0;
                 this.pendingOctaveJumpCount = 0;
+                this.pendingLargeJumpFreq = 0;
+                this.pendingLargeJumpCount = 0;
                 this.rawHistory = [];
             } else if (this.holdFramesLeft > 0 && this.lastStableFreq > 0) {
                 this.holdFramesLeft--;
@@ -95,15 +127,15 @@ export class PitchAnalyzer {
         let guideOctaveCorrected = false;
 
         // 3a. ガイド音による候補選択（最優先オラクル）
-        //     guideFreq がある場合、{f, 2f, f/2} の中からガイドに最も近い候補を選ぶ。
-        //     これにより「pitchy がサブオクターブを返す」エラーをガイド音が確実に修正できる。
-        if (options.guideFreq && options.guideFreq > 0) {
-            const guide = options.guideFreq;
-            const cands = [rawFreq, rawFreq * 2, rawFreq / 2].filter(f => f >= 60 && f <= 4200);
+        //     {f, 2f, f/2, 4f, f/4} の中からガイドに最も近い候補を選ぶ。
+        //     2オクターブ以上の誤検出にも対応。
+        if (effectiveGuide > 0) {
+            const cands = [rawFreq, rawFreq * 2, rawFreq / 2, rawFreq * 4, rawFreq / 4]
+                .filter(f => f >= 60 && f <= 4200);
             let bestF = cands[0];
-            let bestDist = Math.abs(12 * Math.log2(bestF / guide));
+            let bestDist = Math.abs(12 * Math.log2(bestF / effectiveGuide));
             for (let i = 1; i < cands.length; i++) {
-                const d = Math.abs(12 * Math.log2(cands[i] / guide));
+                const d = Math.abs(12 * Math.log2(cands[i] / effectiveGuide));
                 if (d < bestDist) { bestDist = d; bestF = cands[i]; }
             }
             // ガイドから 8 半音以内の候補があれば採用
@@ -111,23 +143,19 @@ export class PitchAnalyzer {
                 if (bestF !== rawFreq) {
                     finalFreq = bestF;
                     finalConf = Math.min(1.0, finalConf * 1.1);
-                    guideOctaveCorrected = true; // オクターブ修正発生
+                    guideOctaveCorrected = true;
                 }
-                // オクターブ修正なしでもガイド確認済みとしてマーク
                 guideOctaveCorrected = guideOctaveCorrected || true;
             }
         }
 
         // 3b. ガイドなし時の履歴中央値ベースのオクターブスナップ
-        //     【重要】±10～14半音（オクターブ圏）は意図的ジャンプと誤検出が区別できないため
-        //             この範囲は補正せず Step 4 のフレーム確認に委ねる。
-        //             スナップ対象は「小さなズレ（4半音未満）を除く大きな非オクターブズレ」のみ。
+        //     【重要】±10～14半音は意図的ジャンプとの区別がつかないため触らない。
         if (!guideOctaveCorrected && this.rawHistory.length >= 5) {
             const median = this.getMedian(this.rawHistory);
             if (median > 0) {
                 const rawDistSemi = 12 * Math.log2(rawFreq / median);
                 const absRawDist = Math.abs(rawDistSemi);
-                // オクターブ圏（9〜15半音）は手を出さない → Step 4 へ
                 const isOctaveZone = absRawDist > 9 && absRawDist < 15;
                 if (!isOctaveZone && !this.pendingOctaveJumpFreq) {
                     const cands: { f: number; factor: number }[] = [
@@ -143,7 +171,6 @@ export class PitchAnalyzer {
                         const d = Math.abs(12 * Math.log2(c.f / median));
                         if (d < bestDist) { bestDist = d; best = c; }
                     }
-                    // 補正後が median から 2 半音以内かつ rawFreq が 8 半音以上離れている時のみ適用
                     if (best.factor !== 1 && bestDist < 2 && absRawDist > 8) {
                         finalFreq = best.f;
                     }
@@ -151,49 +178,56 @@ export class PitchAnalyzer {
             }
         }
 
-        // 4. 時間的安定性チェック — オクターブジャンプの確認
+        // 4. 時間的安定性チェック
+        //    - <1.5 半音: EMA で平滑化
+        //    - 1.5〜5 半音: 通常の音程変化（即採用）
+        //    - 5〜9 半音: 中規模ジャンプ（2フレーム確認、ガイド保証で即採用）
+        //    - 9〜15 半音（オクターブ圏）: 3フレーム確認（ガイド保証で即採用）
+        //    - 15+ 半音: 大きすぎる跳躍（2フレーム確認、ガイド保証で即採用）
         if (this.lastStableFreq > 0) {
             const semitones = 12 * Math.log2(finalFreq / this.lastStableFreq);
+            const absSemi = Math.abs(semitones);
+            const octaveError = Math.abs(absSemi - 12);
 
-            if (Math.abs(semitones) < 1.5) {
-                // 微小変動 → EMAで平滑化
-                finalFreq = this.lastStableFreq * 0.5 + finalFreq * 0.5;
+            const clearAllPending = () => {
                 this.pendingOctaveJumpFreq = 0;
                 this.pendingOctaveJumpCount = 0;
+                this.pendingLargeJumpFreq = 0;
+                this.pendingLargeJumpCount = 0;
+            };
 
-            } else if (Math.abs(Math.abs(semitones) - 12) < 2.0) {
-                // オクターブ圏の変化を検出
+            if (absSemi < 1.5) {
+                // 微小変動 → EMA
+                finalFreq = this.lastStableFreq * 0.5 + finalFreq * 0.5;
+                clearAllPending();
 
+            } else if (absSemi < 5.0) {
+                // 小さな音程変化（通常のメロディ） → 即採用
+                clearAllPending();
+
+            } else if (octaveError < 2.0) {
+                // オクターブ圏（9〜15 半音）
                 if (guideOctaveCorrected) {
-                    // ガイドが正しいオクターブを保証している → 即採用し履歴をリセット
-                    // （旧オクターブ履歴が次フレームで再スナップするのを防ぐ）
-                    this.pendingOctaveJumpFreq = 0;
-                    this.pendingOctaveJumpCount = 0;
+                    // ガイドが新オクターブを保証 → 即採用 + 履歴リセット
+                    clearAllPending();
                     this.rawHistory = [];
-
                 } else {
-                    // ガイドなし → 3 フレーム連続確認が必要
+                    // 3 フレーム連続確認が必要
                     if (this.pendingOctaveJumpFreq > 0) {
                         const pendSemi = 12 * Math.log2(finalFreq / this.pendingOctaveJumpFreq);
                         if (Math.abs(pendSemi) < 2.0) {
                             this.pendingOctaveJumpCount++;
                             if (this.pendingOctaveJumpCount >= OCTAVE_CONFIRM_FRAMES) {
-                                // 確定：履歴をリセットして新オクターブで再構築
-                                this.pendingOctaveJumpFreq = 0;
-                                this.pendingOctaveJumpCount = 0;
+                                clearAllPending();
                                 this.rawHistory = [];
                             } else {
-                                // まだ確認中 → 旧値を維持
                                 finalFreq = this.lastStableFreq;
                             }
                         } else {
-                            // 揺れている → 単発エラーとして拒否
                             finalFreq = this.lastStableFreq;
-                            this.pendingOctaveJumpFreq = 0;
-                            this.pendingOctaveJumpCount = 0;
+                            clearAllPending();
                         }
                     } else {
-                        // 初回検出 → pending 開始
                         this.pendingOctaveJumpFreq = finalFreq;
                         this.pendingOctaveJumpCount = 1;
                         finalFreq = this.lastStableFreq;
@@ -201,13 +235,40 @@ export class PitchAnalyzer {
                 }
 
             } else {
-                // オクターブ以外の大きな跳躍（5度, 6度 等）→ 本物として即採用
-                this.pendingOctaveJumpFreq = 0;
-                this.pendingOctaveJumpCount = 0;
+                // 中規模〜大規模ジャンプ（5〜9 or 15+ 半音）
+                if (guideOctaveCorrected) {
+                    // ガイドが保証 → 即採用
+                    clearAllPending();
+                    // 7 半音以上の確定ジャンプは履歴をリセット
+                    if (absSemi >= 7) this.rawHistory = [];
+                } else {
+                    // 2 フレーム連続確認
+                    if (this.pendingLargeJumpFreq > 0) {
+                        const pendSemi = 12 * Math.log2(finalFreq / this.pendingLargeJumpFreq);
+                        if (Math.abs(pendSemi) < 2.0) {
+                            this.pendingLargeJumpCount++;
+                            if (this.pendingLargeJumpCount >= LARGE_JUMP_CONFIRM_FRAMES) {
+                                clearAllPending();
+                                if (absSemi >= 7) this.rawHistory = [];
+                            } else {
+                                finalFreq = this.lastStableFreq;
+                            }
+                        } else {
+                            finalFreq = this.lastStableFreq;
+                            clearAllPending();
+                        }
+                    } else {
+                        this.pendingLargeJumpFreq = finalFreq;
+                        this.pendingLargeJumpCount = 1;
+                        finalFreq = this.lastStableFreq;
+                    }
+                }
             }
         } else {
             this.pendingOctaveJumpFreq = 0;
             this.pendingOctaveJumpCount = 0;
+            this.pendingLargeJumpFreq = 0;
+            this.pendingLargeJumpCount = 0;
         }
 
         // 確定値を履歴に追加
