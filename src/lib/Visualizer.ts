@@ -536,6 +536,20 @@ export class Visualizer {
             // Sort points by time to prevent zigzag lines when history is out of order (e.g. loops)
             pts.sort((a, b) => a.t - b.t);
 
+            // Binary-search lookup over sorted midiGhostNotes (O(log N) instead of O(N)).
+            // Assumes notes are sorted by time (monophonic MIDI track).
+            const ghostSorted = midiGhostNotes;
+            const findNoteAt = (t: number) => {
+                let lo = 0, hi = ghostSorted.length - 1, idx = -1;
+                while (lo <= hi) {
+                    const mid = (lo + hi) >> 1;
+                    if (ghostSorted[mid].time <= t) { idx = mid; lo = mid + 1; } else hi = mid - 1;
+                }
+                if (idx < 0) return null;
+                const n = ghostSorted[idx];
+                return (t <= n.time + n.duration) ? n : null;
+            };
+
             if (micRenderMode === 'segment') {
                 // Segment mode: break line on large pitch jumps (for piano / discrete notes)
                 const JUMP_THRESHOLD = 1.5; // semitones — tune this to taste
@@ -567,7 +581,7 @@ export class Visualizer {
                             // lookupT must match the guide-freq lookup in AudioEngine (eff = pos + timelineOffsetSec).
                             // p.time = pos - 0.05 - inputLatency, t = p.time, so t + inputLatency = pos - 0.05 = eff.
                             const lookupT = curr.t + (inputLatency || 0);
-                            const note = midiGhostNotes.find(n => lookupT >= n.time && lookupT <= n.time + n.duration);
+                            const note = findNoteAt(lookupT);
                             if (note) {
                                 const expected = note.midi + (state.guideOctaveOffset * 12) + state.transposeOffset;
                                 const toleranceSemitones = toleranceCents / 100;
@@ -597,7 +611,7 @@ export class Visualizer {
                     let dotColor = '#00FFCC';
                     if (state.showPitchDeviation) {
                         const lookupT = p.t + (inputLatency || 0);
-                        const note = midiGhostNotes.find(n => lookupT >= n.time && lookupT <= n.time + n.duration);
+                        const note = findNoteAt(lookupT);
                         if (note) {
                             const expected = note.midi + (state.guideOctaveOffset * 12) + state.transposeOffset;
                             if (Math.abs(p.midi - expected) > toleranceCents / 100) {
@@ -645,7 +659,7 @@ export class Visualizer {
 
                         if (state.showPitchDeviation) {
                             const lookupT = curr.t + (inputLatency || 0);
-                            const note = midiGhostNotes.find(n => lookupT >= n.time && lookupT <= n.time + n.duration);
+                            const note = findNoteAt(lookupT);
                             if (note) {
                                 const expected = note.midi + (state.guideOctaveOffset * 12) + state.transposeOffset;
                                 const toleranceSemitones = toleranceCents / 100;
@@ -869,9 +883,6 @@ export class Visualizer {
         const measureTimes = state.measureTimes && state.measureTimes.length > 0 ? state.measureTimes : null;
 
         if (beatTimes) {
-            // 小節開始時刻のセット（O(1) 判定用）
-            const measureSet = new Set<number>(measureTimes || []);
-
             // 二分探索で可視範囲の開始インデックスを得る
             let lo = 0, hi = beatTimes.length - 1, startIdx = beatTimes.length;
             while (lo <= hi) {
@@ -880,17 +891,33 @@ export class Visualizer {
             }
             startIdx = Math.max(0, startIdx - 1);
 
+            // measureTimes は beatTimes の部分集合かつ昇順なので、並走ポインタで O(1) 判定（Set を毎フレーム作らない）
+            const mt = measureTimes || [];
+            let mIdx = 0;
+            if (mt.length > 0) {
+                // 可視範囲開始まで mIdx を進める
+                while (mIdx < mt.length && mt[mIdx] < beatTimes[startIdx]) mIdx++;
+            }
+
+            // 色ごとに 1 パスにまとめて stroke 回数を削減
+            const measureXs: number[] = [];
+            const beatXs: number[] = [];
             for (let i = startIdx; i < beatTimes.length; i++) {
                 const t = beatTimes[i];
                 if (t > visEndT) break;
                 const x = playX + (t - eff) * pxPerSec;
-                const isMeasureStart = measureSet.has(t);
-                this.ctx.strokeStyle = isMeasureStart ? 'rgba(255, 255, 255, 0.3)' : 'rgba(255, 255, 255, 0.1)';
-                this.ctx.beginPath();
-                this.ctx.moveTo(x, 0);
-                this.ctx.lineTo(x, height);
-                this.ctx.stroke();
+                const isMeasureStart = mIdx < mt.length && mt[mIdx] === t;
+                if (isMeasureStart) { mIdx++; measureXs.push(x); }
+                else beatXs.push(x);
             }
+            this.ctx.strokeStyle = 'rgba(255, 255, 255, 0.1)';
+            this.ctx.beginPath();
+            for (const x of beatXs) { this.ctx.moveTo(x, 0); this.ctx.lineTo(x, height); }
+            this.ctx.stroke();
+            this.ctx.strokeStyle = 'rgba(255, 255, 255, 0.3)';
+            this.ctx.beginPath();
+            for (const x of measureXs) { this.ctx.moveTo(x, 0); this.ctx.lineTo(x, height); }
+            this.ctx.stroke();
         } else {
             // フォールバック：MIDI 未読込時は単純な等間隔グリッド
             const beatInterval = 60 / (baseBpm || bpm || 120);
