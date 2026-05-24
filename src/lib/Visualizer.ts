@@ -564,7 +564,9 @@ export class Visualizer {
                         let shadow = '#39FF14';
 
                         if (state.showPitchDeviation) {
-                            const lookupT = curr.t + lag + (inputLatency || 0);
+                            // lookupT must match the guide-freq lookup in AudioEngine (eff = pos + timelineOffsetSec).
+                            // p.time = pos - 0.05 - inputLatency, t = p.time, so t + inputLatency = pos - 0.05 = eff.
+                            const lookupT = curr.t + (inputLatency || 0);
                             const note = midiGhostNotes.find(n => lookupT >= n.time && lookupT <= n.time + n.duration);
                             if (note) {
                                 const expected = note.midi + (state.guideOctaveOffset * 12) + state.transposeOffset;
@@ -594,7 +596,7 @@ export class Visualizer {
 
                     let dotColor = '#00FFCC';
                     if (state.showPitchDeviation) {
-                        const lookupT = p.t + lag + (inputLatency || 0);
+                        const lookupT = p.t + (inputLatency || 0);
                         const note = midiGhostNotes.find(n => lookupT >= n.time && lookupT <= n.time + n.duration);
                         if (note) {
                             const expected = note.midi + (state.guideOctaveOffset * 12) + state.transposeOffset;
@@ -642,7 +644,7 @@ export class Visualizer {
                         let shadow = '#39FF14';
 
                         if (state.showPitchDeviation) {
-                            const lookupT = curr.t + lag + (inputLatency || 0);
+                            const lookupT = curr.t + (inputLatency || 0);
                             const note = midiGhostNotes.find(n => lookupT >= n.time && lookupT <= n.time + n.duration);
                             if (note) {
                                 const expected = note.midi + (state.guideOctaveOffset * 12) + state.transposeOffset;

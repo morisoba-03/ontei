@@ -701,15 +701,16 @@ export class AudioEngine {
         badRatio: number;
         avgCents: number;
     }[] {
-        const { pitchHistory, midiGhostNotes, toleranceCents, transposeOffset, measureTimes } = this.state;
+        const { pitchHistory, midiGhostNotes, toleranceCents, transposeOffset, measureTimes, guideOctaveOffset } = this.state;
         if (pitchHistory.length < 10 || midiGhostNotes.length === 0) return [];
 
         const badEntries: { time: number; cents: number }[] = [];
         for (const p of pitchHistory) {
             if (p.conf < 0.5 || p.time < 0) continue;
+            // p.time = playbackPosition - 0.05 - inputLatency; matches eff = pos + timelineOffsetSec(-0.05)
             const note = midiGhostNotes.find(n => p.time >= n.time && p.time <= n.time + n.duration);
             if (!note) continue;
-            const transposedMidi = note.midi + (transposeOffset || 0);
+            const transposedMidi = note.midi + (guideOctaveOffset * 12) + (transposeOffset || 0);
             const expectedFreq = 440 * Math.pow(2, (transposedMidi - 69) / 12);
             const cents = 1200 * Math.log2(p.freq / expectedFreq);
             if (Math.abs(cents) > toleranceCents) badEntries.push({ time: p.time, cents });
