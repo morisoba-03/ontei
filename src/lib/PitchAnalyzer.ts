@@ -14,6 +14,8 @@ const HOLD_CONF = 0.55;
 const OCTAVE_CONFIRM_FRAMES = 3;
 // 中規模ジャンプ確定に必要な連続フレーム数（誤検出を弾くため）
 const LARGE_JUMP_CONFIRM_FRAMES = 2;
+// ガイド消滅後も「直近の期待周波数」を保持する最大フレーム数（60fps で約 0.25 秒）
+const RECENT_GUIDE_MAX_FRAMES = 15;
 
 export class PitchAnalyzer {
     private detector: PitchDetector<Float32Array> | null = null;
@@ -35,6 +37,10 @@ export class PitchAnalyzer {
     private rawHistory: number[] = [];
     private readonly RAW_HISTORY_SIZE = 7;
 
+    // ガイド消滅後の参照フリーズ（オクターブ誤検出を安定化）
+    private recentExpectedFreq: number = 0;
+    private framesSinceGuide: number = 999;
+
     setAnalysisRate(hz: number) {
         this.maxHoldFrames = Math.max(3, Math.round(hz * 0.2));
     }
@@ -48,6 +54,8 @@ export class PitchAnalyzer {
         this.pendingLargeJumpFreq = 0;
         this.pendingLargeJumpCount = 0;
         this.rawHistory = [];
+        this.recentExpectedFreq = 0;
+        this.framesSinceGuide = 999;
     }
 
     private getMedian(arr: number[]): number {
@@ -64,8 +72,18 @@ export class PitchAnalyzer {
             this.detector.minVolumeDecibels = -60;
         }
 
-        // 有効ガイド：現フレームのガイドのみ参照（前ノートの残留は使わない）
-        const effectiveGuide = (options.guideFreq && options.guideFreq > 0) ? options.guideFreq : 0;
+        // 0. ガイド参照の更新（消滅後も短時間は保持）
+        const isLiveGuide = !!(options.guideFreq && options.guideFreq > 0);
+        if (isLiveGuide) {
+            this.recentExpectedFreq = options.guideFreq!;
+            this.framesSinceGuide = 0;
+        } else {
+            this.framesSinceGuide++;
+            if (this.framesSinceGuide > RECENT_GUIDE_MAX_FRAMES) this.recentExpectedFreq = 0;
+        }
+        const effectiveGuide = isLiveGuide
+            ? options.guideFreq!
+            : (this.framesSinceGuide <= RECENT_GUIDE_MAX_FRAMES ? this.recentExpectedFreq : 0);
 
         // 1. RMS Gate (silence detection)
         let rms = 0;
@@ -108,7 +126,10 @@ export class PitchAnalyzer {
 
         // 3a. ガイド音による候補選択（最優先オラクル）
         //     {f, 2f, f/2, 4f, f/4} の中からガイドに最も近い候補を選ぶ。
-        //     2オクターブ以上の誤検出にも対応。
+        //     ライブガイド: 8半音以内で採用（音域間ジャンプも対応）
+        //     古いガイド (recentExpectedFreq): 2半音以内のみ採用。
+        //       これにより「前のノート(ミ)のガイド残留がドの候補選択を汚染する」問題を防ぐ。
+        //       純粋なオクターブ誤検出（E4→E5: 距離0）は引き続き補正できる。
         if (effectiveGuide > 0) {
             const cands = [rawFreq, rawFreq * 2, rawFreq / 2, rawFreq * 4, rawFreq / 4]
                 .filter(f => f >= 60 && f <= 4200);
@@ -118,8 +139,9 @@ export class PitchAnalyzer {
                 const d = Math.abs(12 * Math.log2(cands[i] / effectiveGuide));
                 if (d < bestDist) { bestDist = d; bestF = cands[i]; }
             }
-            // ガイドから 8 半音以内の候補があれば採用
-            if (bestDist < 8) {
+            // ライブガイドは 8 半音、古いガイドは 2 半音（純オクターブ誤検出のみ補正）
+            const tolerance = isLiveGuide ? 8 : 2;
+            if (bestDist < tolerance) {
                 if (bestF !== rawFreq) {
                     finalFreq = bestF;
                     finalConf = Math.min(1.0, finalConf * 1.1);
