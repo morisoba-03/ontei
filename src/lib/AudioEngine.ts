@@ -357,6 +357,47 @@ export class AudioEngine {
         this.analysisTimer = window.setInterval(() => this.analyze(), 1000 / this.analysisRate);
     }
 
+    // メロディトラックがオーディオ（MP3 抽出）で、折れ線ガイドとして採点可能か
+    hasContinuousGuide(): boolean {
+        const idx = this.state.melodyTrackIndex;
+        const t = idx !== -1 ? this.state.currentTracks[idx] : null;
+        return !!(t && t.type === 'audio' && t.pitchData && t.pitchData.length > 1);
+    }
+
+    // 連続ガイド（MP3 折れ線）の time（秒）におけるターゲット周波数。
+    // 無音区間（点が離れすぎ）や範囲外では 0 を返す。
+    // オクターブシフト・移調を反映する（実音源のため A4 基準は適用しない）。
+    continuousGuideFreqAt(time: number): number {
+        const idx = this.state.melodyTrackIndex;
+        const track = idx !== -1 ? this.state.currentTracks[idx] : null;
+        if (!track || track.type !== 'audio' || !track.pitchData || track.pitchData.length < 2) return 0;
+        const data = track.pitchData;
+
+        if (time < data[0].time || time > data[data.length - 1].time) return 0;
+
+        // data[i].time <= time < data[i+1].time となる i を二分探索
+        let lo = 0, hi = data.length - 1;
+        while (lo < hi) {
+            const mid = (lo + hi) >> 1;
+            if (data[mid].time <= time) lo = mid + 1; else hi = mid;
+        }
+        const i = Math.max(0, lo - 1);
+        const a = data[i];
+        const b = data[i + 1] ?? a;
+
+        const GAP = 0.12; // これ以上離れた点の間は無音とみなす
+        if (b.time - a.time > GAP) return 0;
+        if (a.freq <= 0 || b.freq <= 0) return 0;
+
+        // セント（対数）領域で線形補間
+        const span = b.time - a.time;
+        const f = span > 1e-6 ? (time - a.time) / span : 0;
+        const baseFreq = a.freq * Math.pow(b.freq / a.freq, f);
+
+        const mult = Math.pow(2, (this.state.guideOctaveOffset * 12 + this.state.transposeOffset) / 12);
+        return baseFreq * mult;
+    }
+
     analyze() {
         if (!this.micAnalyser || !this.micData || !this.audioCtx) return;
         this.micAnalyser.getFloatTimeDomainData(this.micData);
@@ -365,7 +406,11 @@ export class AudioEngine {
         let guideFreq = 0;
         // Find ghost note at current time (eff)
         const eff = this.state.playbackPosition + this.state.timelineOffsetSec;
-        if (Array.isArray(this.state.midiGhostNotes)) {
+        if (this.hasContinuousGuide()) {
+            // MP3（折れ線）ガイド: 連続曲線を補間してターゲット周波数を求める。
+            // 無音区間では 0（ターゲットなし）。
+            guideFreq = this.continuousGuideFreqAt(eff);
+        } else if (Array.isArray(this.state.midiGhostNotes)) {
             const note = this.state.midiGhostNotes.find(n => eff >= n.time && eff <= n.time + n.duration);
             if (note) {
                 // MIDI to Freq (Apply Octave Offset)
@@ -729,12 +774,25 @@ export class AudioEngine {
     // 練習モードのランダム生成では毎回変わるため、固定曲のみゴーストが一致する。
     private songSignature(): string {
         const notes = this.state.midiGhostNotes;
-        if (!notes || notes.length === 0) return '';
-        let h = notes.length >>> 0;
-        for (let i = 0; i < notes.length; i++) {
-            h = (Math.imul(h, 31) + Math.round(notes[i].time * 100) + notes[i].midi * 7) >>> 0;
+        if (notes && notes.length > 0) {
+            let h = notes.length >>> 0;
+            for (let i = 0; i < notes.length; i++) {
+                h = (Math.imul(h, 31) + Math.round(notes[i].time * 100) + notes[i].midi * 7) >>> 0;
+            }
+            return 'sig' + h.toString(36);
         }
-        return 'sig' + h.toString(36);
+        // MP3 折れ線ガイド: 抽出ノート列からシグネチャを作る
+        const idx = this.state.melodyTrackIndex;
+        const track = idx !== -1 ? this.state.currentTracks[idx] : null;
+        if (track && track.type === 'audio' && track.notes.length > 0) {
+            const an = track.notes;
+            let h = an.length >>> 0;
+            for (let i = 0; i < an.length; i++) {
+                h = (Math.imul(h, 31) + Math.round(an[i].time * 100) + an[i].midi * 7) >>> 0;
+            }
+            return 'sigA' + h.toString(36);
+        }
+        return '';
     }
 
     // 曲ロード時に呼び、ベスト記録のゴーストを読み込んで state に反映する。
@@ -813,16 +871,24 @@ export class AudioEngine {
         avgCents: number;
     }[] {
         const { pitchHistory, midiGhostNotes, toleranceCents, transposeOffset, measureTimes, guideOctaveOffset } = this.state;
-        if (pitchHistory.length < 10 || midiGhostNotes.length === 0) return [];
+        const continuous = this.hasContinuousGuide();
+        if (pitchHistory.length < 10 || (midiGhostNotes.length === 0 && !continuous)) return [];
 
         const badEntries: { time: number; cents: number }[] = [];
         for (const p of pitchHistory) {
             if (p.conf < 0.5 || p.time < 0) continue;
             // p.time = playbackPosition - 0.05 - inputLatency; matches eff = pos + timelineOffsetSec(-0.05)
-            const note = midiGhostNotes.find(n => p.time >= n.time && p.time <= n.time + n.duration);
-            if (!note) continue;
-            const transposedMidi = note.midi + (guideOctaveOffset * 12) + (transposeOffset || 0);
-            const expectedFreq = midiToFreq(transposedMidi, this.state.a4Reference);
+            let expectedFreq = 0;
+            if (continuous) {
+                // MP3 折れ線ガイド: 連続曲線から期待周波数を求める（無音区間は対象外）
+                expectedFreq = this.continuousGuideFreqAt(p.time);
+            } else {
+                const note = midiGhostNotes.find(n => p.time >= n.time && p.time <= n.time + n.duration);
+                if (!note) continue;
+                const transposedMidi = note.midi + (guideOctaveOffset * 12) + (transposeOffset || 0);
+                expectedFreq = midiToFreq(transposedMidi, this.state.a4Reference);
+            }
+            if (expectedFreq <= 0) continue;
             const cents = 1200 * Math.log2(p.freq / expectedFreq);
             if (Math.abs(cents) > toleranceCents) badEntries.push({ time: p.time, cents });
         }
@@ -1472,6 +1538,10 @@ export class AudioEngine {
     scheduleGuideNotes() {
         if (!this.audioCtx) return;
 
+        // MP3（オーディオ）ガイドは原音をバッキングとして再生するため、合成ガイド音は鳴らさない
+        const mIdx = this.state.melodyTrackIndex;
+        if (mIdx !== -1 && this.state.currentTracks[mIdx]?.type === 'audio') return;
+
         const lookahead = 0.1;
         const currentTime = this.state.playbackPosition;
 
@@ -1683,6 +1753,8 @@ export class AudioEngine {
             this.updateState({ loadingProgress: 15 }); // Decoded
 
             this.backingBuffer = audioBuffer;
+            // 原音をガイドとして再生（折れ線ガイドの「お手本」は MP3 原音）
+            this.state.isBackingSoundEnabled = true;
 
             // Auto-extract melody (Progress 15 -> 95)
             // Octave Error Fix: strictOctaveMode true (using raw MPM+SHS)
@@ -1712,6 +1784,33 @@ export class AudioEngine {
             // Clear backing tracks when loading new main track
             this.backingMidiNotes = [];
             this.nextBackingNoteIndex = 0;
+
+            // MP3 折れ線ガイド: 口笛で吹きやすい音域へ自動調整し、全体が見えるよう縦位置を合わせる。
+            // 折れ線はそのまま連続採点の対象になる（バー型ノートには変換しない）。
+            if (result.notes.length > 0) {
+                const midiNums = result.notes.map(n => n.midi);
+                if (this.state.autoOctaveEstimate) {
+                    const estimated = this.estimateGuideOctaveOffset(midiNums);
+                    if (estimated !== this.state.guideOctaveOffset) {
+                        this.state.guideOctaveOffset = estimated;
+                        const sign = estimated > 0 ? '+' : '';
+                        toast.show(`ガイド音程を ${sign}${estimated} オクターブに自動調整しました`, 'info', { duration: 3000 });
+                    }
+                }
+                const octShift = this.state.guideOctaveOffset * 12;
+                const minMidi = Math.min(...midiNums) + octShift;
+                const maxMidi = Math.max(...midiNums) + octShift;
+                const centerMidi = (minMidi + maxMidi) / 2;
+                const total = this.state.verticalZoom * 12;
+                const range = 132 - 36 - total;
+                if (range > 0) {
+                    const vminDesired = centerMidi - total / 2;
+                    const offset = (vminDesired - 36) / range * 100;
+                    this.state.verticalOffset = Math.max(0, Math.min(100, offset));
+                }
+            }
+
+            this.refreshBestGhost(); // この MP3 のベスト記録ゴーストを読み込む
 
         } catch (e) {
             console.error("Load Audio Failed", e);
