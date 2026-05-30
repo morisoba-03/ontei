@@ -308,7 +308,7 @@ export class Visualizer {
                     if (p.time > visEnd) break;
                     if (p.time < visStart - 0.5) continue; // Buffer
 
-                    const midi = 69 + 12 * Math.log2(Math.max(1e-9, p.freq) / 440);
+                    const midi = 69 + 12 * Math.log2(Math.max(1e-9, p.freq) / (state.a4Reference ?? 440));
                     const y = h - (midi - vmin + 1) * pxSemi;
                     const x = playX + (p.time - eff) * pxPerSec;
 
@@ -517,7 +517,7 @@ export class Visualizer {
             const LAG_MS = Math.round((getPitchVisOffsetSec()) * 1000);
             const lag = LAG_MS / 1000;
             const drawUntil = (playbackPosition - lag);
-            const A4Frequency = 440;
+            const A4Frequency = state.a4Reference ?? 440;
 
             const vmin = 36 + Math.round((132 - 36 - total) * (verticalOffset / 100));
             const vmax = vmin + total;
@@ -696,7 +696,7 @@ export class Visualizer {
         if (state.currentMicPitch && state.currentMicConf && state.currentMicConf > 0.3) {
             const freq = state.currentMicPitch;
             const vmin = 36 + Math.round((132 - 36 - total) * (verticalOffset / 100));
-            const A4Frequency = 440;
+            const A4Frequency = state.a4Reference ?? 440;
             const midi = 69 + 12 * Math.log2(freq / A4Frequency);
 
             if (midi >= vmin && midi <= vmin + total) {

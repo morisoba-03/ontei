@@ -226,6 +226,26 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
                                 </div>
                             )}
 
+                            {/* 基準ピッチ A4 */}
+                            <div className="space-y-1 pt-2 border-t border-white/5">
+                                <div className="flex justify-between text-sm items-center">
+                                    <span>基準ピッチ (A4)</span>
+                                    <span className="font-mono text-indigo-400 bg-indigo-400/10 px-2 py-0.5 rounded">{state.a4Reference ?? 440} Hz</span>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                    <input
+                                        type="range" min="430" max="446" step="1"
+                                        value={state.a4Reference ?? 440}
+                                        onChange={(e) => update('a4Reference', parseInt(e.target.value))}
+                                        className="flex-1 h-2 bg-white/20 rounded-full appearance-none cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-4 [&::-webkit-slider-thumb]:h-4 [&::-webkit-slider-thumb]:bg-indigo-500 [&::-webkit-slider-thumb]:rounded-full hover:[&::-webkit-slider-thumb]:scale-110 transition-all"
+                                    />
+                                    {(state.a4Reference ?? 440) !== 440 && (
+                                        <button onClick={() => update('a4Reference', 440)} className="text-[10px] text-white/50 hover:text-white shrink-0">440</button>
+                                    )}
+                                </div>
+                                <p className="text-[10px] text-white/30">吹奏楽・アンサンブル等で 442Hz などに合わせる場合に調整します</p>
+                            </div>
+
                             {/* ライブピッチ平滑化 */}
                             <div className="space-y-1 pt-2 border-t border-white/5">
                                 <div className="flex justify-between text-sm items-center">
