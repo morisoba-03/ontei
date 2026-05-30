@@ -17,6 +17,10 @@ const LARGE_JUMP_CONFIRM_FRAMES = 2;
 // ガイド消滅後も「直近の期待周波数」を保持する最大フレーム数（60fps で約 0.25 秒）
 const RECENT_GUIDE_MAX_FRAMES = 15;
 
+// v2「厳密モード」: これ以上の急ジャンプ（半音）のみ 1 フレーム確認の対象にする。
+// pitchy 由来の瞬間的オクターブ反転（≈12 半音）を弾きつつ、本物の跳躍は 1 フレームで採用。
+const V2_JUMP_HOLD_SEMI = 9;
+
 export class PitchAnalyzer {
     private detector: PitchDetector<Float32Array> | null = null;
     private inputLength: number = 0;
@@ -41,6 +45,10 @@ export class PitchAnalyzer {
     private recentExpectedFreq: number = 0;
     private framesSinceGuide: number = 999;
 
+    // v2「厳密モード」専用ステート
+    private v2Last: number = 0;       // 直近に採用した周波数
+    private v2PendingCount: number = 0; // 急ジャンプの連続フレーム数
+
     setAnalysisRate(hz: number) {
         this.maxHoldFrames = Math.max(3, Math.round(hz * 0.2));
     }
@@ -56,6 +64,8 @@ export class PitchAnalyzer {
         this.rawHistory = [];
         this.recentExpectedFreq = 0;
         this.framesSinceGuide = 999;
+        this.v2Last = 0;
+        this.v2PendingCount = 0;
     }
 
     private getMedian(arr: number[]): number {
@@ -65,7 +75,85 @@ export class PitchAnalyzer {
         return sorted.length % 2 === 0 ? (sorted[mid - 1] + sorted[mid]) / 2 : sorted[mid];
     }
 
-    analyze(buf: Float32Array, sampleRate: number, options: { viterbi?: boolean, guideFreq?: number, minRms?: number } = { viterbi: true }): PitchResult {
+    analyze(buf: Float32Array, sampleRate: number, options: { viterbi?: boolean, guideFreq?: number, minRms?: number, version?: 'v1' | 'v2' } = { viterbi: true }): PitchResult {
+        return options.version === 'v2'
+            ? this.analyzeV2(buf, sampleRate, options)
+            : this.analyzeV1(buf, sampleRate, options);
+    }
+
+    /**
+     * v2「厳密モード」: ガイド非依存・無平滑のパススルー検出。
+     * - 通常の音程変化（<9 半音）は McLeod 検出値をそのまま返す（EMA なし → セント値が正確）。
+     * - 9 半音以上の急ジャンプは 1 フレームだけ旧値を保持して確認する。
+     *   pitchy 由来の瞬間的オクターブ反転（持続しない）はこれで消え、
+     *   本物の跳躍は次フレームで採用される（遅延 ≈ 1 フレーム）。
+     * - ガイド音は一切使わないため、奏者の本当のオクターブ違いも正直に表示される。
+     */
+    private analyzeV2(buf: Float32Array, sampleRate: number, options: { minRms?: number }): PitchResult {
+        if (!this.detector || this.inputLength !== buf.length) {
+            this.inputLength = buf.length;
+            this.detector = PitchDetector.forFloat32Array(this.inputLength);
+            this.detector.minVolumeDecibels = -60;
+        }
+
+        // 1. RMS Gate（無音判定）
+        let rms = 0;
+        for (let i = 0; i < buf.length; i++) rms += buf[i] * buf[i];
+        rms = Math.sqrt(rms / buf.length);
+
+        const minRms = options.minRms ?? 0.01;
+        if (rms < minRms) {
+            this.consecutiveSilence++;
+            if (this.consecutiveSilence > 5) {
+                this.v2Last = 0;
+                this.v2PendingCount = 0;
+                this.lastStableFreq = 0;
+                this.holdFramesLeft = 0;
+            } else if (this.holdFramesLeft > 0 && this.v2Last > 0) {
+                this.holdFramesLeft--;
+                return { freq: this.v2Last, conf: HOLD_CONF };
+            }
+            return { freq: 0, conf: 0 };
+        }
+        this.consecutiveSilence = 0;
+
+        // 2. McLeod Pitch Method
+        const [rawFreq, clarity] = this.detector.findPitch(buf, sampleRate);
+        if (clarity < 0.45 || rawFreq < 60 || rawFreq > 4200) {
+            if (this.holdFramesLeft > 0 && this.v2Last > 0) {
+                this.holdFramesLeft--;
+                return { freq: this.v2Last, conf: HOLD_CONF };
+            }
+            return { freq: 0, conf: 0 };
+        }
+
+        // 3. 急ジャンプのみ 1 フレーム確認（それ以外は生値をそのまま採用）
+        let resolved = rawFreq;
+        if (this.v2Last > 0) {
+            const jump = Math.abs(12 * Math.log2(rawFreq / this.v2Last));
+            if (jump >= V2_JUMP_HOLD_SEMI) {
+                this.v2PendingCount++;
+                if (this.v2PendingCount >= 2) {
+                    // 2 フレーム連続で離れた値 → 本物の跳躍として採用
+                    this.v2PendingCount = 0;
+                    resolved = rawFreq;
+                } else {
+                    // 最初の 1 フレームは旧値を保持（瞬間スパイク除去）
+                    resolved = this.v2Last;
+                }
+            } else {
+                this.v2PendingCount = 0;
+                resolved = rawFreq;
+            }
+        }
+
+        this.v2Last = resolved;
+        this.lastStableFreq = resolved; // 共有フィールドを整合させておく
+        this.holdFramesLeft = this.maxHoldFrames;
+        return { freq: resolved, conf: clarity };
+    }
+
+    private analyzeV1(buf: Float32Array, sampleRate: number, options: { viterbi?: boolean, guideFreq?: number, minRms?: number } = { viterbi: true }): PitchResult {
         if (!this.detector || this.inputLength !== buf.length) {
             this.inputLength = buf.length;
             this.detector = PitchDetector.forFloat32Array(this.inputLength);
