@@ -122,6 +122,13 @@ export interface AudioEngineState {
     pitchEngineVersion: 'v1' | 'v2';
     // MIDI読み込み時に口笛で吹きやすい音域へガイドのオクターブを自動調整する（キーは変えない）
     autoOctaveEstimate: boolean;
+    // メトロノーム音量（0〜1）と音色
+    metronomeVolume: number;
+    metronomeTone: 'beep' | 'click' | 'wood';
+    // ライブピッチ表示（カーソル/チューナー）の平滑化量（0=生〜0.9=滑らか）。判定・履歴には影響しない
+    pitchSmoothing: number;
+    // チューナーに音名（例: A5）を表示する
+    tunerShowNote: boolean;
 }
 
 export type ScaleType = 'Major' | 'NaturalMinor' | 'HarmonicMinor' | 'MelodicMinor' | 'MajorPentatonic' | 'MinorPentatonic' | 'Chromatic' | 'Dorian' | 'Mixolydian' | 'Blues';

@@ -77,6 +77,7 @@ export class AudioEngine {
     playbackStartPerf: number = 0;
     reqFrameId: number | null = null;
     private lastFrameTime: number = 0;
+    private _lastDisplayFreq: number = 0; // ライブピッチ平滑化用の直近表示周波数
 
     // Config
     analysisRate: number = 60; // 60 Hz on all devices — smoother pitch history
@@ -215,7 +216,11 @@ export class AudioEngine {
             showTolerancePreview: false,
             markers: [],
             pitchEngineVersion: 'v1',
-            autoOctaveEstimate: true
+            autoOctaveEstimate: true,
+            metronomeVolume: 0.3,
+            metronomeTone: 'beep',
+            pitchSmoothing: 0,
+            tunerShowNote: true
         };
         this.loadSettings();
         // Start loading piano samples immediately
@@ -381,7 +386,20 @@ export class AudioEngine {
         this.state.meterColor = meterColor;
 
         // Update Real-time State (for Cursor)
-        this.state.currentMicPitch = freq;
+        // ライブカーソル/チューナー表示のみ平滑化（判定・履歴には影響させない）。
+        // セント領域での EMA にしてオクターブ方向に偏らないようにする。
+        const sm = this.state.pitchSmoothing ?? 0;
+        if (freq <= 0) {
+            this.state.currentMicPitch = 0;
+            this._lastDisplayFreq = 0;
+        } else if (sm > 0 && this._lastDisplayFreq > 0) {
+            const smoothed = this._lastDisplayFreq * Math.pow(freq / this._lastDisplayFreq, 1 - sm);
+            this._lastDisplayFreq = smoothed;
+            this.state.currentMicPitch = smoothed;
+        } else {
+            this._lastDisplayFreq = freq;
+            this.state.currentMicPitch = freq;
+        }
         this.state.currentMicConf = conf;
 
         // Feed Score Analyzer
@@ -998,7 +1016,7 @@ export class AudioEngine {
                     'guideVolume', 'accompVolume', 'gateThreshold', 'toleranceCents',
                     'isParticlesEnabled', 'countIn', 'showPitchDeviation', 'inputLatency',
                     'micRenderMode', 'showTuner', 'selectedMidiTrackId', 'pitchEngineVersion',
-                    'autoOctaveEstimate',
+                    'autoOctaveEstimate', 'metronomeVolume', 'metronomeTone', 'pitchSmoothing', 'tunerShowNote',
                 ];
 
                 const updates: Partial<AudioEngineState> = {};
@@ -1024,7 +1042,7 @@ export class AudioEngine {
                 'guideVolume', 'accompVolume', 'gateThreshold', 'toleranceCents',
                 'isParticlesEnabled', 'countIn', 'showPitchDeviation', 'inputLatency',
                 'micRenderMode', 'showTuner', 'pitchEngineVersion',
-                'autoOctaveEstimate',
+                'autoOctaveEstimate', 'metronomeVolume', 'metronomeTone', 'pitchSmoothing', 'tunerShowNote',
             ];
 
             const toSave = persistentKeys.reduce((acc, key) => {
@@ -1258,14 +1276,26 @@ export class AudioEngine {
 
     private playClick(time: number, isHigh: boolean) {
         if (!this.audioCtx || !this.masterGain) return;
+        const vol = this.state.metronomeVolume ?? 0.3;
+        if (vol <= 0) return;
+        const tone = this.state.metronomeTone ?? 'beep';
+
         const osc = this.audioCtx.createOscillator();
         const gain = this.audioCtx.createGain();
 
-        osc.frequency.setValueAtTime(isHigh ? 1600 : 1200, time);
-        osc.type = 'sine';
+        if (tone === 'wood') {
+            osc.type = 'triangle';
+            osc.frequency.setValueAtTime(isHigh ? 900 : 650, time);
+        } else if (tone === 'click') {
+            osc.type = 'square';
+            osc.frequency.setValueAtTime(isHigh ? 2000 : 1500, time);
+        } else { // beep
+            osc.type = 'sine';
+            osc.frequency.setValueAtTime(isHigh ? 1600 : 1200, time);
+        }
 
         gain.gain.setValueAtTime(0, time);
-        gain.gain.linearRampToValueAtTime(0.3, time + 0.005);
+        gain.gain.linearRampToValueAtTime(vol, time + 0.005);
         gain.gain.exponentialRampToValueAtTime(0.01, time + 0.1);
 
         osc.connect(gain);
