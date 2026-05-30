@@ -116,6 +116,10 @@ export interface AudioEngineState {
     showTuner: boolean;
     showTolerancePreview: boolean;
     markers: Marker[];
+    // 音程判定エンジンのバージョン
+    //  'v1' = 従来（ガイドスナップ + EMA平滑 + 多段確認）
+    //  'v2' = 厳密（ガイド非依存・無平滑・最小オクターブスパイク保護）
+    pitchEngineVersion: 'v1' | 'v2';
 }
 
 export type ScaleType = 'Major' | 'NaturalMinor' | 'HarmonicMinor' | 'MelodicMinor' | 'MajorPentatonic' | 'MinorPentatonic' | 'Chromatic' | 'Dorian' | 'Mixolydian' | 'Blues';

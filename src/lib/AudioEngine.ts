@@ -213,7 +213,8 @@ export class AudioEngine {
             showPitchDeviation: true,
             showTuner: true,
             showTolerancePreview: false,
-            markers: []
+            markers: [],
+            pitchEngineVersion: 'v1'
         };
         this.loadSettings();
         // Start loading piano samples immediately
@@ -358,7 +359,7 @@ export class AudioEngine {
         const minRms = Math.pow(10, (this.state.gateThreshold || -50) / 20);
 
         // Offload analysis to Worker
-        this.analysisProcessor.processAsync(this.micData, guideFreq, minRms);
+        this.analysisProcessor.processAsync(this.micData, guideFreq, minRms, this.state.pitchEngineVersion || 'v1');
     }
 
     private handleAnalysisResult(result: { freq: number, conf: number }) {
@@ -983,7 +984,7 @@ export class AudioEngine {
                     'guideOctaveOffset',
                     'guideVolume', 'accompVolume', 'gateThreshold', 'toleranceCents',
                     'isParticlesEnabled', 'countIn', 'showPitchDeviation', 'inputLatency',
-                    'micRenderMode', 'showTuner', 'selectedMidiTrackId',
+                    'micRenderMode', 'showTuner', 'selectedMidiTrackId', 'pitchEngineVersion',
                 ];
 
                 const updates: Partial<AudioEngineState> = {};
@@ -1008,7 +1009,7 @@ export class AudioEngine {
                 'guideOctaveOffset',
                 'guideVolume', 'accompVolume', 'gateThreshold', 'toleranceCents',
                 'isParticlesEnabled', 'countIn', 'showPitchDeviation', 'inputLatency',
-                'micRenderMode', 'showTuner',
+                'micRenderMode', 'showTuner', 'pitchEngineVersion',
             ];
 
             const toSave = persistentKeys.reduce((acc, key) => {
@@ -1023,6 +1024,11 @@ export class AudioEngine {
     }
 
     updateState(updates: Partial<AudioEngineState>) {
+
+        // 判定エンジンのバージョン切替時はアナライザ内部状態をリセット（旧エンジンの残留を防ぐ）
+        if (updates.pitchEngineVersion !== undefined && updates.pitchEngineVersion !== this.state.pitchEngineVersion) {
+            this.analysisProcessor.reset();
+        }
 
         this.state = { ...this.state, ...updates };
 
