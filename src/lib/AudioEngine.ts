@@ -214,7 +214,8 @@ export class AudioEngine {
             showTuner: true,
             showTolerancePreview: false,
             markers: [],
-            pitchEngineVersion: 'v1'
+            pitchEngineVersion: 'v1',
+            autoOctaveEstimate: true
         };
         this.loadSettings();
         // Start loading piano samples immediately
@@ -997,6 +998,7 @@ export class AudioEngine {
                     'guideVolume', 'accompVolume', 'gateThreshold', 'toleranceCents',
                     'isParticlesEnabled', 'countIn', 'showPitchDeviation', 'inputLatency',
                     'micRenderMode', 'showTuner', 'selectedMidiTrackId', 'pitchEngineVersion',
+                    'autoOctaveEstimate',
                 ];
 
                 const updates: Partial<AudioEngineState> = {};
@@ -1022,6 +1024,7 @@ export class AudioEngine {
                 'guideVolume', 'accompVolume', 'gateThreshold', 'toleranceCents',
                 'isParticlesEnabled', 'countIn', 'showPitchDeviation', 'inputLatency',
                 'micRenderMode', 'showTuner', 'pitchEngineVersion',
+                'autoOctaveEstimate',
             ];
 
             const toSave = persistentKeys.reduce((acc, key) => {
@@ -1778,6 +1781,26 @@ export class AudioEngine {
         this.updateState({ phrases });
     }
 
+    // 口笛で無理なく出せる音域（中心 ≈ B♭5, MIDI 82）に楽曲の音域中心が来るような
+    // オクターブシフト（12半音単位）を推定する。キー（transposeOffset）は変更しない。
+    private estimateGuideOctaveOffset(midiNums: number[]): number {
+        if (midiNums.length === 0) return this.state.guideOctaveOffset;
+        const minMidi = Math.min(...midiNums);
+        const maxMidi = Math.max(...midiNums);
+        const centerMidi = (minMidi + maxMidi) / 2;
+        const TARGET_CENTER = 82; // ≈ B♭5（口笛で出しやすい中心音）
+        let bestOffset = 0;
+        let bestDist = Infinity;
+        for (let oct = -3; oct <= 3; oct++) {
+            const dist = Math.abs((centerMidi + oct * 12) - TARGET_CENTER);
+            if (dist < bestDist) {
+                bestDist = dist;
+                bestOffset = oct;
+            }
+        }
+        return bestOffset;
+    }
+
     importMidiTrack(trackIndex: number, transpose: number = 0) {
         if (!this.loadedMidi) return;
 
@@ -1872,11 +1895,24 @@ export class AudioEngine {
 
         this.state.midiGhostNotes = ghostNotes;
 
-        // 音域全体が見えるよう verticalOffset を自動調整（縦ズームは変えない）
         if (ghostNotes.length > 0) {
             const midiNums = ghostNotes.map(n => n.midi);
-            const minMidi = Math.min(...midiNums);
-            const maxMidi = Math.max(...midiNums);
+
+            // オクターブ自動推定: 口笛で吹きやすい音域へガイドを移動（キーは変えない）
+            if (this.state.autoOctaveEstimate) {
+                const estimated = this.estimateGuideOctaveOffset(midiNums);
+                if (estimated !== this.state.guideOctaveOffset) {
+                    this.state.guideOctaveOffset = estimated;
+                    const sign = estimated > 0 ? '+' : '';
+                    toast.show(`ガイド音程を ${sign}${estimated} オクターブに自動調整しました`, 'info', { duration: 3000 });
+                }
+            }
+
+            // 音域全体が見えるよう verticalOffset を自動調整（縦ズームは変えない）
+            // 表示音程は guideOctaveOffset 込みなので、それを反映して中心を求める
+            const octShift = this.state.guideOctaveOffset * 12;
+            const minMidi = Math.min(...midiNums) + octShift;
+            const maxMidi = Math.max(...midiNums) + octShift;
             const centerMidi = (minMidi + maxMidi) / 2;
             const total = this.state.verticalZoom * 12;
             const range = 132 - 36 - total;
