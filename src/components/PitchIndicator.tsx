@@ -2,6 +2,16 @@ import { useState, useEffect } from 'react';
 import { X } from 'lucide-react';
 import { audioEngine } from '../lib/AudioEngine';
 import { cn } from '../lib/utils';
+import { midiToFreq, freqToMidi } from '../lib/pitch';
+
+const NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+function freqToNoteName(freq: number, a4: number): string {
+    if (freq <= 0) return '';
+    const midi = Math.round(freqToMidi(freq, a4));
+    const pc = ((midi % 12) + 12) % 12;
+    const oct = Math.floor(midi / 12) - 1;
+    return NOTE_NAMES[pc] + oct;
+}
 
 export function PitchIndicator() {
     const [pitchData, setPitchData] = useState<{
@@ -10,7 +20,9 @@ export function PitchIndicator() {
         cents: number;
         isActive: boolean;
         showTuner: boolean;
-    }>({ currentPitch: 0, targetPitch: 0, cents: 0, isActive: false, showTuner: true });
+        showNote: boolean;
+        a4: number;
+    }>({ currentPitch: 0, targetPitch: 0, cents: 0, isActive: false, showTuner: true, showNote: true, a4: 440 });
 
     useEffect(() => {
         const update = () => {
@@ -26,7 +38,7 @@ export function PitchIndicator() {
 
             if (ghostNote) {
                 const offset = (state.guideOctaveOffset * 12) + state.transposeOffset;
-                targetPitch = 440 * Math.pow(2, (ghostNote.midi + offset - 69) / 12);
+                targetPitch = midiToFreq(ghostNote.midi + offset, state.a4Reference);
             }
 
             let cents = 0;
@@ -40,6 +52,8 @@ export function PitchIndicator() {
                 cents,
                 isActive: state.isPlaying && (currentPitch > 0 || !!ghostNote),
                 showTuner: state.showTuner,
+                showNote: state.tunerShowNote ?? true,
+                a4: state.a4Reference ?? 440,
             });
         };
 
@@ -56,6 +70,9 @@ export function PitchIndicator() {
     const displayCents = Math.max(-100, Math.min(100, pitchData.cents));
     const barPosition = 50 + (displayCents / 100) * 50;
 
+    const targetNote = freqToNoteName(pitchData.targetPitch, pitchData.a4);
+    const currentNote = freqToNoteName(pitchData.currentPitch, pitchData.a4);
+
     return (
         <div className="absolute top-16 left-1/2 -translate-x-1/2 z-50">
             <div className="relative bg-black/70 backdrop-blur-md rounded-2xl px-6 py-3 border border-white/10 shadow-2xl">
@@ -67,6 +84,22 @@ export function PitchIndicator() {
                 >
                     <X className="w-3 h-3 text-white" />
                 </button>
+
+                {/* Note names: 目標 → 現在 */}
+                {pitchData.showNote && (
+                    <div className="flex items-center justify-center gap-2 mb-1.5 text-sm font-mono">
+                        <span className="text-white/50">{targetNote || '—'}</span>
+                        <span className="text-white/30">→</span>
+                        <span className={cn(
+                            "font-bold",
+                            pitchData.currentPitch > 0 ? (
+                                isGood ? "text-emerald-400" : isOk ? "text-yellow-400" : "text-red-400"
+                            ) : "text-white/30"
+                        )}>
+                            {currentNote || '—'}
+                        </span>
+                    </div>
+                )}
 
                 {/* Pitch meter bar */}
                 <div className="w-48 h-3 bg-white/10 rounded-full relative overflow-hidden mb-2">

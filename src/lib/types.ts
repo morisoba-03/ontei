@@ -122,6 +122,25 @@ export interface AudioEngineState {
     pitchEngineVersion: 'v1' | 'v2';
     // MIDI読み込み時に口笛で吹きやすい音域へガイドのオクターブを自動調整する（キーは変えない）
     autoOctaveEstimate: boolean;
+    // メトロノーム音量（0〜1）と音色
+    metronomeVolume: number;
+    metronomeTone: 'beep' | 'click' | 'wood';
+    // ライブピッチ表示（カーソル/チューナー）の平滑化量（0=生〜0.9=滑らか）。判定・履歴には影響しない
+    pitchSmoothing: number;
+    // チューナーに音名（例: A5）を表示する
+    tunerShowNote: boolean;
+    // 基準ピッチ A4 の周波数（既定 440Hz）。ガイド音生成・判定・表示に反映される
+    a4Reference: number;
+    // 直近の演奏のノート別品質（ヒートマップ）。停止時に集計される
+    noteHeatmap?: import('./ScoreAnalyzer').NoteHeat[];
+    // ヒートマップ（演奏後のノート色分け）を表示する
+    showHeatmap: boolean;
+    // 現在の曲のベスト記録のピッチ軌跡（ゴースト）。重ね表示用
+    bestGhost?: PitchPoint[];
+    // ベスト記録のスコア（バッジ表示用）
+    bestGhostScore?: number;
+    // ベストゴーストを重ね表示する
+    showBestGhost: boolean;
 }
 
 export type ScaleType = 'Major' | 'NaturalMinor' | 'HarmonicMinor' | 'MelodicMinor' | 'MajorPentatonic' | 'MinorPentatonic' | 'Chromatic' | 'Dorian' | 'Mixolydian' | 'Blues';
