@@ -112,6 +112,12 @@ export class AudioEngine {
     private practiceBlocksGenerated: number = 0;
     private practiceCompletedBlocks: number = 0;
 
+    // 苦手区間プレイリスト（連続練習）
+    private playlistQueue: { start: number; end: number }[] = [];
+    private playlistIndex: number = 0;
+    private playlistRepeatsLeft: number = 0;
+    private playlistRepeatsEach: number = 2;
+
     subscribe(cb: () => void) {
         this.listeners.push(cb);
         return () => {
@@ -677,6 +683,7 @@ export class AudioEngine {
         this._stopProcessed = true;
 
         this.state.isPlaying = false;
+        this.clearPlaylist(); // 連続練習プレイリストを解除
         if (this.reqFrameId) cancelAnimationFrame(this.reqFrameId);
         this.reqFrameId = null;
 
@@ -884,6 +891,81 @@ export class AudioEngine {
                 duration: 10000
             }
         );
+    }
+
+    // 苦手区間プレイリストから1区間を選んでループ練習を開始する。
+    async practiceSection(start: number, end: number) {
+        if (end <= start) return;
+        this.clearPlaylist();
+        await this.ensureAudio();
+        this.updateState({
+            loopEnabled: true,
+            loopStart: start,
+            loopEnd: end,
+            playbackPosition: start,
+        });
+        if (!this.state.isPlaying) {
+            this.startPlayback();
+        }
+    }
+
+    // 全苦手区間を順番にループ練習する「連続練習」プレイリストを開始する。
+    // 各区間を repeatsEach 回ループしたら次へ進み、最後まで終わったらループを解除する。
+    async startDifficultPlaylist(sections: { start: number; end: number }[], repeatsEach: number = 2) {
+        const valid = sections.filter(s => s.end > s.start);
+        if (valid.length === 0) return;
+        await this.ensureAudio();
+        this.playlistQueue = valid;
+        this.playlistIndex = 0;
+        this.playlistRepeatsEach = Math.max(1, repeatsEach);
+        this.playlistRepeatsLeft = this.playlistRepeatsEach;
+        const first = valid[0];
+        this.updateState({
+            loopEnabled: true,
+            loopStart: first.start,
+            loopEnd: first.end,
+            playbackPosition: first.start,
+        });
+        toast.show(`連続練習を開始（${valid.length}区間 × ${this.playlistRepeatsEach}回）`, 'info', { duration: 2500 });
+        if (!this.state.isPlaying) {
+            this.startPlayback();
+        }
+    }
+
+    clearPlaylist() {
+        this.playlistQueue = [];
+        this.playlistIndex = 0;
+        this.playlistRepeatsLeft = 0;
+    }
+
+    // ループ終端に達したときに呼ばれ、プレイリストが有効なら次区間へ進める。
+    // 進めた場合 true を返す（呼び出し側で通常のループ巻き戻しをスキップする）。
+    private advancePlaylistIfActive(): boolean {
+        if (this.playlistQueue.length === 0) return false;
+        this.playlistRepeatsLeft--;
+        if (this.playlistRepeatsLeft > 0) return false; // まだ同じ区間を繰り返す
+
+        // 次の区間へ
+        this.playlistIndex++;
+        if (this.playlistIndex >= this.playlistQueue.length) {
+            // 全区間終了
+            this.clearPlaylist();
+            this.state.loopEnabled = false;
+            toast.show('連続練習が完了しました', 'success', { duration: 3000 });
+            this.notify();
+            return false;
+        }
+        this.playlistRepeatsLeft = this.playlistRepeatsEach;
+        const next = this.playlistQueue[this.playlistIndex];
+        this.state.loopStart = next.start;
+        this.state.loopEnd = next.end;
+        this.state.playbackPosition = next.start;
+        this.playbackStartTime = this.audioCtx!.currentTime - next.start;
+        this.onSeek(next.start);
+        this.syncBackingTrack();
+        toast.show(`次の区間（${this.playlistIndex + 1}/${this.playlistQueue.length}）`, 'info', { duration: 1500 });
+        this.notify();
+        return true;
     }
 
     private checkPhraseCompletion() {
@@ -1209,10 +1291,13 @@ export class AudioEngine {
         // Loop Practice: Auto-rewind if past loop end
         if (this.state.loopEnabled && this.state.loopEnd > this.state.loopStart) {
             if (this.state.playbackPosition >= this.state.loopEnd) {
-                this.state.playbackPosition = this.state.loopStart;
-                this.playbackStartTime = this.audioCtx!.currentTime - this.state.loopStart;
-                this.onSeek(this.state.loopStart);
-                this.syncBackingTrack();
+                // 連続練習プレイリストが有効なら次区間へ進める（進めたら巻き戻し不要）
+                if (!this.advancePlaylistIfActive()) {
+                    this.state.playbackPosition = this.state.loopStart;
+                    this.playbackStartTime = this.audioCtx!.currentTime - this.state.loopStart;
+                    this.onSeek(this.state.loopStart);
+                    this.syncBackingTrack();
+                }
             }
         }
 
