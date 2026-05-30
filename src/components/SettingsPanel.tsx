@@ -316,6 +316,17 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
                                     <span>+4 Oct</span>
                                 </div>
                                 <p className="text-[10px] text-white/30">移調と組み合わせて使うと±6オクターブ以上の調整が可能</p>
+
+                                <div className="flex items-center justify-between text-sm pt-2 border-t border-white/5 mt-2">
+                                    <span>オクターブ自動調整</span>
+                                    <button
+                                        onClick={() => update('autoOctaveEstimate', !(state.autoOctaveEstimate ?? true))}
+                                        className={`w-10 h-5 rounded-full transition-colors relative ${(state.autoOctaveEstimate ?? true) ? 'bg-yellow-500' : 'bg-white/10'}`}
+                                    >
+                                        <span className={`absolute top-0.5 w-4 h-4 bg-white rounded-full transition-transform duration-200 ${(state.autoOctaveEstimate ?? true) ? 'left-5.5' : 'left-0.5'}`} />
+                                    </button>
+                                </div>
+                                <p className="text-[10px] text-white/30">MIDI読み込み時、口笛で吹きやすい音域へガイドのオクターブを自動調整します（キーは変わりません）</p>
                             </div>
 
                             <div className="space-y-2">
