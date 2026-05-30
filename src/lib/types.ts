@@ -120,6 +120,8 @@ export interface AudioEngineState {
     //  'v1' = 従来（ガイドスナップ + EMA平滑 + 多段確認）
     //  'v2' = 厳密（ガイド非依存・無平滑・最小オクターブスパイク保護）
     pitchEngineVersion: 'v1' | 'v2';
+    // MIDI読み込み時に口笛で吹きやすい音域へガイドのオクターブを自動調整する（キーは変えない）
+    autoOctaveEstimate: boolean;
 }
 
 export type ScaleType = 'Major' | 'NaturalMinor' | 'HarmonicMinor' | 'MelodicMinor' | 'MajorPentatonic' | 'MinorPentatonic' | 'Chromatic' | 'Dorian' | 'Mixolydian' | 'Blues';
