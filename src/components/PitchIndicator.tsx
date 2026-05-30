@@ -2,11 +2,12 @@ import { useState, useEffect } from 'react';
 import { X } from 'lucide-react';
 import { audioEngine } from '../lib/AudioEngine';
 import { cn } from '../lib/utils';
+import { midiToFreq, freqToMidi } from '../lib/pitch';
 
 const NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
-function freqToNoteName(freq: number): string {
+function freqToNoteName(freq: number, a4: number): string {
     if (freq <= 0) return '';
-    const midi = Math.round(69 + 12 * Math.log2(freq / 440));
+    const midi = Math.round(freqToMidi(freq, a4));
     const pc = ((midi % 12) + 12) % 12;
     const oct = Math.floor(midi / 12) - 1;
     return NOTE_NAMES[pc] + oct;
@@ -20,7 +21,8 @@ export function PitchIndicator() {
         isActive: boolean;
         showTuner: boolean;
         showNote: boolean;
-    }>({ currentPitch: 0, targetPitch: 0, cents: 0, isActive: false, showTuner: true, showNote: true });
+        a4: number;
+    }>({ currentPitch: 0, targetPitch: 0, cents: 0, isActive: false, showTuner: true, showNote: true, a4: 440 });
 
     useEffect(() => {
         const update = () => {
@@ -36,7 +38,7 @@ export function PitchIndicator() {
 
             if (ghostNote) {
                 const offset = (state.guideOctaveOffset * 12) + state.transposeOffset;
-                targetPitch = 440 * Math.pow(2, (ghostNote.midi + offset - 69) / 12);
+                targetPitch = midiToFreq(ghostNote.midi + offset, state.a4Reference);
             }
 
             let cents = 0;
@@ -51,6 +53,7 @@ export function PitchIndicator() {
                 isActive: state.isPlaying && (currentPitch > 0 || !!ghostNote),
                 showTuner: state.showTuner,
                 showNote: state.tunerShowNote ?? true,
+                a4: state.a4Reference ?? 440,
             });
         };
 
@@ -67,8 +70,8 @@ export function PitchIndicator() {
     const displayCents = Math.max(-100, Math.min(100, pitchData.cents));
     const barPosition = 50 + (displayCents / 100) * 50;
 
-    const targetNote = freqToNoteName(pitchData.targetPitch);
-    const currentNote = freqToNoteName(pitchData.currentPitch);
+    const targetNote = freqToNoteName(pitchData.targetPitch, pitchData.a4);
+    const currentNote = freqToNoteName(pitchData.currentPitch, pitchData.a4);
 
     return (
         <div className="absolute top-16 left-1/2 -translate-x-1/2 z-50">

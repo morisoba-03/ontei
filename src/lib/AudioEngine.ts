@@ -12,6 +12,7 @@ declare global {
 
 
 import { AnalysisProcessor } from './audio/AnalysisProcessor';
+import { midiToFreq } from './pitch';
 import { Visualizer } from './Visualizer';
 import { extractMelodyNotesFromBuffer } from './MelodyExtractor';
 import { PracticePatternGenerator } from './PracticePatternGenerator';
@@ -220,7 +221,8 @@ export class AudioEngine {
             metronomeVolume: 0.3,
             metronomeTone: 'beep',
             pitchSmoothing: 0,
-            tunerShowNote: true
+            tunerShowNote: true,
+            a4Reference: 440
         };
         this.loadSettings();
         // Start loading piano samples immediately
@@ -357,7 +359,7 @@ export class AudioEngine {
             if (note) {
                 // MIDI to Freq (Apply Octave Offset)
                 const offset = (this.state.guideOctaveOffset * 12) + this.state.transposeOffset;
-                guideFreq = 440 * Math.pow(2, (note.midi + offset - 69) / 12);
+                guideFreq = midiToFreq(note.midi + offset, this.state.a4Reference);
             }
         }
 
@@ -743,7 +745,7 @@ export class AudioEngine {
             const note = midiGhostNotes.find(n => p.time >= n.time && p.time <= n.time + n.duration);
             if (!note) continue;
             const transposedMidi = note.midi + (guideOctaveOffset * 12) + (transposeOffset || 0);
-            const expectedFreq = 440 * Math.pow(2, (transposedMidi - 69) / 12);
+            const expectedFreq = midiToFreq(transposedMidi, this.state.a4Reference);
             const cents = 1200 * Math.log2(p.freq / expectedFreq);
             if (Math.abs(cents) > toleranceCents) badEntries.push({ time: p.time, cents });
         }
@@ -864,7 +866,7 @@ export class AudioEngine {
     private analyzeLongToneStability(phrase: import('./types').Phrase) {
         const respNote = phrase.notes.find(n => n.role === 'resp' && n.duration >= 2.0);
         if (!respNote) return;
-        const targetFreq = 440 * Math.pow(2, (respNote.midi + (this.state.guideOctaveOffset * 12) + (this.state.transposeOffset || 0) - 69) / 12);
+        const targetFreq = midiToFreq(respNote.midi + (this.state.guideOctaveOffset * 12) + (this.state.transposeOffset || 0), this.state.a4Reference);
         const pts = this.state.pitchHistory.filter(p =>
             p.conf >= 0.5 && p.time >= respNote.time && p.time <= respNote.time + respNote.duration
         );
@@ -1017,6 +1019,7 @@ export class AudioEngine {
                     'isParticlesEnabled', 'countIn', 'showPitchDeviation', 'inputLatency',
                     'micRenderMode', 'showTuner', 'selectedMidiTrackId', 'pitchEngineVersion',
                     'autoOctaveEstimate', 'metronomeVolume', 'metronomeTone', 'pitchSmoothing', 'tunerShowNote',
+                    'a4Reference',
                 ];
 
                 const updates: Partial<AudioEngineState> = {};
@@ -1043,6 +1046,7 @@ export class AudioEngine {
                 'isParticlesEnabled', 'countIn', 'showPitchDeviation', 'inputLatency',
                 'micRenderMode', 'showTuner', 'pitchEngineVersion',
                 'autoOctaveEstimate', 'metronomeVolume', 'metronomeTone', 'pitchSmoothing', 'tunerShowNote',
+                'a4Reference',
             ];
 
             const toSave = persistentKeys.reduce((acc, key) => {
@@ -1406,7 +1410,7 @@ export class AudioEngine {
 
         // Synth Sound
         osc.type = 'triangle'; // Clear tone
-        const freq = 440 * Math.pow(2, (midi - 69) / 12);
+        const freq = midiToFreq(midi, this.state.a4Reference);
         osc.frequency.value = freq;
 
         const baseVol = isBacking ? this.state.accompVolume : this.state.guideVolume;
@@ -1600,7 +1604,7 @@ export class AudioEngine {
         const gain = this.audioCtx.createGain();
         // Piano-ish synthesis (Triangle wave with specific envelope)
         osc.type = 'triangle';
-        const freq = 440 * Math.pow(2, (midi - 69) / 12);
+        const freq = midiToFreq(midi, this.state.a4Reference);
         osc.frequency.setValueAtTime(freq, this.audioCtx.currentTime);
 
         // Envelope
