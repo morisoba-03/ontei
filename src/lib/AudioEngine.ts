@@ -224,7 +224,10 @@ export class AudioEngine {
             tunerShowNote: true,
             a4Reference: 440,
             noteHeatmap: undefined,
-            showHeatmap: true
+            showHeatmap: true,
+            bestGhost: undefined,
+            bestGhostScore: undefined,
+            showBestGhost: true
         };
         this.loadSettings();
         // Start loading piano samples immediately
@@ -700,6 +703,10 @@ export class AudioEngine {
             if (heatmap.length > 0 && this.state.showHeatmap) {
                 toast.show('ノートの色は安定度を表します（緑=良 / 赤=要練習）', 'info', { duration: 4000 });
             }
+            // 自己ベスト更新ならゴーストを保存（練習のランダム生成曲では一致しないため実質スキップ）
+            if (result && result.totalScore > 0 && !this.state.isPracticing) {
+                this.saveBestRunIfImproved(result.totalScore);
+            }
 
             // Suggest difficult section loop after a brief delay (1回のみ)
             if (result && result.totalScore > 0 && result.totalScore < 95) {
@@ -709,6 +716,61 @@ export class AudioEngine {
         this.checkPhraseCompletion();
         this.draw();
         this.notify();
+    }
+
+    // 現在ロード中の曲のシグネチャ（ノート列から算出）。ベスト記録のキーに使う。
+    // 練習モードのランダム生成では毎回変わるため、固定曲のみゴーストが一致する。
+    private songSignature(): string {
+        const notes = this.state.midiGhostNotes;
+        if (!notes || notes.length === 0) return '';
+        let h = notes.length >>> 0;
+        for (let i = 0; i < notes.length; i++) {
+            h = (Math.imul(h, 31) + Math.round(notes[i].time * 100) + notes[i].midi * 7) >>> 0;
+        }
+        return 'sig' + h.toString(36);
+    }
+
+    // 曲ロード時に呼び、ベスト記録のゴーストを読み込んで state に反映する。
+    async refreshBestGhost() {
+        const sig = this.songSignature();
+        if (!sig) {
+            this.state.bestGhost = undefined;
+            this.state.bestGhostScore = undefined;
+            this.notify();
+            return;
+        }
+        try {
+            const best = await storage.loadBestRun(sig);
+            if (best && Array.isArray(best.ghost)) {
+                this.state.bestGhost = best.ghost as import('./types').PitchPoint[];
+                this.state.bestGhostScore = best.score;
+            } else {
+                this.state.bestGhost = undefined;
+                this.state.bestGhostScore = undefined;
+            }
+        } catch {
+            this.state.bestGhost = undefined;
+            this.state.bestGhostScore = undefined;
+        }
+        this.notify();
+    }
+
+    // 演奏終了時、スコアが従来ベストを上回ればゴーストを保存する。
+    private async saveBestRunIfImproved(score: number) {
+        const sig = this.songSignature();
+        if (!sig || score <= 0) return;
+        const prev = this.state.bestGhostScore ?? -1;
+        if (score <= prev) return;
+        // ピッチ軌跡（信頼度のある点のみ）を保存
+        const ghost = this.state.pitchHistory.filter(p => p.conf >= 0.5).map(p => ({ ...p }));
+        if (ghost.length < 5) return;
+        try {
+            await storage.saveBestRun(sig, { score, ghost });
+            this.state.bestGhost = ghost;
+            this.state.bestGhostScore = score;
+            toast.show(`自己ベスト更新！ スコア ${Math.round(score)}`, 'success', { duration: 3000 });
+            this.notify();
+        } catch { /* ignore */ }
     }
 
     dispose() {
@@ -1027,7 +1089,7 @@ export class AudioEngine {
                     'isParticlesEnabled', 'countIn', 'showPitchDeviation', 'inputLatency',
                     'micRenderMode', 'showTuner', 'selectedMidiTrackId', 'pitchEngineVersion',
                     'autoOctaveEstimate', 'metronomeVolume', 'metronomeTone', 'pitchSmoothing', 'tunerShowNote',
-                    'a4Reference', 'showHeatmap',
+                    'a4Reference', 'showHeatmap', 'showBestGhost',
                 ];
 
                 const updates: Partial<AudioEngineState> = {};
@@ -1054,7 +1116,7 @@ export class AudioEngine {
                 'isParticlesEnabled', 'countIn', 'showPitchDeviation', 'inputLatency',
                 'micRenderMode', 'showTuner', 'pitchEngineVersion',
                 'autoOctaveEstimate', 'metronomeVolume', 'metronomeTone', 'pitchSmoothing', 'tunerShowNote',
-                'a4Reference', 'showHeatmap',
+                'a4Reference', 'showHeatmap', 'showBestGhost',
             ];
 
             const toSave = persistentKeys.reduce((acc, key) => {
@@ -1968,6 +2030,7 @@ export class AudioEngine {
         this.state.playbackPosition = 0; // Reset so instructions start from 0
         this.state.selectedMidiTrackId = trackIndex;
         this.notify();
+        this.refreshBestGhost(); // 曲のベスト記録ゴーストを読み込む
     }
     // Session Management
     exportSession(): string {
@@ -2026,6 +2089,7 @@ export class AudioEngine {
                 }
 
                 this.notify();
+                this.refreshBestGhost();
                 return true;
             }
 
@@ -2039,6 +2103,7 @@ export class AudioEngine {
                 this.state.isPracticing = true;
             }
             this.notify();
+            this.refreshBestGhost();
             return true;
         } catch (e) {
             console.error("Failed to import session", e);

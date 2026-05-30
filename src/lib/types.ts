@@ -135,6 +135,12 @@ export interface AudioEngineState {
     noteHeatmap?: import('./ScoreAnalyzer').NoteHeat[];
     // ヒートマップ（演奏後のノート色分け）を表示する
     showHeatmap: boolean;
+    // 現在の曲のベスト記録のピッチ軌跡（ゴースト）。重ね表示用
+    bestGhost?: PitchPoint[];
+    // ベスト記録のスコア（バッジ表示用）
+    bestGhostScore?: number;
+    // ベストゴーストを重ね表示する
+    showBestGhost: boolean;
 }
 
 export type ScaleType = 'Major' | 'NaturalMinor' | 'HarmonicMinor' | 'MelodicMinor' | 'MajorPentatonic' | 'MinorPentatonic' | 'Chromatic' | 'Dorian' | 'Mixolydian' | 'Blues';

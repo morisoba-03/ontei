@@ -75,6 +75,16 @@ export const storage = {
         return this._delete(`song_midi_${id}`);
     },
 
+    // 曲ごとのベスト記録（スコア + ピッチ軌跡ゴースト）。キーは曲のシグネチャ。
+    async saveBestRun(sig: string, data: { score: number; ghost: unknown[] }) {
+        return this._put(`best_${sig}`, data);
+    },
+
+    async loadBestRun(sig: string): Promise<{ score: number; ghost: unknown[] } | null> {
+        const result = await this._get(`best_${sig}`);
+        return result && typeof result.score === 'number' ? result : null;
+    },
+
     async _put(key: string, value: any) {
         const db = await getDb();
         return new Promise<void>((resolve, reject) => {

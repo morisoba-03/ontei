@@ -272,6 +272,22 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
                                 </button>
                             </div>
 
+                            {/* ベストゴースト表示 */}
+                            <div className="flex items-center justify-between text-sm">
+                                <span className="flex items-center gap-2">
+                                    自己ベストのゴースト表示
+                                    {state.bestGhostScore !== undefined && (
+                                        <span className="text-[10px] font-mono text-purple-300 bg-purple-400/10 px-1.5 py-0.5 rounded">Best {Math.round(state.bestGhostScore)}</span>
+                                    )}
+                                </span>
+                                <button
+                                    onClick={() => update('showBestGhost', !(state.showBestGhost ?? true))}
+                                    className={`w-10 h-5 rounded-full transition-colors relative ${(state.showBestGhost ?? true) ? 'bg-purple-500' : 'bg-white/10'}`}
+                                >
+                                    <span className={`absolute top-0.5 w-4 h-4 bg-white rounded-full transition-transform duration-200 ${(state.showBestGhost ?? true) ? 'left-5.5' : 'left-0.5'}`} />
+                                </button>
+                            </div>
+
                             {/* Visual Effects */}
                             <div className="flex items-center justify-between text-sm pt-2 border-t border-white/5">
                                 <span>リアルタイム演出</span>

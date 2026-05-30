@@ -531,6 +531,38 @@ export class Visualizer {
             ctx.restore();
         }
 
+        // Draw Best-Run Ghost (faint trail of the best recorded attempt)
+        if (!isCalibrating && state.showBestGhost && state.bestGhost?.length) {
+            const A4 = state.a4Reference ?? 440;
+            const gvmin = 36 + Math.round((132 - 36 - total) * (verticalOffset / 100));
+            const gvmax = gvmin + total;
+            ctx.save();
+            ctx.strokeStyle = 'rgba(190, 150, 255, 0.4)'; // faint purple
+            ctx.lineWidth = 2;
+            ctx.setLineDash([]);
+            ctx.beginPath();
+            let gFirst = true;
+            let gPrevT = 0;
+            for (const p of state.bestGhost) {
+                if (p.conf < 0.5) continue;
+                const t = p.time + ((p.visOff != null) ? (p.visOff - 0.05) : 0);
+                if (t < visStart || t > visEnd) { gFirst = true; continue; }
+                const midi = 69 + 12 * Math.log2(Math.max(1e-9, p.freq) / A4);
+                if (midi < gvmin || midi > gvmax) { gFirst = true; continue; }
+                const x = playX + (t - eff) * pxPerSec;
+                const y = h - (midi - gvmin + 1) * pxSemi;
+                if (gFirst || (t - gPrevT) > 0.12) {
+                    ctx.moveTo(x, y);
+                    gFirst = false;
+                } else {
+                    ctx.lineTo(x, y);
+                }
+                gPrevT = t;
+            }
+            ctx.stroke();
+            ctx.restore();
+        }
+
         // Draw Pitch History
         const allowDrawPitch = !isCalibrating;
         if (allowDrawPitch && pitchHistory && pitchHistory.length) {
