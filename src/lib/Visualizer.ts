@@ -317,7 +317,9 @@ export class Visualizer {
                     if (p.time > visEnd) break;
                     if (p.time < visStart - 0.5) continue; // Buffer
 
-                    const midi = 69 + 12 * Math.log2(Math.max(1e-9, p.freq) / (state.a4Reference ?? 440));
+                    // 採点と一致するよう、折れ線にもオクターブシフト・移調を反映する
+                    const midi = 69 + 12 * Math.log2(Math.max(1e-9, p.freq) / (state.a4Reference ?? 440))
+                        + (state.guideOctaveOffset * 12) + state.transposeOffset;
                     const y = h - (midi - vmin + 1) * pxSemi;
                     const x = playX + (p.time - eff) * pxPerSec;
 
