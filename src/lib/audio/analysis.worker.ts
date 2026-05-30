@@ -19,7 +19,7 @@ self.onmessage = (e: MessageEvent) => {
             minRms: minRms,
             version: version
         });
-        self.postMessage({ type: 'result', payload: result });
+        self.postMessage({ type: 'result', payload: { ...result, guideFreq } });
     } else if (type === 'reset') {
         analyzer.reset();
     }

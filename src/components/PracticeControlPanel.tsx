@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useReducer } from 'react';
 import { AudioEngine } from '../lib/AudioEngine';
 import { X, Play, Square, Activity, Settings2, Check } from 'lucide-react';
 import { cn } from '../lib/utils';
@@ -15,6 +15,9 @@ const ARP_TYPES: ArpeggioType[] = ['Major', 'Minor', 'Major7', 'Minor7', 'Domina
 const EXERCISE_TYPES: import('../lib/types').ExerciseType[] = ['LongTone', 'FiveNote', 'Triad', 'Thirds', 'Octave', 'Glissando'];
 
 export const PracticeControlPanel: React.FC<Props> = ({ audioEngine, isPracticing, onClose }) => {
+    const [, forceUpdate] = useReducer(x => x + 1, 0);
+    useEffect(() => audioEngine.subscribe(forceUpdate), [audioEngine]);
+
     const [mode, setMode] = useState<'Mix' | 'Scale' | 'Arpeggio' | 'Exercise'>('Exercise');
     const [selectedScales, setSelectedScales] = useState<ScaleType[]>(['Major', 'NaturalMinor']);
     const [selectedArps, setSelectedArps] = useState<ArpeggioType[]>(['Major', 'Minor']);
