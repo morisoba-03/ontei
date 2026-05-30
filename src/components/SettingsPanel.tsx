@@ -173,6 +173,23 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
                                     <span>判定許容誤差</span>
                                     <span className="font-mono text-emerald-400 bg-emerald-400/10 px-2 py-0.5 rounded">±{state.toleranceCents} cent</span>
                                 </div>
+                                {/* 厳しさプリセット */}
+                                <div className="flex gap-1">
+                                    {([
+                                        { label: '緩い', val: 60 },
+                                        { label: '標準', val: 40 },
+                                        { label: '厳しい', val: 25 },
+                                        { label: 'ストイック', val: 15 },
+                                    ] as const).map(p => (
+                                        <button
+                                            key={p.val}
+                                            onClick={() => update('toleranceCents', p.val)}
+                                            className={`flex-1 py-1 text-[10px] rounded-md transition-colors ${state.toleranceCents === p.val ? 'bg-emerald-500 text-white' : 'bg-white/5 text-white/50 hover:text-white hover:bg-white/10'}`}
+                                        >
+                                            {p.label}
+                                        </button>
+                                    ))}
+                                </div>
                                 <input
                                     type="range" min="10" max="100" step="5"
                                     value={state.toleranceCents}
@@ -194,6 +211,34 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
                                 >
                                     <span className={`absolute top-0.5 w-4 h-4 bg-white rounded-full transition-transform duration-200 ${state.showTuner ? 'left-5.5' : 'left-0.5'}`} />
                                 </button>
+                            </div>
+
+                            {/* Tuner Note Name */}
+                            {state.showTuner && (
+                                <div className="flex items-center justify-between text-sm">
+                                    <span className="text-white/70">チューナーに音名を表示</span>
+                                    <button
+                                        onClick={() => update('tunerShowNote', !(state.tunerShowNote ?? true))}
+                                        className={`w-10 h-5 rounded-full transition-colors relative ${(state.tunerShowNote ?? true) ? 'bg-blue-500' : 'bg-white/10'}`}
+                                    >
+                                        <span className={`absolute top-0.5 w-4 h-4 bg-white rounded-full transition-transform duration-200 ${(state.tunerShowNote ?? true) ? 'left-5.5' : 'left-0.5'}`} />
+                                    </button>
+                                </div>
+                            )}
+
+                            {/* ライブピッチ平滑化 */}
+                            <div className="space-y-1 pt-2 border-t border-white/5">
+                                <div className="flex justify-between text-sm items-center">
+                                    <span>ピッチ表示の平滑化</span>
+                                    <span className="font-mono text-cyan-400 bg-cyan-400/10 px-2 py-0.5 rounded">{Math.round((state.pitchSmoothing ?? 0) * 100)}%</span>
+                                </div>
+                                <input
+                                    type="range" min="0" max="0.9" step="0.05"
+                                    value={state.pitchSmoothing ?? 0}
+                                    onChange={(e) => update('pitchSmoothing', parseFloat(e.target.value))}
+                                    className="w-full h-2 bg-white/20 rounded-full appearance-none cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-4 [&::-webkit-slider-thumb]:h-4 [&::-webkit-slider-thumb]:bg-cyan-500 [&::-webkit-slider-thumb]:rounded-full hover:[&::-webkit-slider-thumb]:scale-110 transition-all"
+                                />
+                                <p className="text-[10px] text-white/30">カーソルとチューナーの表示のみを滑らかにします（音程判定や記録には影響しません）</p>
                             </div>
 
                             {/* Visual Effects */}
@@ -353,6 +398,36 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
                                     onChange={(e) => update('accompVolume', parseFloat(e.target.value))}
                                     className="w-full h-2 bg-white/20 rounded-full appearance-none cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-6 [&::-webkit-slider-thumb]:h-6 [&::-webkit-slider-thumb]:bg-purple-400 [&::-webkit-slider-thumb]:rounded-full hover:[&::-webkit-slider-thumb]:scale-110 transition-all"
                                 />
+                            </div>
+
+                            {/* メトロノーム音量 */}
+                            <div className="space-y-2 pt-2 border-t border-white/5">
+                                <div className="flex justify-between text-sm items-center">
+                                    <span>メトロノーム音量</span>
+                                    <span className="font-mono text-amber-400 bg-amber-400/10 px-2 py-0.5 rounded">{Math.round((state.metronomeVolume ?? 0.3) * 100)}%</span>
+                                </div>
+                                <input
+                                    type="range" min="0" max="1" step="0.05"
+                                    value={state.metronomeVolume ?? 0.3}
+                                    onChange={(e) => update('metronomeVolume', parseFloat(e.target.value))}
+                                    className="w-full h-2 bg-white/20 rounded-full appearance-none cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-6 [&::-webkit-slider-thumb]:h-6 [&::-webkit-slider-thumb]:bg-amber-400 [&::-webkit-slider-thumb]:rounded-full hover:[&::-webkit-slider-thumb]:scale-110 transition-all"
+                                />
+                                {/* 音色 */}
+                                <div className="flex gap-1">
+                                    {([
+                                        { label: 'ビープ', val: 'beep' },
+                                        { label: 'クリック', val: 'click' },
+                                        { label: 'ウッド', val: 'wood' },
+                                    ] as const).map(t => (
+                                        <button
+                                            key={t.val}
+                                            onClick={() => update('metronomeTone', t.val)}
+                                            className={`flex-1 py-1 text-[10px] rounded-md transition-colors ${(state.metronomeTone ?? 'beep') === t.val ? 'bg-amber-500 text-white' : 'bg-white/5 text-white/50 hover:text-white hover:bg-white/10'}`}
+                                        >
+                                            {t.label}
+                                        </button>
+                                    ))}
+                                </div>
                             </div>
                         </div>
                     </div>

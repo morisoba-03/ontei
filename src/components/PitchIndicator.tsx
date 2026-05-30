@@ -3,6 +3,15 @@ import { X } from 'lucide-react';
 import { audioEngine } from '../lib/AudioEngine';
 import { cn } from '../lib/utils';
 
+const NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+function freqToNoteName(freq: number): string {
+    if (freq <= 0) return '';
+    const midi = Math.round(69 + 12 * Math.log2(freq / 440));
+    const pc = ((midi % 12) + 12) % 12;
+    const oct = Math.floor(midi / 12) - 1;
+    return NOTE_NAMES[pc] + oct;
+}
+
 export function PitchIndicator() {
     const [pitchData, setPitchData] = useState<{
         currentPitch: number;
@@ -10,7 +19,8 @@ export function PitchIndicator() {
         cents: number;
         isActive: boolean;
         showTuner: boolean;
-    }>({ currentPitch: 0, targetPitch: 0, cents: 0, isActive: false, showTuner: true });
+        showNote: boolean;
+    }>({ currentPitch: 0, targetPitch: 0, cents: 0, isActive: false, showTuner: true, showNote: true });
 
     useEffect(() => {
         const update = () => {
@@ -40,6 +50,7 @@ export function PitchIndicator() {
                 cents,
                 isActive: state.isPlaying && (currentPitch > 0 || !!ghostNote),
                 showTuner: state.showTuner,
+                showNote: state.tunerShowNote ?? true,
             });
         };
 
@@ -56,6 +67,9 @@ export function PitchIndicator() {
     const displayCents = Math.max(-100, Math.min(100, pitchData.cents));
     const barPosition = 50 + (displayCents / 100) * 50;
 
+    const targetNote = freqToNoteName(pitchData.targetPitch);
+    const currentNote = freqToNoteName(pitchData.currentPitch);
+
     return (
         <div className="absolute top-16 left-1/2 -translate-x-1/2 z-50">
             <div className="relative bg-black/70 backdrop-blur-md rounded-2xl px-6 py-3 border border-white/10 shadow-2xl">
@@ -67,6 +81,22 @@ export function PitchIndicator() {
                 >
                     <X className="w-3 h-3 text-white" />
                 </button>
+
+                {/* Note names: 目標 → 現在 */}
+                {pitchData.showNote && (
+                    <div className="flex items-center justify-center gap-2 mb-1.5 text-sm font-mono">
+                        <span className="text-white/50">{targetNote || '—'}</span>
+                        <span className="text-white/30">→</span>
+                        <span className={cn(
+                            "font-bold",
+                            pitchData.currentPitch > 0 ? (
+                                isGood ? "text-emerald-400" : isOk ? "text-yellow-400" : "text-red-400"
+                            ) : "text-white/30"
+                        )}>
+                            {currentNote || '—'}
+                        </span>
+                    </div>
+                )}
 
                 {/* Pitch meter bar */}
                 <div className="w-48 h-3 bg-white/10 rounded-full relative overflow-hidden mb-2">
