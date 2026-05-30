@@ -12,6 +12,7 @@ declare global {
 
 
 import { AnalysisProcessor } from './audio/AnalysisProcessor';
+import { midiToFreq } from './pitch';
 import { Visualizer } from './Visualizer';
 import { extractMelodyNotesFromBuffer } from './MelodyExtractor';
 import { PracticePatternGenerator } from './PracticePatternGenerator';
@@ -77,6 +78,7 @@ export class AudioEngine {
     playbackStartPerf: number = 0;
     reqFrameId: number | null = null;
     private lastFrameTime: number = 0;
+    private _lastDisplayFreq: number = 0; // ライブピッチ平滑化用の直近表示周波数
 
     // Config
     analysisRate: number = 60; // 60 Hz on all devices — smoother pitch history
@@ -109,6 +111,12 @@ export class AudioEngine {
     nextNoteIndexToSchedule: number = 0;
     private practiceBlocksGenerated: number = 0;
     private practiceCompletedBlocks: number = 0;
+
+    // 苦手区間プレイリスト（連続練習）
+    private playlistQueue: { start: number; end: number }[] = [];
+    private playlistIndex: number = 0;
+    private playlistRepeatsLeft: number = 0;
+    private playlistRepeatsEach: number = 2;
 
     subscribe(cb: () => void) {
         this.listeners.push(cb);
@@ -215,7 +223,17 @@ export class AudioEngine {
             showTolerancePreview: false,
             markers: [],
             pitchEngineVersion: 'v1',
-            autoOctaveEstimate: true
+            autoOctaveEstimate: true,
+            metronomeVolume: 0.3,
+            metronomeTone: 'beep',
+            pitchSmoothing: 0,
+            tunerShowNote: true,
+            a4Reference: 440,
+            noteHeatmap: undefined,
+            showHeatmap: true,
+            bestGhost: undefined,
+            bestGhostScore: undefined,
+            showBestGhost: true
         };
         this.loadSettings();
         // Start loading piano samples immediately
@@ -352,7 +370,7 @@ export class AudioEngine {
             if (note) {
                 // MIDI to Freq (Apply Octave Offset)
                 const offset = (this.state.guideOctaveOffset * 12) + this.state.transposeOffset;
-                guideFreq = 440 * Math.pow(2, (note.midi + offset - 69) / 12);
+                guideFreq = midiToFreq(note.midi + offset, this.state.a4Reference);
             }
         }
 
@@ -381,7 +399,20 @@ export class AudioEngine {
         this.state.meterColor = meterColor;
 
         // Update Real-time State (for Cursor)
-        this.state.currentMicPitch = freq;
+        // ライブカーソル/チューナー表示のみ平滑化（判定・履歴には影響させない）。
+        // セント領域での EMA にしてオクターブ方向に偏らないようにする。
+        const sm = this.state.pitchSmoothing ?? 0;
+        if (freq <= 0) {
+            this.state.currentMicPitch = 0;
+            this._lastDisplayFreq = 0;
+        } else if (sm > 0 && this._lastDisplayFreq > 0) {
+            const smoothed = this._lastDisplayFreq * Math.pow(freq / this._lastDisplayFreq, 1 - sm);
+            this._lastDisplayFreq = smoothed;
+            this.state.currentMicPitch = smoothed;
+        } else {
+            this._lastDisplayFreq = freq;
+            this.state.currentMicPitch = freq;
+        }
         this.state.currentMicConf = conf;
 
         // Feed Score Analyzer
@@ -624,6 +655,7 @@ export class AudioEngine {
         this.state.isPlaying = true;
         this._stopProcessed = false; // 停止フラグをリセット（次回の停止で1回だけ難所検出される）
         this.state.scoreResult = null; // Clear previous score
+        this.state.noteHeatmap = undefined; // 前回のヒートマップを消去
         this.scoreAnalyzer.reset();
 
         if (this.state.countIn) {
@@ -651,6 +683,7 @@ export class AudioEngine {
         this._stopProcessed = true;
 
         this.state.isPlaying = false;
+        this.clearPlaylist(); // 連続練習プレイリストを解除
         if (this.reqFrameId) cancelAnimationFrame(this.reqFrameId);
         this.reqFrameId = null;
 
@@ -671,7 +704,16 @@ export class AudioEngine {
             if (result) {
                 result.difficultSections = this.detectDifficultSections();
             }
-            this.updateState({ scoreResult: result });
+            // ノート別ヒートマップを集計（演奏後の色分け表示用）
+            const heatmap = this.scoreAnalyzer.computeHeatmap(this.state.midiGhostNotes);
+            this.updateState({ scoreResult: result, noteHeatmap: heatmap.length > 0 ? heatmap : undefined });
+            if (heatmap.length > 0 && this.state.showHeatmap) {
+                toast.show('ノートの色は安定度を表します（緑=良 / 赤=要練習）', 'info', { duration: 4000 });
+            }
+            // 自己ベスト更新ならゴーストを保存（練習のランダム生成曲では一致しないため実質スキップ）
+            if (result && result.totalScore > 0 && !this.state.isPracticing) {
+                this.saveBestRunIfImproved(result.totalScore);
+            }
 
             // Suggest difficult section loop after a brief delay (1回のみ)
             if (result && result.totalScore > 0 && result.totalScore < 95) {
@@ -681,6 +723,61 @@ export class AudioEngine {
         this.checkPhraseCompletion();
         this.draw();
         this.notify();
+    }
+
+    // 現在ロード中の曲のシグネチャ（ノート列から算出）。ベスト記録のキーに使う。
+    // 練習モードのランダム生成では毎回変わるため、固定曲のみゴーストが一致する。
+    private songSignature(): string {
+        const notes = this.state.midiGhostNotes;
+        if (!notes || notes.length === 0) return '';
+        let h = notes.length >>> 0;
+        for (let i = 0; i < notes.length; i++) {
+            h = (Math.imul(h, 31) + Math.round(notes[i].time * 100) + notes[i].midi * 7) >>> 0;
+        }
+        return 'sig' + h.toString(36);
+    }
+
+    // 曲ロード時に呼び、ベスト記録のゴーストを読み込んで state に反映する。
+    async refreshBestGhost() {
+        const sig = this.songSignature();
+        if (!sig) {
+            this.state.bestGhost = undefined;
+            this.state.bestGhostScore = undefined;
+            this.notify();
+            return;
+        }
+        try {
+            const best = await storage.loadBestRun(sig);
+            if (best && Array.isArray(best.ghost)) {
+                this.state.bestGhost = best.ghost as import('./types').PitchPoint[];
+                this.state.bestGhostScore = best.score;
+            } else {
+                this.state.bestGhost = undefined;
+                this.state.bestGhostScore = undefined;
+            }
+        } catch {
+            this.state.bestGhost = undefined;
+            this.state.bestGhostScore = undefined;
+        }
+        this.notify();
+    }
+
+    // 演奏終了時、スコアが従来ベストを上回ればゴーストを保存する。
+    private async saveBestRunIfImproved(score: number) {
+        const sig = this.songSignature();
+        if (!sig || score <= 0) return;
+        const prev = this.state.bestGhostScore ?? -1;
+        if (score <= prev) return;
+        // ピッチ軌跡（信頼度のある点のみ）を保存
+        const ghost = this.state.pitchHistory.filter(p => p.conf >= 0.5).map(p => ({ ...p }));
+        if (ghost.length < 5) return;
+        try {
+            await storage.saveBestRun(sig, { score, ghost });
+            this.state.bestGhost = ghost;
+            this.state.bestGhostScore = score;
+            toast.show(`自己ベスト更新！ スコア ${Math.round(score)}`, 'success', { duration: 3000 });
+            this.notify();
+        } catch { /* ignore */ }
     }
 
     dispose() {
@@ -725,7 +822,7 @@ export class AudioEngine {
             const note = midiGhostNotes.find(n => p.time >= n.time && p.time <= n.time + n.duration);
             if (!note) continue;
             const transposedMidi = note.midi + (guideOctaveOffset * 12) + (transposeOffset || 0);
-            const expectedFreq = 440 * Math.pow(2, (transposedMidi - 69) / 12);
+            const expectedFreq = midiToFreq(transposedMidi, this.state.a4Reference);
             const cents = 1200 * Math.log2(p.freq / expectedFreq);
             if (Math.abs(cents) > toleranceCents) badEntries.push({ time: p.time, cents });
         }
@@ -796,6 +893,81 @@ export class AudioEngine {
         );
     }
 
+    // 苦手区間プレイリストから1区間を選んでループ練習を開始する。
+    async practiceSection(start: number, end: number) {
+        if (end <= start) return;
+        this.clearPlaylist();
+        await this.ensureAudio();
+        this.updateState({
+            loopEnabled: true,
+            loopStart: start,
+            loopEnd: end,
+            playbackPosition: start,
+        });
+        if (!this.state.isPlaying) {
+            this.startPlayback();
+        }
+    }
+
+    // 全苦手区間を順番にループ練習する「連続練習」プレイリストを開始する。
+    // 各区間を repeatsEach 回ループしたら次へ進み、最後まで終わったらループを解除する。
+    async startDifficultPlaylist(sections: { start: number; end: number }[], repeatsEach: number = 2) {
+        const valid = sections.filter(s => s.end > s.start);
+        if (valid.length === 0) return;
+        await this.ensureAudio();
+        this.playlistQueue = valid;
+        this.playlistIndex = 0;
+        this.playlistRepeatsEach = Math.max(1, repeatsEach);
+        this.playlistRepeatsLeft = this.playlistRepeatsEach;
+        const first = valid[0];
+        this.updateState({
+            loopEnabled: true,
+            loopStart: first.start,
+            loopEnd: first.end,
+            playbackPosition: first.start,
+        });
+        toast.show(`連続練習を開始（${valid.length}区間 × ${this.playlistRepeatsEach}回）`, 'info', { duration: 2500 });
+        if (!this.state.isPlaying) {
+            this.startPlayback();
+        }
+    }
+
+    clearPlaylist() {
+        this.playlistQueue = [];
+        this.playlistIndex = 0;
+        this.playlistRepeatsLeft = 0;
+    }
+
+    // ループ終端に達したときに呼ばれ、プレイリストが有効なら次区間へ進める。
+    // 進めた場合 true を返す（呼び出し側で通常のループ巻き戻しをスキップする）。
+    private advancePlaylistIfActive(): boolean {
+        if (this.playlistQueue.length === 0) return false;
+        this.playlistRepeatsLeft--;
+        if (this.playlistRepeatsLeft > 0) return false; // まだ同じ区間を繰り返す
+
+        // 次の区間へ
+        this.playlistIndex++;
+        if (this.playlistIndex >= this.playlistQueue.length) {
+            // 全区間終了
+            this.clearPlaylist();
+            this.state.loopEnabled = false;
+            toast.show('連続練習が完了しました', 'success', { duration: 3000 });
+            this.notify();
+            return false;
+        }
+        this.playlistRepeatsLeft = this.playlistRepeatsEach;
+        const next = this.playlistQueue[this.playlistIndex];
+        this.state.loopStart = next.start;
+        this.state.loopEnd = next.end;
+        this.state.playbackPosition = next.start;
+        this.playbackStartTime = this.audioCtx!.currentTime - next.start;
+        this.onSeek(next.start);
+        this.syncBackingTrack();
+        toast.show(`次の区間（${this.playlistIndex + 1}/${this.playlistQueue.length}）`, 'info', { duration: 1500 });
+        this.notify();
+        return true;
+    }
+
     private checkPhraseCompletion() {
         if (!this.state.isPlaying || !this.scoreAnalyzer || this.state.phrases.length === 0) return;
 
@@ -846,7 +1018,7 @@ export class AudioEngine {
     private analyzeLongToneStability(phrase: import('./types').Phrase) {
         const respNote = phrase.notes.find(n => n.role === 'resp' && n.duration >= 2.0);
         if (!respNote) return;
-        const targetFreq = 440 * Math.pow(2, (respNote.midi + (this.state.guideOctaveOffset * 12) + (this.state.transposeOffset || 0) - 69) / 12);
+        const targetFreq = midiToFreq(respNote.midi + (this.state.guideOctaveOffset * 12) + (this.state.transposeOffset || 0), this.state.a4Reference);
         const pts = this.state.pitchHistory.filter(p =>
             p.conf >= 0.5 && p.time >= respNote.time && p.time <= respNote.time + respNote.duration
         );
@@ -998,7 +1170,8 @@ export class AudioEngine {
                     'guideVolume', 'accompVolume', 'gateThreshold', 'toleranceCents',
                     'isParticlesEnabled', 'countIn', 'showPitchDeviation', 'inputLatency',
                     'micRenderMode', 'showTuner', 'selectedMidiTrackId', 'pitchEngineVersion',
-                    'autoOctaveEstimate',
+                    'autoOctaveEstimate', 'metronomeVolume', 'metronomeTone', 'pitchSmoothing', 'tunerShowNote',
+                    'a4Reference', 'showHeatmap', 'showBestGhost',
                 ];
 
                 const updates: Partial<AudioEngineState> = {};
@@ -1024,7 +1197,8 @@ export class AudioEngine {
                 'guideVolume', 'accompVolume', 'gateThreshold', 'toleranceCents',
                 'isParticlesEnabled', 'countIn', 'showPitchDeviation', 'inputLatency',
                 'micRenderMode', 'showTuner', 'pitchEngineVersion',
-                'autoOctaveEstimate',
+                'autoOctaveEstimate', 'metronomeVolume', 'metronomeTone', 'pitchSmoothing', 'tunerShowNote',
+                'a4Reference', 'showHeatmap', 'showBestGhost',
             ];
 
             const toSave = persistentKeys.reduce((acc, key) => {
@@ -1117,10 +1291,13 @@ export class AudioEngine {
         // Loop Practice: Auto-rewind if past loop end
         if (this.state.loopEnabled && this.state.loopEnd > this.state.loopStart) {
             if (this.state.playbackPosition >= this.state.loopEnd) {
-                this.state.playbackPosition = this.state.loopStart;
-                this.playbackStartTime = this.audioCtx!.currentTime - this.state.loopStart;
-                this.onSeek(this.state.loopStart);
-                this.syncBackingTrack();
+                // 連続練習プレイリストが有効なら次区間へ進める（進めたら巻き戻し不要）
+                if (!this.advancePlaylistIfActive()) {
+                    this.state.playbackPosition = this.state.loopStart;
+                    this.playbackStartTime = this.audioCtx!.currentTime - this.state.loopStart;
+                    this.onSeek(this.state.loopStart);
+                    this.syncBackingTrack();
+                }
             }
         }
 
@@ -1258,14 +1435,26 @@ export class AudioEngine {
 
     private playClick(time: number, isHigh: boolean) {
         if (!this.audioCtx || !this.masterGain) return;
+        const vol = this.state.metronomeVolume ?? 0.3;
+        if (vol <= 0) return;
+        const tone = this.state.metronomeTone ?? 'beep';
+
         const osc = this.audioCtx.createOscillator();
         const gain = this.audioCtx.createGain();
 
-        osc.frequency.setValueAtTime(isHigh ? 1600 : 1200, time);
-        osc.type = 'sine';
+        if (tone === 'wood') {
+            osc.type = 'triangle';
+            osc.frequency.setValueAtTime(isHigh ? 900 : 650, time);
+        } else if (tone === 'click') {
+            osc.type = 'square';
+            osc.frequency.setValueAtTime(isHigh ? 2000 : 1500, time);
+        } else { // beep
+            osc.type = 'sine';
+            osc.frequency.setValueAtTime(isHigh ? 1600 : 1200, time);
+        }
 
         gain.gain.setValueAtTime(0, time);
-        gain.gain.linearRampToValueAtTime(0.3, time + 0.005);
+        gain.gain.linearRampToValueAtTime(vol, time + 0.005);
         gain.gain.exponentialRampToValueAtTime(0.01, time + 0.1);
 
         osc.connect(gain);
@@ -1376,7 +1565,7 @@ export class AudioEngine {
 
         // Synth Sound
         osc.type = 'triangle'; // Clear tone
-        const freq = 440 * Math.pow(2, (midi - 69) / 12);
+        const freq = midiToFreq(midi, this.state.a4Reference);
         osc.frequency.value = freq;
 
         const baseVol = isBacking ? this.state.accompVolume : this.state.guideVolume;
@@ -1570,7 +1759,7 @@ export class AudioEngine {
         const gain = this.audioCtx.createGain();
         // Piano-ish synthesis (Triangle wave with specific envelope)
         osc.type = 'triangle';
-        const freq = 440 * Math.pow(2, (midi - 69) / 12);
+        const freq = midiToFreq(midi, this.state.a4Reference);
         osc.frequency.setValueAtTime(freq, this.audioCtx.currentTime);
 
         // Envelope
@@ -1926,6 +2115,7 @@ export class AudioEngine {
         this.state.playbackPosition = 0; // Reset so instructions start from 0
         this.state.selectedMidiTrackId = trackIndex;
         this.notify();
+        this.refreshBestGhost(); // 曲のベスト記録ゴーストを読み込む
     }
     // Session Management
     exportSession(): string {
@@ -1984,6 +2174,7 @@ export class AudioEngine {
                 }
 
                 this.notify();
+                this.refreshBestGhost();
                 return true;
             }
 
@@ -1997,6 +2188,7 @@ export class AudioEngine {
                 this.state.isPracticing = true;
             }
             this.notify();
+            this.refreshBestGhost();
             return true;
         } catch (e) {
             console.error("Failed to import session", e);

@@ -339,6 +339,22 @@ export const ScoreResultModal: React.FC<Props> = ({ result, onClose }) => {
                                         </button>
                                     )}
                                 </div>
+                                {/* 連続練習（プレイリスト） */}
+                                {difficultSections.length > 1 && (
+                                    <button
+                                        onClick={() => {
+                                            audioEngine.startDifficultPlaylist(
+                                                difficultSections.map(s => ({ start: s.extendedStart, end: s.extendedEnd })),
+                                                2
+                                            );
+                                            onClose();
+                                        }}
+                                        className="w-full mb-2 flex items-center justify-center gap-2 py-2.5 rounded-lg bg-orange-500/20 hover:bg-orange-500/30 border border-orange-500/30 text-orange-200 text-xs font-bold transition-all active:scale-95"
+                                    >
+                                        <ListChecks size={14} />
+                                        全{difficultSections.length}区間を連続練習（各2回）
+                                    </button>
+                                )}
                                 <div className="space-y-1.5">
                                     {difficultSections.slice(0, 3).map((s, i) => (
                                         <button
@@ -444,6 +460,21 @@ export const ScoreResultModal: React.FC<Props> = ({ result, onClose }) => {
                             <p className="text-xs text-white/60 mb-3 leading-relaxed">
                                 各項目をクリックすると、前後2小節を含めた範囲でループ練習を開始します。
                             </p>
+                            {difficultSections.length > 1 && (
+                                <button
+                                    onClick={() => {
+                                        audioEngine.startDifficultPlaylist(
+                                            difficultSections.map(s => ({ start: s.extendedStart, end: s.extendedEnd })),
+                                            2
+                                        );
+                                        onClose();
+                                    }}
+                                    className="w-full mb-3 flex items-center justify-center gap-2 py-3 rounded-xl bg-orange-500/25 hover:bg-orange-500/35 border border-orange-500/40 text-orange-100 text-sm font-bold transition-all active:scale-95"
+                                >
+                                    <ListChecks size={16} />
+                                    全{difficultSections.length}区間を連続練習（各2回ループ）
+                                </button>
+                            )}
                             {difficultSections.map((s, i) => (
                                 <button
                                     key={i}

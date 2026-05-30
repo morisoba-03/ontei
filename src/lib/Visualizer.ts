@@ -19,6 +19,15 @@ function getPlayX(width: number): number {
     return Math.round(Math.max(60, Math.min(w - 80, w * 0.33)));
 }
 
+// ヒートマップ色: 平均ズレとブレ幅を合わせた「悪さ」で緑→黄→赤に色分けする
+function heatColor(avgCents: number, stdCents: number): string {
+    const sev = avgCents + stdCents * 0.6;
+    if (sev <= 20) return '#22c55e'; // green
+    if (sev <= 35) return '#84cc16'; // lime
+    if (sev <= 60) return '#eab308'; // yellow
+    return '#ef4444'; // red
+}
+
 
 
 export class Visualizer {
@@ -308,7 +317,7 @@ export class Visualizer {
                     if (p.time > visEnd) break;
                     if (p.time < visStart - 0.5) continue; // Buffer
 
-                    const midi = 69 + 12 * Math.log2(Math.max(1e-9, p.freq) / 440);
+                    const midi = 69 + 12 * Math.log2(Math.max(1e-9, p.freq) / (state.a4Reference ?? 440));
                     const y = h - (midi - vmin + 1) * pxSemi;
                     const x = playX + (p.time - eff) * pxPerSec;
 
@@ -408,9 +417,21 @@ export class Visualizer {
         if (Array.isArray(midiGhostNotes) && midiGhostNotes.length && (!isPitchOnlyMode || isPracticing)) {
             ctx.save();
             ctx.lineWidth = Math.max(2, guideLineWidth);
+
+            // 演奏後ヒートマップ: 停止中かつデータがあればノート色を品質で上書きする
+            const heatActive = !state.isPlaying && state.showHeatmap && !!state.noteHeatmap?.length;
+            const heatByTime = heatActive
+                ? new Map(state.noteHeatmap!.map(h => [Math.round(h.time * 1000), h]))
+                : null;
+
             for (let i = 0; i < midiGhostNotes.length; i++) {
                 const n = midiGhostNotes[i];
-                if (n.role === 'resp' || n.role === 'calib') {
+                const heat = heatByTime ? heatByTime.get(Math.round(n.time * 1000)) : undefined;
+                if (heat && (n.role === 'call' || n.role === 'practice' || !n.role)) {
+                    ctx.strokeStyle = heatColor(heat.avgCents, heat.stdCents);
+                    ctx.setLineDash([]);
+                    ctx.lineWidth = Math.max(n.role === 'practice' ? 3 : 2, guideLineWidth);
+                } else if (n.role === 'resp' || n.role === 'calib') {
                     ctx.strokeStyle = '#4e8cff'; ctx.setLineDash([4, 4]);
                 } else if (n.role === 'call') {
                     ctx.strokeStyle = '#ff5050'; ctx.setLineDash([]);
@@ -510,6 +531,38 @@ export class Visualizer {
             ctx.restore();
         }
 
+        // Draw Best-Run Ghost (faint trail of the best recorded attempt)
+        if (!isCalibrating && state.showBestGhost && state.bestGhost?.length) {
+            const A4 = state.a4Reference ?? 440;
+            const gvmin = 36 + Math.round((132 - 36 - total) * (verticalOffset / 100));
+            const gvmax = gvmin + total;
+            ctx.save();
+            ctx.strokeStyle = 'rgba(190, 150, 255, 0.4)'; // faint purple
+            ctx.lineWidth = 2;
+            ctx.setLineDash([]);
+            ctx.beginPath();
+            let gFirst = true;
+            let gPrevT = 0;
+            for (const p of state.bestGhost) {
+                if (p.conf < 0.5) continue;
+                const t = p.time + ((p.visOff != null) ? (p.visOff - 0.05) : 0);
+                if (t < visStart || t > visEnd) { gFirst = true; continue; }
+                const midi = 69 + 12 * Math.log2(Math.max(1e-9, p.freq) / A4);
+                if (midi < gvmin || midi > gvmax) { gFirst = true; continue; }
+                const x = playX + (t - eff) * pxPerSec;
+                const y = h - (midi - gvmin + 1) * pxSemi;
+                if (gFirst || (t - gPrevT) > 0.12) {
+                    ctx.moveTo(x, y);
+                    gFirst = false;
+                } else {
+                    ctx.lineTo(x, y);
+                }
+                gPrevT = t;
+            }
+            ctx.stroke();
+            ctx.restore();
+        }
+
         // Draw Pitch History
         const allowDrawPitch = !isCalibrating;
         if (allowDrawPitch && pitchHistory && pitchHistory.length) {
@@ -517,7 +570,7 @@ export class Visualizer {
             const LAG_MS = Math.round((getPitchVisOffsetSec()) * 1000);
             const lag = LAG_MS / 1000;
             const drawUntil = (playbackPosition - lag);
-            const A4Frequency = 440;
+            const A4Frequency = state.a4Reference ?? 440;
 
             const vmin = 36 + Math.round((132 - 36 - total) * (verticalOffset / 100));
             const vmax = vmin + total;
@@ -696,7 +749,7 @@ export class Visualizer {
         if (state.currentMicPitch && state.currentMicConf && state.currentMicConf > 0.3) {
             const freq = state.currentMicPitch;
             const vmin = 36 + Math.round((132 - 36 - total) * (verticalOffset / 100));
-            const A4Frequency = 440;
+            const A4Frequency = state.a4Reference ?? 440;
             const midi = 69 + 12 * Math.log2(freq / A4Frequency);
 
             if (midi >= vmin && midi <= vmin + total) {
