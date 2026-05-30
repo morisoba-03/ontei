@@ -19,6 +19,15 @@ function getPlayX(width: number): number {
     return Math.round(Math.max(60, Math.min(w - 80, w * 0.33)));
 }
 
+// ヒートマップ色: 平均ズレとブレ幅を合わせた「悪さ」で緑→黄→赤に色分けする
+function heatColor(avgCents: number, stdCents: number): string {
+    const sev = avgCents + stdCents * 0.6;
+    if (sev <= 20) return '#22c55e'; // green
+    if (sev <= 35) return '#84cc16'; // lime
+    if (sev <= 60) return '#eab308'; // yellow
+    return '#ef4444'; // red
+}
+
 
 
 export class Visualizer {
@@ -408,9 +417,21 @@ export class Visualizer {
         if (Array.isArray(midiGhostNotes) && midiGhostNotes.length && (!isPitchOnlyMode || isPracticing)) {
             ctx.save();
             ctx.lineWidth = Math.max(2, guideLineWidth);
+
+            // 演奏後ヒートマップ: 停止中かつデータがあればノート色を品質で上書きする
+            const heatActive = !state.isPlaying && state.showHeatmap && !!state.noteHeatmap?.length;
+            const heatByTime = heatActive
+                ? new Map(state.noteHeatmap!.map(h => [Math.round(h.time * 1000), h]))
+                : null;
+
             for (let i = 0; i < midiGhostNotes.length; i++) {
                 const n = midiGhostNotes[i];
-                if (n.role === 'resp' || n.role === 'calib') {
+                const heat = heatByTime ? heatByTime.get(Math.round(n.time * 1000)) : undefined;
+                if (heat && (n.role === 'call' || n.role === 'practice' || !n.role)) {
+                    ctx.strokeStyle = heatColor(heat.avgCents, heat.stdCents);
+                    ctx.setLineDash([]);
+                    ctx.lineWidth = Math.max(n.role === 'practice' ? 3 : 2, guideLineWidth);
+                } else if (n.role === 'resp' || n.role === 'calib') {
                     ctx.strokeStyle = '#4e8cff'; ctx.setLineDash([4, 4]);
                 } else if (n.role === 'call') {
                     ctx.strokeStyle = '#ff5050'; ctx.setLineDash([]);
