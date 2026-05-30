@@ -4,6 +4,7 @@ import AnalysisWorker from './analysis.worker?worker';
 export interface AnalysisResult {
     freq: number;
     conf: number;
+    guideFreq: number;
 }
 
 export class AnalysisProcessor {

@@ -24,6 +24,10 @@ function getPlayX(width: number): number {
 export class Visualizer {
     canvas: HTMLCanvasElement;
     ctx: CanvasRenderingContext2D;
+    dpr: number = 1;
+
+    get lw(): number { return this.canvas.width / this.dpr; }
+    get lh(): number { return this.canvas.height / this.dpr; }
 
     pxPerPitch: number = 20;
 
@@ -173,20 +177,20 @@ export class Visualizer {
 
     draw(state: AudioEngineState) {
         if (!this.ctx) return;
-        const { width, height } = this.canvas;
-        const w = width;
-        const h = height;
+        const w = this.lw;
+        const h = this.lh;
         const ctx = this.ctx;
 
         // Calculate pxPerPitch based on verticalZoom
         const total = state.verticalZoom * 12;
-        this.pxPerPitch = height / total;
+        this.pxPerPitch = h / total;
 
         // Clear
         ctx.fillStyle = '#222';
-        ctx.fillRect(0, 0, width, height);
+        ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
 
         ctx.save();
+        if (this.dpr !== 1) ctx.scale(this.dpr, this.dpr);
 
         // 1. Grid
         this.drawGrid(state);
@@ -202,8 +206,8 @@ export class Visualizer {
             // Trigger Effect (if enabled)
             if (state.isParticlesEnabled) {
                 const res = state.lastPhraseResult;
-                const playX = getPlayX(width);
-                const playY = height / 2;
+                const playX = getPlayX(w);
+                const playY = h / 2;
 
                 if (res.evaluation === 'Perfect') {
                     this.spawnParticles(playX, playY, 50, ['#FFD700', '#FFA500', '#FFFFFF', '#00FFFF']);
@@ -225,7 +229,7 @@ export class Visualizer {
         } = state;
 
         // Common Metrics
-        const playX = getPlayX(width);
+        const playX = getPlayX(w);
         const eff = playbackPosition + timelineOffsetSec;
         const vmin = 36 + Math.round((132 - 36 - total) * (verticalOffset / 100));
         const pxSemi = this.pxPerPitch;
@@ -304,7 +308,7 @@ export class Visualizer {
                     if (p.time > visEnd) break;
                     if (p.time < visStart - 0.5) continue; // Buffer
 
-                    const midi = 69 + 12 * Math.log2(p.freq / 440);
+                    const midi = 69 + 12 * Math.log2(Math.max(1e-9, p.freq) / 440);
                     const y = h - (midi - vmin + 1) * pxSemi;
                     const x = playX + (p.time - eff) * pxPerSec;
 
@@ -734,7 +738,7 @@ export class Visualizer {
 
     drawPianoKeys(state: AudioEngineState) {
         if (!this.ctx) return;
-        const { height } = this.canvas;
+        const height = this.lh;
         const { verticalOffset, verticalZoom } = state;
         const keyWidth = 40;
 
@@ -796,7 +800,7 @@ export class Visualizer {
         if (!state.phrases || state.phrases.length === 0) return;
 
         const ctx = this.ctx;
-        const { width, height } = this.canvas;
+        const width = this.lw; const height = this.lh;
         const playX = getPlayX(width);
         const { playbackPosition, timelineOffsetSec, pxPerSec } = state;
         const eff = playbackPosition + timelineOffsetSec;
@@ -824,7 +828,7 @@ export class Visualizer {
 
     drawGrid(state: AudioEngineState) {
         if (!this.ctx) return;
-        const { width, height } = this.canvas;
+        const width = this.lw; const height = this.lh;
         const { timelineOffsetSec, verticalOffset, bpm, baseBpm, pxPerSec, verticalZoom, noteNotation } = state;
 
         // Font for labels
@@ -937,8 +941,8 @@ export class Visualizer {
 
     // Coordinate Conversion for Interaction
     getQuantizedTimeMidi(x: number, y: number, state: AudioEngineState): { time: number, midi: number, exactTime: number, exactMidi: number } | null {
-        const w = this.canvas.width;
-        const h = this.canvas.height;
+        const w = this.lw;
+        const h = this.lh;
         const {
             verticalZoom, verticalOffset,
             playbackPosition, timelineOffsetSec,
@@ -973,7 +977,7 @@ export class Visualizer {
     getLoopHandleHit(x: number, y: number, state: AudioEngineState): 'start' | 'end' | null {
         if (!state.loopEnabled || y > 30) return null; // Handles are top 30px
 
-        const { width } = this.canvas;
+        const width = this.lw;
         const { timelineOffsetSec, playbackPosition, pxPerSec } = state;
         const playX = getPlayX(width);
         const eff = playbackPosition + timelineOffsetSec;
@@ -997,7 +1001,7 @@ export class Visualizer {
         const hasTs = state.timeSignatureMap && state.timeSignatureMap.length > 0;
         if (!hasTempo && !hasTs) return;
 
-        const { width, height } = this.canvas;
+        const width = this.lw; const height = this.lh;
         const { timelineOffsetSec, playbackPosition, pxPerSec } = state;
 
         const playX = getPlayX(width);
@@ -1053,7 +1057,7 @@ export class Visualizer {
         if (!state.markers || state.markers.length === 0) return;
         if (!this.ctx) return;
 
-        const { width, height } = this.canvas;
+        const width = this.lw; const height = this.lh;
         const { timelineOffsetSec, playbackPosition, pxPerSec } = state;
         const playX = getPlayX(width);
         const eff = playbackPosition + timelineOffsetSec;
@@ -1094,7 +1098,7 @@ export class Visualizer {
         if (!state.loopEnabled) return;
         if (!this.ctx) return;
 
-        const { width, height } = this.canvas;
+        const width = this.lw; const height = this.lh;
         const { timelineOffsetSec, playbackPosition, pxPerSec } = state;
 
         const playX = getPlayX(width);

@@ -277,14 +277,18 @@ export class ScoreAnalyzer {
                     if (startDiff < -50 && endDiff > startDiff + 30 && Math.abs(endDiff) < 50) {
                         this.scoopCount++;
 
-                        // Bonus: Treat these attack frames as "hits" for pitch scoring purpose
-                        // We temporarily modify their diff for scoring calculation (hacky but effective for score)
-                        attackFrames.forEach(f => f.diffCents = 0);
+                        // Bonus: treat attack frames as hits without mutating shared frame objects
+                        const attackSet = new Set(attackFrames);
+                        const validWithBonus = valid.map(f =>
+                            attackSet.has(f) ? { ...f, diffCents: 0 } : f
+                        );
+                        score = this.calculatePitchScore(validWithBonus);
+                    } else {
+                        score = this.calculatePitchScore(valid);
                     }
+                } else {
+                    score = this.calculatePitchScore(valid);
                 }
-
-                const pitchScore = this.calculatePitchScore(valid);
-                score = pitchScore;
             }
 
             let evalText: 'Perfect' | 'Good' | 'Bad' = 'Bad';

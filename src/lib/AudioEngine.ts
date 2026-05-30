@@ -362,29 +362,11 @@ export class AudioEngine {
         this.analysisProcessor.processAsync(this.micData, guideFreq, minRms, this.state.pitchEngineVersion || 'v1');
     }
 
-    private handleAnalysisResult(result: { freq: number, conf: number }) {
+    private handleAnalysisResult(result: { freq: number, conf: number, guideFreq: number }) {
         if (!this.audioCtx) return;
 
-        // Determine Guide Freq again? No, we passed it to worker, but worker output doesn't include it.
-        // Actually we need guideFreq to update meter color.
-        // We can recalculate it or pass it through.
-        // Let's recalculate it briefly or store it? Recalculation is cheap.
-
-        // Re-calculate guideFreq for visualization logic (copy-paste logic, or extract method)
-        // Or simpler: Just accept result and update state. The meter color logic needs guideFreq.
-        // Let's extract guideFreq calculation or just Recalculate.
-
-        let guideFreq = 0;
-        const eff = this.state.playbackPosition + this.state.timelineOffsetSec;
-        if (Array.isArray(this.state.midiGhostNotes)) {
-            const note = this.state.midiGhostNotes.find(n => eff >= n.time && eff <= n.time + n.duration);
-            if (note) {
-                const offset = (this.state.guideOctaveOffset * 12) + this.state.transposeOffset;
-                guideFreq = 440 * Math.pow(2, (note.midi + offset - 69) / 12);
-            }
-        }
-
-        const { freq, conf } = result;
+        // Use the guideFreq that was computed at analysis time (avoids timing race from re-calculating here)
+        const { freq, conf, guideFreq } = result;
 
         // Update Meter Color
         let meterColor = '#00FFFF'; // Default Cyan
@@ -421,13 +403,26 @@ export class AudioEngine {
                 );
             }
 
-            this.state.pitchHistory.push({
+            const entry = {
                 time: now - vOff - (this.state.inputLatency || 0),
                 visOff: vOff,
                 freq: freq,
                 conf: conf
-            });
-            if (this.state.pitchHistory.length > 2000) this.state.pitchHistory.shift();
+            };
+            // Insert at end (monotonically increasing during normal playback)
+            // If somehow out-of-order (rare), find the correct insertion point
+            const ph = this.state.pitchHistory;
+            if (ph.length === 0 || ph[ph.length - 1].time <= entry.time) {
+                ph.push(entry);
+            } else {
+                let lo = 0, hi = ph.length - 1;
+                while (lo < hi) {
+                    const mid = (lo + hi) >> 1;
+                    if (ph[mid].time <= entry.time) lo = mid + 1; else hi = mid;
+                }
+                ph.splice(lo, 0, entry);
+            }
+            if (ph.length > 2000) ph.shift();
         }
 
         // Trigger draw if not playing (animation frame handles draw when playing)
@@ -687,6 +682,23 @@ export class AudioEngine {
         this.notify();
     }
 
+    dispose() {
+        this.stopPlayback();
+        if (this.analysisTimer) {
+            clearInterval(this.analysisTimer);
+            this.analysisTimer = null;
+        }
+        if (this.micStream) {
+            this.micStream.getTracks().forEach(t => t.stop());
+            this.micStream = null;
+        }
+        this.analysisProcessor.terminate();
+        if (this.audioCtx) {
+            this.audioCtx.close();
+            this.audioCtx = null;
+        }
+    }
+
     private detectDifficultSection(): { start: number; end: number } | null {
         const sections = this.detectDifficultSections();
         if (sections.length === 0) return null;
@@ -833,7 +845,7 @@ export class AudioEngine {
     private analyzeLongToneStability(phrase: import('./types').Phrase) {
         const respNote = phrase.notes.find(n => n.role === 'resp' && n.duration >= 2.0);
         if (!respNote) return;
-        const targetFreq = 440 * Math.pow(2, (respNote.midi + (this.state.transposeOffset || 0) - 69) / 12);
+        const targetFreq = 440 * Math.pow(2, (respNote.midi + (this.state.guideOctaveOffset * 12) + (this.state.transposeOffset || 0) - 69) / 12);
         const pts = this.state.pitchHistory.filter(p =>
             p.conf >= 0.5 && p.time >= respNote.time && p.time <= respNote.time + respNote.duration
         );
