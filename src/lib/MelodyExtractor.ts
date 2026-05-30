@@ -426,6 +426,9 @@ export async function extractMelodyNotesFromBuffer(
         for (let i = 0; i < cleaned.length; i++) {
             const f = cleaned[i];
             if (f <= 0) {
+                // 無音区間でアンカーをリセット。休符を挟んだ正当なオクターブ跳躍を
+                // 誤って引き戻さないようにする（離散ノート側のリセットと整合）。
+                lastValidMidi = -1;
                 continue;
             }
 
@@ -462,10 +465,12 @@ export async function extractMelodyNotesFromBuffer(
         }
 
         // 4. Export
+        // ノート側と同じ発音遅延補正を適用し、折れ線とノートの時刻基準を揃える
+        // （解析窓中心と窓先頭のズレ分。これが無いと折れ線が約45ms遅れて配置される）
         for (let i = 0; i < cleaned.length; i++) {
             const f = cleaned[i];
             if (f > 0) {
-                pitchData.push({ time: idxToTime(i), freq: f });
+                pitchData.push({ time: Math.max(0, idxToTime(i) - LATENCY_SEC), freq: f });
             }
         }
     }
