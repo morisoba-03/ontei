@@ -8,6 +8,15 @@ export interface ScoreFrame {
     isStable: boolean;
 }
 
+// ノート単位の演奏品質（ヒートマップ用）
+export interface NoteHeat {
+    time: number;     // ガイドノートの開始時刻
+    midi: number;     // ガイドノートの MIDI（オフセット適用前）
+    avgCents: number; // 平均ズレ（絶対値, cent）
+    stdCents: number; // ブレ幅（標準偏差, cent）
+    count: number;    // 対象フレーム数
+}
+
 export interface ScoreResult {
     totalScore: number;
     radar: {
@@ -217,6 +226,26 @@ export class ScoreAnalyzer {
             phraseScores: this.phraseScores,
             weakNotes
         };
+    }
+
+    // ガイドノートごとの平均ズレ・ブレ幅を集計してヒートマップ用データを返す。
+    // frames.diffCents は feed() 時にガイド周波数（オクターブ/移調/A4 反映済み）基準で計算済みなので、
+    // 時間窓でバケツ分けするだけでよい。
+    computeHeatmap(notes: { time: number; duration: number; midi: number; role?: string }[]): NoteHeat[] {
+        const out: NoteHeat[] = [];
+        for (const n of notes) {
+            if (n.role && n.role !== 'call' && n.role !== 'practice') continue;
+            const fs = this.frames.filter(f =>
+                f.userPitch > 0 && f.guidePitch > 0 &&
+                f.time >= n.time && f.time <= n.time + n.duration
+            );
+            if (fs.length < 2) continue;
+            const mean = fs.reduce((a, f) => a + f.diffCents, 0) / fs.length;
+            const avgCents = fs.reduce((a, f) => a + Math.abs(f.diffCents), 0) / fs.length;
+            const stdCents = Math.sqrt(fs.reduce((a, f) => a + (f.diffCents - mean) ** 2, 0) / fs.length);
+            out.push({ time: n.time, midi: n.midi, avgCents, stdCents, count: fs.length });
+        }
+        return out;
     }
 
     private analyzeWeakNotes(frames: ScoreFrame[]): { noteIndex: number; diff: number; count: number }[] {

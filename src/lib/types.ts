@@ -131,6 +131,10 @@ export interface AudioEngineState {
     tunerShowNote: boolean;
     // 基準ピッチ A4 の周波数（既定 440Hz）。ガイド音生成・判定・表示に反映される
     a4Reference: number;
+    // 直近の演奏のノート別品質（ヒートマップ）。停止時に集計される
+    noteHeatmap?: import('./ScoreAnalyzer').NoteHeat[];
+    // ヒートマップ（演奏後のノート色分け）を表示する
+    showHeatmap: boolean;
 }
 
 export type ScaleType = 'Major' | 'NaturalMinor' | 'HarmonicMinor' | 'MelodicMinor' | 'MajorPentatonic' | 'MinorPentatonic' | 'Chromatic' | 'Dorian' | 'Mixolydian' | 'Blues';

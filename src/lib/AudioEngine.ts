@@ -222,7 +222,9 @@ export class AudioEngine {
             metronomeTone: 'beep',
             pitchSmoothing: 0,
             tunerShowNote: true,
-            a4Reference: 440
+            a4Reference: 440,
+            noteHeatmap: undefined,
+            showHeatmap: true
         };
         this.loadSettings();
         // Start loading piano samples immediately
@@ -644,6 +646,7 @@ export class AudioEngine {
         this.state.isPlaying = true;
         this._stopProcessed = false; // 停止フラグをリセット（次回の停止で1回だけ難所検出される）
         this.state.scoreResult = null; // Clear previous score
+        this.state.noteHeatmap = undefined; // 前回のヒートマップを消去
         this.scoreAnalyzer.reset();
 
         if (this.state.countIn) {
@@ -691,7 +694,12 @@ export class AudioEngine {
             if (result) {
                 result.difficultSections = this.detectDifficultSections();
             }
-            this.updateState({ scoreResult: result });
+            // ノート別ヒートマップを集計（演奏後の色分け表示用）
+            const heatmap = this.scoreAnalyzer.computeHeatmap(this.state.midiGhostNotes);
+            this.updateState({ scoreResult: result, noteHeatmap: heatmap.length > 0 ? heatmap : undefined });
+            if (heatmap.length > 0 && this.state.showHeatmap) {
+                toast.show('ノートの色は安定度を表します（緑=良 / 赤=要練習）', 'info', { duration: 4000 });
+            }
 
             // Suggest difficult section loop after a brief delay (1回のみ)
             if (result && result.totalScore > 0 && result.totalScore < 95) {
@@ -1019,7 +1027,7 @@ export class AudioEngine {
                     'isParticlesEnabled', 'countIn', 'showPitchDeviation', 'inputLatency',
                     'micRenderMode', 'showTuner', 'selectedMidiTrackId', 'pitchEngineVersion',
                     'autoOctaveEstimate', 'metronomeVolume', 'metronomeTone', 'pitchSmoothing', 'tunerShowNote',
-                    'a4Reference',
+                    'a4Reference', 'showHeatmap',
                 ];
 
                 const updates: Partial<AudioEngineState> = {};
@@ -1046,7 +1054,7 @@ export class AudioEngine {
                 'isParticlesEnabled', 'countIn', 'showPitchDeviation', 'inputLatency',
                 'micRenderMode', 'showTuner', 'pitchEngineVersion',
                 'autoOctaveEstimate', 'metronomeVolume', 'metronomeTone', 'pitchSmoothing', 'tunerShowNote',
-                'a4Reference',
+                'a4Reference', 'showHeatmap',
             ];
 
             const toSave = persistentKeys.reduce((acc, key) => {
