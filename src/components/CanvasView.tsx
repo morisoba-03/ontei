@@ -35,23 +35,31 @@ export function CanvasView() {
     const dragStartSnapshotRef = useRef<Track[] | null>(null);
 
     useEffect(() => {
-        if (canvasRef.current && containerRef.current) {
-            const updateSize = () => {
-                if (containerRef.current && canvasRef.current) {
-                    const w = containerRef.current.clientWidth;
-                    const h = containerRef.current.clientHeight;
-                    if (Math.abs(canvasRef.current.width - w) > 1 || Math.abs(canvasRef.current.height - h) > 1) {
-                        canvasRef.current.width = w;
-                        canvasRef.current.height = h;
-                        audioEngine.draw();
-                    }
-                }
-            };
-            updateSize();
-            window.addEventListener('resize', updateSize);
-            audioEngine.setCanvas(canvasRef.current);
-            return () => window.removeEventListener('resize', updateSize);
-        }
+        if (!canvasRef.current || !containerRef.current) return;
+
+        const updateSize = () => {
+            if (!containerRef.current || !canvasRef.current) return;
+            const dpr = window.devicePixelRatio || 1;
+            const w = containerRef.current.clientWidth;
+            const h = containerRef.current.clientHeight;
+            const dw = Math.round(w * dpr);
+            const dh = Math.round(h * dpr);
+            if (canvasRef.current.width !== dw || canvasRef.current.height !== dh) {
+                canvasRef.current.width = dw;
+                canvasRef.current.height = dh;
+                canvasRef.current.style.width = w + 'px';
+                canvasRef.current.style.height = h + 'px';
+                if (audioEngine.visualizer) audioEngine.visualizer.dpr = dpr;
+                audioEngine.draw();
+            }
+        };
+
+        audioEngine.setCanvas(canvasRef.current);
+        updateSize();
+
+        const ro = new ResizeObserver(updateSize);
+        ro.observe(containerRef.current);
+        return () => ro.disconnect();
     }, []);
 
     // Touch gestures: Pinch-to-zoom and two-finger swipe
@@ -249,7 +257,6 @@ export function CanvasView() {
 
         if (result) {
             const { exactTime, exactMidi } = result;
-            console.log('[Debug] PointerDown', JSON.stringify({ x, y, exactTime, exactMidi, offset }));
 
             // Check Handles ...
             if (selectedNote) {
@@ -271,9 +278,7 @@ export function CanvasView() {
                 // Fix: Apply offset to check
                 hitNote = track?.notes.find(n => {
                     const diffMidi = Math.abs((n.midi + offset) - exactMidi);
-                    const match = exactTime >= n.time && exactTime <= n.time + n.duration && diffMidi < 0.8;
-                    console.log('[Debug] Check Note', JSON.stringify({ noteTime: n.time, noteMidi: n.midi, visMidi: n.midi + offset, exactTime, exactMidi, diffMidi, match }));
-                    return match;
+                    return exactTime >= n.time && exactTime <= n.time + n.duration && diffMidi < 0.8;
                 }) || null;
             }
             // Capture Offsets
@@ -304,7 +309,10 @@ export function CanvasView() {
         const isPencilSelect = editTool === 'pencil' && hitNote;
         if (editTool === 'select' || isPencilSelect) {
             if (hitNote) {
-                dragStartSnapshotRef.current = JSON.parse(JSON.stringify(audioEngine.state.currentTracks));
+                const mi = audioEngine.state.melodyTrackIndex;
+                dragStartSnapshotRef.current = audioEngine.state.currentTracks.map((t, i) =>
+                    i === mi ? { ...t, notes: t.notes.map(n => ({ ...n })) } : t
+                );
                 targetNoteRef.current = hitNote;
                 if (isResizeLeftHit) {
                     modeRef.current = 'resize_note_left';

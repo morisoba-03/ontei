@@ -317,9 +317,9 @@ function App() {
           />
         )}
 
-        {showResult && (
+        {showResult && state.scoreResult && (
           <ScoreResultModal
-            result={state.scoreResult!}
+            result={state.scoreResult}
             onClose={() => setShowResult(false)}
           />
         )}
