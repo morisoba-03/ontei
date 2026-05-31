@@ -1,9 +1,9 @@
 import { useState, useEffect, useRef } from 'react';
-import { Play, Square, MousePointer2, Hand, Pencil, Eraser, Settings, Activity, Repeat, SkipBack, Music2, Music, Volume2, X, Plus, Minus, ListMusic, Flag, Timer } from 'lucide-react';
+import { Play, Square, Hand, Settings, Activity, Repeat, SkipBack, Music2, Music, Volume2, X, Plus, Minus, ListMusic, Flag, Timer } from 'lucide-react';
 import { audioEngine } from '../lib/AudioEngine';
 import { MidiTrackSelector } from './MidiTrackSelector';
 import type { MidiTrackInfo } from './MidiTrackSelector';
-import type { AudioEngineState, Marker } from '../lib/types';
+import type { Marker } from '../lib/types';
 import { cn } from '../lib/utils';
 import { toast } from './Toast';
 // Unused modal imports removed since they are handled by App.tsx callbacks
@@ -18,7 +18,7 @@ interface ControlsProps {
 export function Controls({ onOpenSettings, onOpenPractice, onRecordingComplete, onOpenScalePractice }: ControlsProps) {
     const [isPlaying, setIsPlaying] = useState(audioEngine.state.isPlaying);
     const [isRecording, setIsRecording] = useState(audioEngine.isRecording);
-    const [editTool, setEditTool] = useState(audioEngine.state.editTool);
+    // editTool は常に 'view'（移動モード）固定。選択/ペン/消しゴムは削除済み。
     const [loopEnabled, setLoopEnabled] = useState(audioEngine.state.loopEnabled);
     const [midiTracks, setMidiTracks] = useState<MidiTrackInfo[]>([]);
     const [showMidiSelector, setShowMidiSelector] = useState(false);
@@ -36,7 +36,6 @@ export function Controls({ onOpenSettings, onOpenPractice, onRecordingComplete, 
         const unsub = audioEngine.subscribe(() => {
             setIsPlaying(audioEngine.state.isPlaying);
             setIsRecording(audioEngine.isRecording);
-            setEditTool(audioEngine.state.editTool);
             setLoopEnabled(audioEngine.state.loopEnabled);
             setIsGuideOn(audioEngine.state.isGuideSoundEnabled);
             setIsBackingOn(audioEngine.state.isBackingSoundEnabled);
@@ -350,28 +349,14 @@ export function Controls({ onOpenSettings, onOpenPractice, onRecordingComplete, 
                     <Flag className="w-4 h-4 md:w-5 md:h-5" />
                 </button>
 
-                {/* Center: Tools */}
-                <div className="flex items-center bg-white/5 rounded-full p-0.5 gap-0.5 shrink-0">
-                    {[
-                        { id: 'select', icon: MousePointer2, label: '選択' },
-                        { id: 'view', icon: Hand, label: '移動' },
-                        { id: 'pencil', icon: Pencil, label: 'ペン' },
-                        { id: 'eraser', icon: Eraser, label: '消しゴム' }
-                    ].map(tool => (
-                        <button
-                            key={tool.id}
-                            onClick={() => audioEngine.setTool(tool.id as AudioEngineState['editTool'])}
-                            className={cn(
-                                "p-1.5 md:p-2 rounded-full transition-all relative group",
-                                editTool === tool.id
-                                    ? "bg-blue-600 text-white shadow-md"
-                                    : "text-white/50 hover:text-white hover:bg-white/10"
-                            )}
-                            title={tool.label}
-                        >
-                            <tool.icon className="w-4 h-4 md:w-5 md:h-5" />
-                        </button>
-                    ))}
+                {/* Center: Move Tool (pan only) */}
+                <div className="flex items-center bg-white/5 rounded-full p-0.5 shrink-0">
+                    <button
+                        className="p-1.5 md:p-2 rounded-full bg-blue-600 text-white shadow-md"
+                        title="移動"
+                    >
+                        <Hand className="w-4 h-4 md:w-5 md:h-5" />
+                    </button>
                 </div>
 
                 <div className="w-px h-8 bg-white/10 shrink-0 hidden sm:block" />
