@@ -403,14 +403,16 @@ export class AudioEngine {
 
         // Determine Guide Frequency (God Mode Bias)
         let guideFreq = 0;
-        // Find ghost note at current time (eff)
+        // The mic data captures audio from ~inputLatency seconds ago, so look up the guide
+        // at (playbackPosition - inputLatency) to match what the user was actually singing.
         const eff = this.state.playbackPosition + this.state.timelineOffsetSec;
+        const guideEff = eff - (this.state.inputLatency || 0);
         if (this.hasContinuousGuide()) {
             // MP3（折れ線）ガイド: 連続曲線を補間してターゲット周波数を求める。
             // 無音区間では 0（ターゲットなし）。
-            guideFreq = this.continuousGuideFreqAt(eff);
+            guideFreq = this.continuousGuideFreqAt(guideEff);
         } else if (Array.isArray(this.state.midiGhostNotes)) {
-            const note = this.state.midiGhostNotes.find(n => eff >= n.time && eff <= n.time + n.duration);
+            const note = this.state.midiGhostNotes.find(n => guideEff >= n.time && guideEff <= n.time + n.duration);
             if (note) {
                 // MIDI to Freq (Apply Octave Offset)
                 const offset = (this.state.guideOctaveOffset * 12) + this.state.transposeOffset;
