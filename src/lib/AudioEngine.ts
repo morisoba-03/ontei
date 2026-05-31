@@ -342,7 +342,7 @@ export class AudioEngine {
             if (this._isMobile) {
                 // 8192-sample buffer: ~170 ms at 48 kHz → more periods for pitchy to correlate
                 this.micAnalyser.fftSize = 8192;
-                this.analysisRate = 30;
+                this.analysisRate = 40;
 
                 // High-pass filter at 150 Hz: removes handling/wind noise that ruins MPM clarity
                 const hpFilter = this.audioCtx.createBiquadFilter();
@@ -460,7 +460,7 @@ export class AudioEngine {
         const minRms = Math.pow(10, (this.state.gateThreshold || -50) / 20);
 
         // Offload analysis to Worker
-        this.analysisProcessor.processAsync(this.micData, guideFreq, minRms, this.state.pitchEngineVersion || 'v1');
+        this.analysisProcessor.processAsync(this.micData, guideFreq, minRms, this.state.pitchEngineVersion || 'v2');
     }
 
     private handleAnalysisResult(result: { freq: number, conf: number, guideFreq: number }) {
