@@ -584,9 +584,9 @@ export class Visualizer {
                 if (t > drawUntil) continue;
                 // if (isCallAt(t)) continue; // Allow drawing over guide notes
 
-                // Threshold 0.5: passes held (bridged) frames from mobile (HOLD_CONF=0.55)
-                // while still filtering stray noise. PC clarity is normally 0.85+ so unaffected.
-                if (p.conf < 0.5) continue;
+                // Threshold 0.4: mobile mics often yield 0.4-0.6 clarity on valid detections.
+                // PC clarity is normally 0.85+ so this change is invisible on desktop.
+                if (p.conf < 0.4) continue;
                 const midi = (69 + 12 * Math.log2(Math.max(1e-9, p.freq) / A4Frequency));
                 if (midi < vmin || midi > vmax) continue;
                 pts.push({ t, midi, conf: p.conf, freq: p.freq, guideFreq: p.guideFreq });

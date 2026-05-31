@@ -119,7 +119,7 @@ export class PitchAnalyzer {
 
         // 2. McLeod Pitch Method
         const [rawFreq, clarity] = this.detector.findPitch(buf, sampleRate);
-        if (clarity < 0.45 || rawFreq < 60 || rawFreq > 4200) {
+        if (clarity < 0.40 || rawFreq < 60 || rawFreq > 4200) {
             if (this.holdFramesLeft > 0 && this.v2Last > 0) {
                 this.holdFramesLeft--;
                 return { freq: this.v2Last, conf: HOLD_CONF };
