@@ -111,7 +111,6 @@ export interface AudioEngineState {
     metronomeMode: 'off' | 'on' | 'rec_only' | 'measure' | 'beat';
     meterColor?: string;
     inputLatency: number; // seconds
-    countIn: boolean;
     showPitchDeviation: boolean;
     showTuner: boolean;
     showTolerancePreview: boolean;
