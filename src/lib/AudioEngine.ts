@@ -222,7 +222,7 @@ export class AudioEngine {
             showTuner: true,
             showTolerancePreview: false,
             markers: [],
-            pitchEngineVersion: 'v1',
+            pitchEngineVersion: 'v2',
             autoOctaveEstimate: true,
             metronomeVolume: 0.3,
             metronomeTone: 'beep',
@@ -1481,6 +1481,12 @@ export class AudioEngine {
             if (this.state.metronomeMode === 'on') {
                 playSound = true;
             } else if (this.state.metronomeMode === 'rec_only' && (this.isRecording || this.state.isPracticing)) {
+                playSound = true;
+            }
+
+            // カウントイン期間（currentPos < 0）は設定に関わらず常にクリックを鳴らす。
+            // メトロノームをOFFにしていてもカウントインの拍感は必要なため。
+            if (!playSound && this.state.countIn && currentPos < 0) {
                 playSound = true;
             }
 
