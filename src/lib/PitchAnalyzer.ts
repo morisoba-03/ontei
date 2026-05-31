@@ -91,7 +91,7 @@ export class PitchAnalyzer {
      *   本物の跳躍は次フレームで採用される（遅延 ≈ 1 フレーム）。
      * - ガイド音は一切使わないため、奏者の本当のオクターブ違いも正直に表示される。
      */
-    private analyzeV2(buf: Float32Array, sampleRate: number, options: { minRms?: number }): PitchResult {
+    private analyzeV2(buf: Float32Array, sampleRate: number, options: { minRms?: number, guideFreq?: number }): PitchResult {
         if (!this.detector || this.inputLength !== buf.length) {
             this.inputLength = buf.length;
             this.detector = PitchDetector.forFloat32Array(this.inputLength);
@@ -129,23 +129,39 @@ export class PitchAnalyzer {
             return { freq: 0, conf: 0 };
         }
 
+        // 2b. ガイドベースのオクターブ補正（v2でもオクターブ誤検出を修正）
+        // ガイド周波数の {f/2, f, 2f} の中で rawFreq に最も近い候補を探し、
+        // 3半音以内ならオクターブ補正する。通常の音程ずれ（非オクターブ）には影響しない。
+        let correctedFreq = rawFreq;
+        if (options.guideFreq && options.guideFreq > 0) {
+            const guide = options.guideFreq;
+            const cands = [rawFreq / 2, rawFreq, rawFreq * 2].filter(f => f >= 60 && f <= 4200);
+            let best = rawFreq;
+            let bestDist = Math.abs(12 * Math.log2(rawFreq / guide));
+            for (const c of cands) {
+                const d = Math.abs(12 * Math.log2(c / guide));
+                if (d < bestDist) { bestDist = d; best = c; }
+            }
+            if (best !== rawFreq && bestDist < 3) correctedFreq = best;
+        }
+
         // 3. 急ジャンプのみ 1 フレーム確認（それ以外は生値をそのまま採用）
-        let resolved = rawFreq;
+        let resolved = correctedFreq;
         if (this.v2Last > 0) {
-            const jump = Math.abs(12 * Math.log2(rawFreq / this.v2Last));
+            const jump = Math.abs(12 * Math.log2(correctedFreq / this.v2Last));
             if (jump >= V2_JUMP_HOLD_SEMI) {
                 this.v2PendingCount++;
                 if (this.v2PendingCount >= 2) {
                     // 2 フレーム連続で離れた値 → 本物の跳躍として採用
                     this.v2PendingCount = 0;
-                    resolved = rawFreq;
+                    resolved = correctedFreq;
                 } else {
                     // 最初の 1 フレームは旧値を保持（瞬間スパイク除去）
                     resolved = this.v2Last;
                 }
             } else {
                 this.v2PendingCount = 0;
-                resolved = rawFreq;
+                resolved = correctedFreq;
             }
         }
 
