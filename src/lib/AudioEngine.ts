@@ -338,21 +338,45 @@ export class AudioEngine {
             this.micStream = await navigator.mediaDevices.getUserMedia(constraints);
             this.micSource = this.audioCtx.createMediaStreamSource(this.micStream);
             this.micAnalyser = this.audioCtx.createAnalyser();
-            // Mobile: larger buffer for better pitch clarity on noisy mics + halved analysis rate
+
             if (this._isMobile) {
-                this.micAnalyser.fftSize = 4096;
+                // 8192-sample buffer: ~170 ms at 48 kHz → more periods for pitchy to correlate
+                this.micAnalyser.fftSize = 8192;
                 this.analysisRate = 30;
+
+                // High-pass filter at 150 Hz: removes handling/wind noise that ruins MPM clarity
+                const hpFilter = this.audioCtx.createBiquadFilter();
+                hpFilter.type = 'highpass';
+                hpFilter.frequency.value = 150;
+                hpFilter.Q.value = 0.7; // Butterworth-like gentle rolloff
+
+                // Dynamics compressor: normalises mic sensitivity differences across devices.
+                // Boost quiet whistles, prevent clipping on close-mic use — amplitude-normalised
+                // MPM (pitchy) is robust to level changes, so this does not affect pitch accuracy.
+                const compressor = this.audioCtx.createDynamicsCompressor();
+                compressor.threshold.value = -24;
+                compressor.knee.value = 6;
+                compressor.ratio.value = 4;
+                compressor.attack.value = 0.003;
+                compressor.release.value = 0.2;
+
+                this.micSource.connect(hpFilter);
+                hpFilter.connect(compressor);
+                compressor.connect(this.micAnalyser);
             } else {
                 this.micAnalyser.fftSize = 2048;
                 this.analysisRate = 60;
+                this.micSource.connect(this.micAnalyser);
             }
+
             this.micData = new Float32Array(this.micAnalyser.fftSize);
 
-            // Connect: Source -> Analyser (no output to destination to avoid feedback)
-            this.micSource.connect(this.micAnalyser);
-
-            // Init Processor — pass analysis rate so hold-frame count stays ~200 ms
-            this.analysisProcessor.init(this.audioCtx.sampleRate, this.analysisRate);
+            // Init Processor — pass analysisRate and holdMs so pitch bridging stays appropriate
+            this.analysisProcessor.init(
+                this.audioCtx.sampleRate,
+                this.analysisRate,
+                this._isMobile ? 400 : undefined  // mobile: 400 ms hold bridges detection gaps
+            );
             this.analysisProcessor.onResult = (res) => this.handleAnalysisResult(res);
 
             this.startAnalysis();
