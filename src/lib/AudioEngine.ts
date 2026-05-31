@@ -483,7 +483,8 @@ export class AudioEngine {
                 time: now - vOff - (this.state.inputLatency || 0),
                 visOff: vOff,
                 freq: this.state.currentMicPitch || freq,
-                conf: conf
+                conf: conf,
+                guideFreq: guideFreq > 0 ? guideFreq : undefined
             };
             // Insert at end (monotonically increasing during normal playback)
             // If somehow out-of-order (rare), find the correct insertion point

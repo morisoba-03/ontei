@@ -234,7 +234,7 @@ export class Visualizer {
             pxPerSec, guideLineWidth, showNoteNames,
             currentTracks, melodyTrackIndex, pitchHistory, midiGhostNotes,
             micRenderMode,
-            toleranceCents, showTolerancePreview, inputLatency
+            toleranceCents, showTolerancePreview
         } = state;
 
         // Common Metrics
@@ -589,25 +589,12 @@ export class Visualizer {
                 if (p.conf < 0.5) continue;
                 const midi = (69 + 12 * Math.log2(Math.max(1e-9, p.freq) / A4Frequency));
                 if (midi < vmin || midi > vmax) continue;
-                pts.push({ t, midi, conf: p.conf, freq: p.freq });
+                pts.push({ t, midi, conf: p.conf, freq: p.freq, guideFreq: p.guideFreq });
             }
 
             // Sort points by time to prevent zigzag lines when history is out of order (e.g. loops)
             pts.sort((a, b) => a.t - b.t);
 
-            // Binary-search lookup over sorted midiGhostNotes (O(log N) instead of O(N)).
-            // Assumes notes are sorted by time (monophonic MIDI track).
-            const ghostSorted = midiGhostNotes;
-            const findNoteAt = (t: number) => {
-                let lo = 0, hi = ghostSorted.length - 1, idx = -1;
-                while (lo <= hi) {
-                    const mid = (lo + hi) >> 1;
-                    if (ghostSorted[mid].time <= t) { idx = mid; lo = mid + 1; } else hi = mid - 1;
-                }
-                if (idx < 0) return null;
-                const n = ghostSorted[idx];
-                return (t <= n.time + n.duration) ? n : null;
-            };
 
             if (micRenderMode === 'segment') {
                 // Segment mode: break line on large pitch jumps (for piano / discrete notes)
@@ -636,18 +623,11 @@ export class Visualizer {
                         let color = '#39FF14';
                         let shadow = '#39FF14';
 
-                        if (state.showPitchDeviation) {
-                            // lookupT must match the guide-freq lookup in AudioEngine (eff = pos + timelineOffsetSec).
-                            // p.time = pos - 0.05 - inputLatency, t = p.time, so t + inputLatency = pos - 0.05 = eff.
-                            const lookupT = curr.t + (inputLatency || 0);
-                            const note = findNoteAt(lookupT);
-                            if (note) {
-                                const expected = note.midi + (state.guideOctaveOffset * 12) + state.transposeOffset;
-                                const toleranceSemitones = toleranceCents / 100;
-                                if (Math.abs(curr.midi - expected) > toleranceSemitones) {
-                                    color = '#FFA500';
-                                    shadow = '#FFA500';
-                                }
+                        if (state.showPitchDeviation && curr.guideFreq && curr.guideFreq > 0) {
+                            const diffCents = 1200 * Math.log2(Math.max(1e-9, curr.freq) / curr.guideFreq);
+                            if (Math.abs(diffCents) > toleranceCents) {
+                                color = '#FFA500';
+                                shadow = '#FFA500';
                             }
                         }
 
@@ -668,14 +648,10 @@ export class Visualizer {
                     if (x < 0 || x > w) continue;
 
                     let dotColor = '#00FFCC';
-                    if (state.showPitchDeviation) {
-                        const lookupT = p.t + (inputLatency || 0);
-                        const note = findNoteAt(lookupT);
-                        if (note) {
-                            const expected = note.midi + (state.guideOctaveOffset * 12) + state.transposeOffset;
-                            if (Math.abs(p.midi - expected) > toleranceCents / 100) {
-                                dotColor = '#FFA500';
-                            }
+                    if (state.showPitchDeviation && p.guideFreq && p.guideFreq > 0) {
+                        const diffCents = 1200 * Math.log2(Math.max(1e-9, p.freq) / p.guideFreq);
+                        if (Math.abs(diffCents) > toleranceCents) {
+                            dotColor = '#FFA500';
                         }
                     }
 
@@ -716,16 +692,11 @@ export class Visualizer {
                         let color = '#39FF14'; // Default Neon Green
                         let shadow = '#39FF14';
 
-                        if (state.showPitchDeviation) {
-                            const lookupT = curr.t + (inputLatency || 0);
-                            const note = findNoteAt(lookupT);
-                            if (note) {
-                                const expected = note.midi + (state.guideOctaveOffset * 12) + state.transposeOffset;
-                                const toleranceSemitones = toleranceCents / 100;
-                                if (Math.abs(curr.midi - expected) > toleranceSemitones) {
-                                    color = '#FFA500'; // Orange = out of tolerance
-                                    shadow = '#FFA500';
-                                }
+                        if (state.showPitchDeviation && curr.guideFreq && curr.guideFreq > 0) {
+                            const diffCents = 1200 * Math.log2(Math.max(1e-9, curr.freq) / curr.guideFreq);
+                            if (Math.abs(diffCents) > toleranceCents) {
+                                color = '#FFA500';
+                                shadow = '#FFA500';
                             }
                         }
 
