@@ -24,6 +24,7 @@ export function Controls({ onOpenSettings, onOpenPractice, onRecordingComplete, 
     const [showMidiSelector, setShowMidiSelector] = useState(false);
     const [isGuideOn, setIsGuideOn] = useState(audioEngine.state.isGuideSoundEnabled);
     const [isBackingOn, setIsBackingOn] = useState(audioEngine.state.isBackingSoundEnabled);
+    const [guideVolume, setGuideVolume] = useState(audioEngine.state.guideVolume);
     const [availableTracks, setAvailableTracks] = useState<MidiTrackInfo[]>(audioEngine.state.midiAvailableTracks || []);
     const [currentTrackIndex, setCurrentTrackIndex] = useState(audioEngine.state.selectedMidiTrackId ?? audioEngine.state.melodyTrackIndex);
     const [markers, setMarkers] = useState<Marker[]>(audioEngine.state.markers);
@@ -38,6 +39,7 @@ export function Controls({ onOpenSettings, onOpenPractice, onRecordingComplete, 
             setLoopEnabled(audioEngine.state.loopEnabled);
             setIsGuideOn(audioEngine.state.isGuideSoundEnabled);
             setIsBackingOn(audioEngine.state.isBackingSoundEnabled);
+            setGuideVolume(audioEngine.state.guideVolume);
             setCurrentTrackIndex(audioEngine.state.selectedMidiTrackId ?? audioEngine.state.melodyTrackIndex);
             setMarkers([...audioEngine.state.markers]);
 
@@ -170,20 +172,44 @@ export function Controls({ onOpenSettings, onOpenPractice, onRecordingComplete, 
 
                 <div className="w-px h-8 bg-white/10 shrink-0 hidden sm:block" />
 
-                {/* Guide & Backing Toggles */}
-                <button
-                    onClick={() => audioEngine.updateState({ isGuideSoundEnabled: !isGuideOn })}
-                    className={cn(
-                        "p-1.5 rounded-lg border transition-all shrink-0",
-                        isGuideOn
-                            ? "bg-purple-500/20 border-purple-500/40 text-purple-400"
-                            : "bg-white/5 border-white/10 text-white/50 hover:text-white hover:bg-white/10"
-                    )}
-                    title={isGuideOn ? "ガイド音ON" : "ガイド音OFF"}
-                >
-                    <Music2 className="w-4 h-4 md:w-5 md:h-5" />
-                </button>
+                {/* Guide toggle + inline volume */}
+                <div className={cn(
+                    "flex items-center rounded-lg border transition-all shrink-0",
+                    isGuideOn
+                        ? "bg-purple-500/20 border-purple-500/40"
+                        : "bg-white/5 border-white/10"
+                )}>
+                    <button
+                        onClick={() => audioEngine.updateState({ isGuideSoundEnabled: !isGuideOn })}
+                        className={cn(
+                            "p-1.5 transition-all",
+                            isGuideOn ? "text-purple-400" : "text-white/50 hover:text-white"
+                        )}
+                        title={isGuideOn ? "ガイド音ON" : "ガイド音OFF"}
+                    >
+                        <Music2 className="w-4 h-4 md:w-5 md:h-5" />
+                    </button>
+                    <div className="flex items-center gap-1 pr-2">
+                        <input
+                            type="range" min="0" max="1" step="0.05"
+                            value={guideVolume}
+                            onChange={e => audioEngine.updateState({ guideVolume: parseFloat(e.target.value) })}
+                            className={cn(
+                                "w-14 md:w-16 h-1.5 rounded-full appearance-none cursor-pointer",
+                                "[&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-3 [&::-webkit-slider-thumb]:h-3 [&::-webkit-slider-thumb]:rounded-full",
+                                isGuideOn
+                                    ? "bg-purple-500/40 [&::-webkit-slider-thumb]:bg-purple-400"
+                                    : "bg-white/20 [&::-webkit-slider-thumb]:bg-white/50"
+                            )}
+                            title="ガイド音量"
+                        />
+                        <span className={cn("text-[10px] font-mono w-6 text-right tabular-nums", isGuideOn ? "text-purple-300" : "text-white/30")}>
+                            {Math.round(guideVolume * 100)}
+                        </span>
+                    </div>
+                </div>
 
+                {/* Backing toggle */}
                 <button
                     onClick={() => audioEngine.updateState({ isBackingSoundEnabled: !isBackingOn })}
                     className={cn(
