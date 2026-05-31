@@ -269,11 +269,11 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
                             <div className="space-y-2">
                                 <div className="flex justify-between text-sm items-center">
                                     <span>判定エンジン</span>
-                                    <span className="font-mono text-violet-400 bg-violet-400/10 px-2 py-0.5 rounded">{(state.pitchEngineVersion || 'v1') === 'v2' ? '厳密 (v2)' : '従来 (v1)'}</span>
+                                    <span className="font-mono text-violet-400 bg-violet-400/10 px-2 py-0.5 rounded">{(state.pitchEngineVersion || 'v2') === 'v2' ? '厳密 (v2)' : '従来 (v1)'}</span>
                                 </div>
                                 <div className="flex bg-white/5 rounded-lg p-1 text-xs">
-                                    <button onClick={() => update('pitchEngineVersion', 'v1')} className={`flex-1 py-1.5 rounded-md transition-colors ${(state.pitchEngineVersion || 'v1') === 'v1' ? 'bg-violet-500 text-white' : 'text-white/50 hover:text-white'}`}>従来 (v1)</button>
-                                    <button onClick={() => update('pitchEngineVersion', 'v2')} className={`flex-1 py-1.5 rounded-md transition-colors ${state.pitchEngineVersion === 'v2' ? 'bg-violet-500 text-white' : 'text-white/50 hover:text-white'}`}>厳密 (v2)</button>
+                                    <button onClick={() => update('pitchEngineVersion', 'v1')} className={`flex-1 py-1.5 rounded-md transition-colors ${(state.pitchEngineVersion || 'v2') === 'v1' ? 'bg-violet-500 text-white' : 'text-white/50 hover:text-white'}`}>従来 (v1)</button>
+                                    <button onClick={() => update('pitchEngineVersion', 'v2')} className={`flex-1 py-1.5 rounded-md transition-colors ${(state.pitchEngineVersion || 'v2') === 'v2' ? 'bg-violet-500 text-white' : 'text-white/50 hover:text-white'}`}>厳密 (v2)</button>
                                 </div>
                                 <p className="text-[10px] text-white/30 leading-relaxed">{state.pitchEngineVersion === 'v2' ? 'ガイドに頼らず吹いた音をそのまま判定。EMA平滑なしでセント精度が高く、オクターブ違いも正直に表示します。' : 'ガイド音を基準にオクターブ補正・平滑化を行う安定重視の従来方式です。'}</p>
                             </div>
