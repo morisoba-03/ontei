@@ -233,7 +233,7 @@ export class AudioEngine {
             showHeatmap: true,
             bestGhost: undefined,
             bestGhostScore: undefined,
-            showBestGhost: true
+            showBestGhost: false
         };
         this.loadSettings();
         // Start loading piano samples immediately
@@ -1311,6 +1311,14 @@ export class AudioEngine {
         }
         if (updates.guideVolume !== undefined && this.melodyGain) {
             this.melodyGain.gain.setTargetAtTime(updates.guideVolume, this.audioCtx?.currentTime || 0, 0.05);
+        }
+
+        // guideOctaveOffset / transposeOffset が変わったらゴーストをクリア。
+        // 保存時と異なるオクターブ/キー設定でゴーストが表示されると位置がずれて混乱を招くため。
+        if ((updates.guideOctaveOffset !== undefined && updates.guideOctaveOffset !== this.state.guideOctaveOffset) ||
+            (updates.transposeOffset !== undefined && updates.transposeOffset !== this.state.transposeOffset)) {
+            this.state.bestGhost = undefined;
+            this.state.bestGhostScore = undefined;
         }
 
         // Auto-save on relevant changes
