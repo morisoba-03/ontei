@@ -79,9 +79,14 @@ export class AudioEngine {
     reqFrameId: number | null = null;
     private lastFrameTime: number = 0;
     private _lastDisplayFreq: number = 0; // ライブピッチ平滑化用の直近表示周波数
+    private _lastAnalyzePos: number = -999; // RAFループ内での解析レート制御用
 
     // Config
-    analysisRate: number = 60; // 60 Hz on all devices — smoother pitch history
+    analysisRate: number = 60; // Hz — will be lowered to 30 on mobile in initMic()
+    private readonly _isMobile: boolean = (
+        /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent) ||
+        (typeof navigator.maxTouchPoints === 'number' && navigator.maxTouchPoints > 1)
+    );
 
     // Reactivity
     listeners: (() => void)[] = [];
@@ -333,7 +338,14 @@ export class AudioEngine {
             this.micStream = await navigator.mediaDevices.getUserMedia(constraints);
             this.micSource = this.audioCtx.createMediaStreamSource(this.micStream);
             this.micAnalyser = this.audioCtx.createAnalyser();
-            this.micAnalyser.fftSize = 2048;
+            // Mobile: larger buffer for better pitch clarity on noisy mics + halved analysis rate
+            if (this._isMobile) {
+                this.micAnalyser.fftSize = 4096;
+                this.analysisRate = 30;
+            } else {
+                this.micAnalyser.fftSize = 2048;
+                this.analysisRate = 60;
+            }
             this.micData = new Float32Array(this.micAnalyser.fftSize);
 
             // Connect: Source -> Analyser (no output to destination to avoid feedback)
@@ -705,6 +717,14 @@ export class AudioEngine {
         this.state.noteHeatmap = undefined; // 前回のヒートマップを消去
         this.scoreAnalyzer.reset();
 
+        // During playback, analysis is driven by the RAF loop.
+        // Pause the setInterval timer to avoid double-analysis.
+        if (this.analysisTimer) {
+            clearInterval(this.analysisTimer);
+            this.analysisTimer = null;
+        }
+        this._lastAnalyzePos = this.state.playbackPosition;
+
         this.playbackStartTime = this.audioCtx.currentTime - (this.state.playbackPosition / this.state.tempoFactor);
         this.lastFrameTime = this.audioCtx.currentTime;
         this.playbackStartPerf = performance.now();
@@ -762,6 +782,8 @@ export class AudioEngine {
             }
         }
         this.checkPhraseCompletion();
+        // Resume setInterval-based analysis for idle tuner display
+        if (this.micAnalyser) this.startAnalysis();
         this.draw();
         this.notify();
     }
@@ -1417,6 +1439,17 @@ export class AudioEngine {
         }
 
         this.scheduleMetronome();
+
+        // Mic analysis: RAF-synchronized rate-limiting.
+        // Replaces setInterval during playback so analysis is always in sync with the render frame,
+        // preventing the stuttering / delayed-dot appearance seen on mobile with setInterval drift.
+        if (this.micAnalyser && this.micData) {
+            const analyzeInterval = 1 / this.analysisRate;
+            if (this.state.playbackPosition - this._lastAnalyzePos >= analyzeInterval) {
+                this._lastAnalyzePos = this.state.playbackPosition;
+                this.analyze();
+            }
+        }
 
         this.draw();
         this.reqFrameId = requestAnimationFrame(() => this.loop());
