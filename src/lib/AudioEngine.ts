@@ -217,7 +217,6 @@ export class AudioEngine {
             noteNotation: 'alphabet',
             metronomeMode: 'off',
             inputLatency: 0.12, // 120ms default latency compensation
-            countIn: false,
             showPitchDeviation: true,
             showTuner: true,
             showTolerancePreview: false,
@@ -483,7 +482,7 @@ export class AudioEngine {
             const entry = {
                 time: now - vOff - (this.state.inputLatency || 0),
                 visOff: vOff,
-                freq: freq,
+                freq: this.state.currentMicPitch || freq,
                 conf: conf
             };
             // Insert at end (monotonically increasing during normal playback)
@@ -702,12 +701,6 @@ export class AudioEngine {
         this.state.scoreResult = null; // Clear previous score
         this.state.noteHeatmap = undefined; // 前回のヒートマップを消去
         this.scoreAnalyzer.reset();
-
-        if (this.state.countIn) {
-            // カウントイン4拍は再生開始位置のBPM（テンポマップ先頭）で計算
-            const beatDur = 60 / this.getBpmAt(Math.max(0, this.state.playbackPosition));
-            this.state.playbackPosition -= beatDur * 4;
-        }
 
         this.playbackStartTime = this.audioCtx.currentTime - (this.state.playbackPosition / this.state.tempoFactor);
         this.lastFrameTime = this.audioCtx.currentTime;
@@ -1234,7 +1227,7 @@ export class AudioEngine {
                     'verticalZoom', 'pxPerSec', 'noteNotation',
                     'guideOctaveOffset',
                     'guideVolume', 'accompVolume', 'gateThreshold', 'toleranceCents',
-                    'isParticlesEnabled', 'countIn', 'showPitchDeviation', 'inputLatency',
+                    'isParticlesEnabled', 'showPitchDeviation', 'inputLatency',
                     'micRenderMode', 'showTuner', 'selectedMidiTrackId', 'pitchEngineVersion',
                     'autoOctaveEstimate', 'metronomeVolume', 'metronomeTone', 'pitchSmoothing', 'tunerShowNote',
                     'a4Reference', 'showHeatmap', 'showBestGhost',
@@ -1261,7 +1254,7 @@ export class AudioEngine {
                 'verticalZoom', 'pxPerSec', 'noteNotation',
                 'guideOctaveOffset',
                 'guideVolume', 'accompVolume', 'gateThreshold', 'toleranceCents',
-                'isParticlesEnabled', 'countIn', 'showPitchDeviation', 'inputLatency',
+                'isParticlesEnabled', 'showPitchDeviation', 'inputLatency',
                 'micRenderMode', 'showTuner', 'pitchEngineVersion',
                 'autoOctaveEstimate', 'metronomeVolume', 'metronomeTone', 'pitchSmoothing', 'tunerShowNote',
                 'a4Reference', 'showHeatmap', 'showBestGhost',
@@ -1327,7 +1320,7 @@ export class AudioEngine {
             'verticalZoom', 'pxPerSec', 'noteNotation',
             'guideOctaveOffset',
             'guideVolume', 'accompVolume', 'gateThreshold', 'toleranceCents',
-            'isParticlesEnabled', 'countIn', 'showPitchDeviation', 'inputLatency', 'micRenderMode', 'showTuner',
+            'isParticlesEnabled', 'showPitchDeviation', 'inputLatency', 'micRenderMode', 'showTuner',
         ];
 
         if (Object.keys(updates).some(k => persistentKeys.includes(k as typeof persistentKeys[number]))) {
@@ -1481,12 +1474,6 @@ export class AudioEngine {
             if (this.state.metronomeMode === 'on') {
                 playSound = true;
             } else if (this.state.metronomeMode === 'rec_only' && (this.isRecording || this.state.isPracticing)) {
-                playSound = true;
-            }
-
-            // カウントイン期間（currentPos < 0）は設定に関わらず常にクリックを鳴らす。
-            // メトロノームをOFFにしていてもカウントインの拍感は必要なため。
-            if (!playSound && this.state.countIn && currentPos < 0) {
                 playSound = true;
             }
 

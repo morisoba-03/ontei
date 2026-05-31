@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { Play, Square, Hand, Settings, Activity, Repeat, SkipBack, Music2, Music, Volume2, X, Plus, Minus, ListMusic, Flag, Timer } from 'lucide-react';
+import { Play, Square, Hand, Settings, Activity, Repeat, SkipBack, Music2, Music, Volume2, X, Plus, Minus, ListMusic, Flag } from 'lucide-react';
 import { audioEngine } from '../lib/AudioEngine';
 import { MidiTrackSelector } from './MidiTrackSelector';
 import type { MidiTrackInfo } from './MidiTrackSelector';
@@ -27,7 +27,6 @@ export function Controls({ onOpenSettings, onOpenPractice, onRecordingComplete, 
     const [availableTracks, setAvailableTracks] = useState<MidiTrackInfo[]>(audioEngine.state.midiAvailableTracks || []);
     const [currentTrackIndex, setCurrentTrackIndex] = useState(audioEngine.state.selectedMidiTrackId ?? audioEngine.state.melodyTrackIndex);
     const [markers, setMarkers] = useState<Marker[]>(audioEngine.state.markers);
-    const [countIn, setCountIn] = useState(audioEngine.state.countIn);
     const [markerLoopAnchor, setMarkerLoopAnchor] = useState<string | null>(null);
     const longPressTimer = useRef<number | null>(null);
     const longPressActivated = useRef(false);
@@ -41,7 +40,6 @@ export function Controls({ onOpenSettings, onOpenPractice, onRecordingComplete, 
             setIsBackingOn(audioEngine.state.isBackingSoundEnabled);
             setCurrentTrackIndex(audioEngine.state.selectedMidiTrackId ?? audioEngine.state.melodyTrackIndex);
             setMarkers([...audioEngine.state.markers]);
-            setCountIn(audioEngine.state.countIn);
 
             if (audioEngine.state.midiAvailableTracks) {
                 setAvailableTracks(audioEngine.state.midiAvailableTracks);
@@ -318,20 +316,6 @@ export function Controls({ onOpenSettings, onOpenPractice, onRecordingComplete, 
                         <Repeat className="w-5 h-5 opacity-30" />
                         <X className="w-3 h-3 absolute" />
                     </div>
-                </button>
-
-                {/* Count-in Toggle */}
-                <button
-                    onClick={() => audioEngine.updateState({ countIn: !countIn })}
-                    className={cn(
-                        "p-1.5 md:p-2 rounded-lg border transition-all shrink-0",
-                        countIn
-                            ? "bg-violet-500/20 border-violet-500/40 text-violet-400"
-                            : "bg-white/5 border-white/10 text-white/50 hover:text-white hover:bg-white/10"
-                    )}
-                    title={countIn ? "カウントインON（4拍）— クリックでOFF" : "カウントインOFF — クリックでON"}
-                >
-                    <Timer className="w-4 h-4 md:w-5 md:h-5" />
                 </button>
 
                 {/* Add Marker Button */}
