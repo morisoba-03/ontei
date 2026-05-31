@@ -20,6 +20,7 @@ export interface PitchPoint {
     visOff: number;
     freq: number;
     conf: number;
+    guideFreq?: number; // guide frequency at analysis time, for accurate deviation coloring
     sid?: number;
     dCents?: number;
 }
