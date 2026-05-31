@@ -49,8 +49,10 @@ export class PitchAnalyzer {
     private v2Last: number = 0;       // 直近に採用した周波数
     private v2PendingCount: number = 0; // 急ジャンプの連続フレーム数
 
-    setAnalysisRate(hz: number) {
-        this.maxHoldFrames = Math.max(3, Math.round(hz * 0.2));
+    setAnalysisRate(hz: number, holdMs?: number) {
+        // holdMs overrides the default 200 ms hold duration (useful for mobile gap-bridging)
+        const duration = holdMs !== undefined ? holdMs / 1000 : 0.2;
+        this.maxHoldFrames = Math.max(3, Math.round(hz * duration));
     }
 
     reset() {
@@ -93,7 +95,7 @@ export class PitchAnalyzer {
         if (!this.detector || this.inputLength !== buf.length) {
             this.inputLength = buf.length;
             this.detector = PitchDetector.forFloat32Array(this.inputLength);
-            this.detector.minVolumeDecibels = -60;
+            this.detector.minVolumeDecibels = -70; // lower than v1 for quieter mobile inputs
         }
 
         // 1. RMS Gate（無音判定）
@@ -119,7 +121,7 @@ export class PitchAnalyzer {
 
         // 2. McLeod Pitch Method
         const [rawFreq, clarity] = this.detector.findPitch(buf, sampleRate);
-        if (clarity < 0.40 || rawFreq < 60 || rawFreq > 4200) {
+        if (clarity < 0.35 || rawFreq < 60 || rawFreq > 4200) {
             if (this.holdFramesLeft > 0 && this.v2Last > 0) {
                 this.holdFramesLeft--;
                 return { freq: this.v2Last, conf: HOLD_CONF };
@@ -157,7 +159,7 @@ export class PitchAnalyzer {
         if (!this.detector || this.inputLength !== buf.length) {
             this.inputLength = buf.length;
             this.detector = PitchDetector.forFloat32Array(this.inputLength);
-            this.detector.minVolumeDecibels = -60;
+            this.detector.minVolumeDecibels = -70;
         }
 
         // 0. ガイド参照の更新（消滅後も短時間は保持）

@@ -584,9 +584,9 @@ export class Visualizer {
                 if (t > drawUntil) continue;
                 // if (isCallAt(t)) continue; // Allow drawing over guide notes
 
-                // Threshold 0.4: mobile mics often yield 0.4-0.6 clarity on valid detections.
+                // Threshold 0.35: mobile mics yield 0.35-0.6 clarity on valid detections.
                 // PC clarity is normally 0.85+ so this change is invisible on desktop.
-                if (p.conf < 0.4) continue;
+                if (p.conf < 0.35) continue;
                 const midi = (69 + 12 * Math.log2(Math.max(1e-9, p.freq) / A4Frequency));
                 if (midi < vmin || midi > vmax) continue;
                 pts.push({ t, midi, conf: p.conf, freq: p.freq, guideFreq: p.guideFreq });
