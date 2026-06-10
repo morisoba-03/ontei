@@ -275,7 +275,7 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
                                     <button onClick={() => update('pitchEngineVersion', 'v1')} className={`flex-1 py-1.5 rounded-md transition-colors ${(state.pitchEngineVersion || 'v2') === 'v1' ? 'bg-violet-500 text-white' : 'text-white/50 hover:text-white'}`}>従来 (v1)</button>
                                     <button onClick={() => update('pitchEngineVersion', 'v2')} className={`flex-1 py-1.5 rounded-md transition-colors ${(state.pitchEngineVersion || 'v2') === 'v2' ? 'bg-violet-500 text-white' : 'text-white/50 hover:text-white'}`}>厳密 (v2)</button>
                                 </div>
-                                <p className="text-[10px] text-white/30 leading-relaxed">{state.pitchEngineVersion === 'v2' ? 'ガイドに頼らず吹いた音をそのまま判定。EMA平滑なしでセント精度が高く、オクターブ違いも正直に表示します。' : 'ガイド音を基準にオクターブ補正・平滑化を行う安定重視の従来方式です。'}</p>
+                                <p className="text-[10px] text-white/30 leading-relaxed">{(state.pitchEngineVersion || 'v2') === 'v2' ? '吹いた音をほぼそのまま判定（平滑化なしでセント精度が高い）。オクターブだけはガイドに合わせて補正するので、口笛の音域でそのまま吹けます。' : 'ガイド音を基準にオクターブ補正・平滑化を行う安定重視の従来方式です。'}</p>
                             </div>
 
                             {/* 判定許容誤差 */}

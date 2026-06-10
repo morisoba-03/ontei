@@ -66,6 +66,10 @@ export class AudioEngine {
     micSource: MediaStreamAudioSourceNode | null = null;
     micAnalyser: AnalyserNode | null = null;
     micData: Float32Array<ArrayBuffer> | null = null;
+    // モバイル用: コンプレッサのメイクアップゲインでノイズフロアが持ち上がるため、
+    // ゲート（無音判定）用の RMS は圧縮前の生信号から取る
+    private gateAnalyser: AnalyserNode | null = null;
+    private gateData: Float32Array<ArrayBuffer> | null = null;
 
     // Gain Nodes
     masterGain: GainNode | null = null;
@@ -74,12 +78,13 @@ export class AudioEngine {
 
     // Playback State
     analysisTimer: number | null = null;
-    playbackStartTime: number = 0;
     playbackStartPerf: number = 0;
     reqFrameId: number | null = null;
     private lastFrameTime: number = 0;
     private _lastDisplayFreq: number = 0; // ライブピッチ平滑化用の直近表示周波数
-    private _lastAnalyzePos: number = -999; // RAFループ内での解析レート制御用
+    // RAFループ内での解析レート制御用（壁時計秒）。曲位置基準だとループ巻き戻しで
+    // 解析が止まり、テンポ変更で実効レートが変わるため、必ず壁時計を使う。
+    private _lastAnalyzeWall: number = 0;
 
     // Config
     analysisRate: number = 60; // Hz — will be lowered to 30 on mobile in initMic()
@@ -363,10 +368,18 @@ export class AudioEngine {
                 this.micSource.connect(hpFilter);
                 hpFilter.connect(compressor);
                 compressor.connect(this.micAnalyser);
+
+                // ゲート用に圧縮前の生信号をタップ（gateThreshold は生マイク dBFS 基準のため）
+                this.gateAnalyser = this.audioCtx.createAnalyser();
+                this.gateAnalyser.fftSize = 1024;
+                this.micSource.connect(this.gateAnalyser);
+                this.gateData = new Float32Array(this.gateAnalyser.fftSize);
             } else {
                 this.micAnalyser.fftSize = 2048;
                 this.analysisRate = 60;
                 this.micSource.connect(this.micAnalyser);
+                this.gateAnalyser = null;
+                this.gateData = null;
             }
 
             this.micData = new Float32Array(this.micAnalyser.fftSize);
@@ -439,10 +452,12 @@ export class AudioEngine {
 
         // Determine Guide Frequency (God Mode Bias)
         let guideFreq = 0;
-        // The mic data captures audio from ~inputLatency seconds ago, so look up the guide
-        // at (playbackPosition - inputLatency) to match what the user was actually singing.
+        // The mic data captures audio from ~inputLatency seconds ago, and the pitch estimate
+        // represents the CENTER of the analysis window (fftSize/2 samples ago — ~85 ms on
+        // mobile's 8192 buffer vs ~11 ms on PC's 2048). Look up the guide at that moment.
+        const bufferCenterSec = this.micData.length / 2 / this.audioCtx.sampleRate;
         const eff = this.state.playbackPosition + this.state.timelineOffsetSec;
-        const guideEff = eff - (this.state.inputLatency || 0);
+        const guideEff = eff - (this.state.inputLatency || 0) - bufferCenterSec;
         if (this.hasContinuousGuide()) {
             // MP3（折れ線）ガイド: 連続曲線を補間してターゲット周波数を求める。
             // 無音区間では 0（ターゲットなし）。
@@ -459,15 +474,24 @@ export class AudioEngine {
         // Convert dBFS gate threshold to RMS amplitude
         const minRms = Math.pow(10, (this.state.gateThreshold || -50) / 20);
 
+        // モバイルではコンプレッサ後の信号でなく、圧縮前の生信号 RMS でゲート判定する
+        let externalRms: number | undefined;
+        if (this.gateAnalyser && this.gateData) {
+            this.gateAnalyser.getFloatTimeDomainData(this.gateData);
+            let s = 0;
+            for (let i = 0; i < this.gateData.length; i++) s += this.gateData[i] * this.gateData[i];
+            externalRms = Math.sqrt(s / this.gateData.length);
+        }
+
         // Offload analysis to Worker
-        this.analysisProcessor.processAsync(this.micData, guideFreq, minRms, this.state.pitchEngineVersion || 'v2');
+        this.analysisProcessor.processAsync(this.micData, guideFreq, minRms, this.state.pitchEngineVersion || 'v2', externalRms);
     }
 
-    private handleAnalysisResult(result: { freq: number, conf: number, guideFreq: number }) {
+    private handleAnalysisResult(result: { freq: number, conf: number, guideFreq: number, held?: boolean }) {
         if (!this.audioCtx) return;
 
         // Use the guideFreq that was computed at analysis time (avoids timing race from re-calculating here)
-        const { freq, conf, guideFreq } = result;
+        const { freq, conf, guideFreq, held } = result;
 
         // Update Meter Color
         let meterColor = '#00FFFF'; // Default Cyan
@@ -498,7 +522,8 @@ export class AudioEngine {
         this.state.currentMicConf = conf;
 
         // Feed Score Analyzer
-        if (this.state.isPlaying) {
+        // hold（つなぎ）フレームは実測でなく直前値の複製なので採点に入れない
+        if (this.state.isPlaying && !held) {
             const time = this.state.playbackPosition;
             this.scoreAnalyzer.feed(time, freq, guideFreq);
             // TODO: Visualize vibrato?
@@ -508,6 +533,8 @@ export class AudioEngine {
         if (freq > 0 && this.state.isPlaying) {
             const now = this.state.playbackPosition; // Simplification
             const vOff = 0.05; // Fixed for now
+            // ピッチ推定は解析窓の中心時刻を代表する（analyze() の guideEff と同じ補正）
+            const bufferCenterSec = this.micData ? this.micData.length / 2 / this.audioCtx.sampleRate : 0;
 
             // Overwrite mode: If recording, remove existing pitch data at current time
             if (this.isRecording) {
@@ -518,11 +545,12 @@ export class AudioEngine {
             }
 
             const entry = {
-                time: now - vOff - (this.state.inputLatency || 0),
+                time: now - vOff - (this.state.inputLatency || 0) - bufferCenterSec,
                 visOff: vOff,
                 freq: this.state.currentMicPitch || freq,
                 conf: conf,
-                guideFreq: guideFreq > 0 ? guideFreq : undefined
+                guideFreq: guideFreq > 0 ? guideFreq : undefined,
+                held: held || undefined
             };
             // Insert at end (monotonically increasing during normal playback)
             // If somehow out-of-order (rare), find the correct insertion point
@@ -594,7 +622,6 @@ export class AudioEngine {
 
         // Reset timing
         this.state.playbackPosition = 0;
-        this.playbackStartTime = this.audioCtx.currentTime;
         console.log(`[Practice] Started (${config.mode}).`);
 
         this.state.isPlaying = true; // Enable Auto-play for practice
@@ -747,9 +774,8 @@ export class AudioEngine {
             clearInterval(this.analysisTimer);
             this.analysisTimer = null;
         }
-        this._lastAnalyzePos = this.state.playbackPosition;
+        this._lastAnalyzeWall = 0;
 
-        this.playbackStartTime = this.audioCtx.currentTime - (this.state.playbackPosition / this.state.tempoFactor);
         this.lastFrameTime = this.audioCtx.currentTime;
         this.playbackStartPerf = performance.now();
 
@@ -1068,7 +1094,6 @@ export class AudioEngine {
         this.state.loopStart = next.start;
         this.state.loopEnd = next.end;
         this.state.playbackPosition = next.start;
-        this.playbackStartTime = this.audioCtx!.currentTime - next.start;
         this.onSeek(next.start);
         this.syncBackingTrack();
         toast.show(`次の区間（${this.playlistIndex + 1}/${this.playlistQueue.length}）`, 'info', { duration: 1500 });
@@ -1186,7 +1211,6 @@ export class AudioEngine {
 
         // Update anchor
         if (this.audioCtx) {
-            this.playbackStartTime = this.audioCtx.currentTime - newTime;
             this.lastFrameTime = this.audioCtx.currentTime;
             // Sync metronome to next beat in track time（シーク先の位置のBPMで計算）
             const beatDur = 60 / this.getBpmAt(Math.max(0, newTime));
@@ -1410,7 +1434,6 @@ export class AudioEngine {
                 // 連続練習プレイリストが有効なら次区間へ進める（進めたら巻き戻し不要）
                 if (!this.advancePlaylistIfActive()) {
                     this.state.playbackPosition = this.state.loopStart;
-                    this.playbackStartTime = this.audioCtx!.currentTime - this.state.loopStart;
                     this.onSeek(this.state.loopStart);
                     this.syncBackingTrack();
                 }
@@ -1467,10 +1490,12 @@ export class AudioEngine {
         // Mic analysis: RAF-synchronized rate-limiting.
         // Replaces setInterval during playback so analysis is always in sync with the render frame,
         // preventing the stuttering / delayed-dot appearance seen on mobile with setInterval drift.
+        // Rate-limit on wall-clock time (not song position): song position goes backwards on
+        // loop rewinds/seeks and advances slower at reduced tempo, both of which would stall analysis.
         if (this.micAnalyser && this.micData) {
-            const analyzeInterval = 1 / this.analysisRate;
-            if (this.state.playbackPosition - this._lastAnalyzePos >= analyzeInterval) {
-                this._lastAnalyzePos = this.state.playbackPosition;
+            const nowWall = performance.now() / 1000;
+            if (nowWall - this._lastAnalyzeWall >= 1 / this.analysisRate) {
+                this._lastAnalyzeWall = nowWall;
                 this.analyze();
             }
         }
@@ -1646,9 +1671,7 @@ export class AudioEngine {
             // Schedule if it's a 'call' note and hasn't been played
             // (We assume notes are sorted by time, which they should be from generator)
             if (note.role === 'call') {
-                // Calculate Exact Audio Time
-                // Note Time is relative to playbackStartTime (0 at start)
-                // AudioContext Time = playbackStartTime + note.time
+                // Calculate Exact Audio Time (note.time is in song seconds, 0 at start)
                 const when = this.audioCtx.currentTime + (note.time - currentTime) / this.state.tempoFactor;
 
                 // Only schedule if it's in the near future (not way in past if we lagged)

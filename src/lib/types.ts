@@ -21,6 +21,7 @@ export interface PitchPoint {
     freq: number;
     conf: number;
     guideFreq?: number; // guide frequency at analysis time, for accurate deviation coloring
+    held?: boolean; // 検出途切れを直前値で埋めた「つなぎ」フレーム（色判定・採点から除外）
     sid?: number;
     dCents?: number;
 }
