@@ -5,6 +5,7 @@ export interface AnalysisResult {
     freq: number;
     conf: number;
     guideFreq: number;
+    held?: boolean;
 }
 
 export class AnalysisProcessor {
@@ -26,11 +27,11 @@ export class AnalysisProcessor {
         this.worker.postMessage({ type: 'init', payload: { sampleRate, analysisRate, holdMs } });
     }
 
-    processAsync(inputBuffer: Float32Array, guideFreq: number = 0, minRms?: number, version: 'v1' | 'v2' = 'v1') {
+    processAsync(inputBuffer: Float32Array, guideFreq: number = 0, minRms?: number, version: 'v1' | 'v2' = 'v2', externalRms?: number) {
         // Send buffer to worker for processing
         this.worker.postMessage({
             type: 'process',
-            payload: { buffer: inputBuffer, guideFreq, minRms, version }
+            payload: { buffer: inputBuffer, guideFreq, minRms, version, externalRms }
         });
     }
 

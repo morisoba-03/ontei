@@ -589,7 +589,7 @@ export class Visualizer {
                 if (p.conf < 0.35) continue;
                 const midi = (69 + 12 * Math.log2(Math.max(1e-9, p.freq) / A4Frequency));
                 if (midi < vmin || midi > vmax) continue;
-                pts.push({ t, midi, conf: p.conf, freq: p.freq, guideFreq: p.guideFreq });
+                pts.push({ t, midi, conf: p.conf, freq: p.freq, guideFreq: p.guideFreq, held: p.held });
             }
 
             // Sort points by time to prevent zigzag lines when history is out of order (e.g. loops)
@@ -623,7 +623,10 @@ export class Visualizer {
                         let color = '#39FF14';
                         let shadow = '#39FF14';
 
-                        if (state.showPitchDeviation && curr.guideFreq && curr.guideFreq > 0) {
+                        // hold（つなぎ）フレームは実測でないため色判定せず薄く描く
+                        if (curr.held) {
+                            ctx.globalAlpha = 0.35;
+                        } else if (state.showPitchDeviation && curr.guideFreq && curr.guideFreq > 0) {
                             const diffCents = 1200 * Math.log2(Math.max(1e-9, curr.freq) / curr.guideFreq);
                             if (Math.abs(diffCents) > toleranceCents) {
                                 color = '#FFA500';
@@ -637,6 +640,7 @@ export class Visualizer {
                         ctx.moveTo(prevX, prevY);
                         ctx.lineTo(currX, currY);
                         ctx.stroke();
+                        if (curr.held) ctx.globalAlpha = 1;
                     }
                     ctx.restore();
                 }
@@ -648,7 +652,10 @@ export class Visualizer {
                     if (x < 0 || x > w) continue;
 
                     let dotColor = '#00FFCC';
-                    if (state.showPitchDeviation && p.guideFreq && p.guideFreq > 0) {
+                    // hold（つなぎ）フレームは実測でないため色判定せず薄く描く
+                    if (p.held) {
+                        ctx.globalAlpha = 0.35;
+                    } else if (state.showPitchDeviation && p.guideFreq && p.guideFreq > 0) {
                         const diffCents = 1200 * Math.log2(Math.max(1e-9, p.freq) / p.guideFreq);
                         if (Math.abs(diffCents) > toleranceCents) {
                             dotColor = '#FFA500';
@@ -664,6 +671,7 @@ export class Visualizer {
                     ctx.lineWidth = 1.5;
                     ctx.fill(); ctx.stroke();
                     ctx.shadowBlur = 0;
+                    if (p.held) ctx.globalAlpha = 1;
                 }
                 ctx.restore();
             } else {
@@ -692,7 +700,10 @@ export class Visualizer {
                         let color = '#39FF14'; // Default Neon Green
                         let shadow = '#39FF14';
 
-                        if (state.showPitchDeviation && curr.guideFreq && curr.guideFreq > 0) {
+                        // hold（つなぎ）フレームは実測でないため色判定せず薄く描く
+                        if (curr.held) {
+                            ctx.globalAlpha = 0.35;
+                        } else if (state.showPitchDeviation && curr.guideFreq && curr.guideFreq > 0) {
                             const diffCents = 1200 * Math.log2(Math.max(1e-9, curr.freq) / curr.guideFreq);
                             if (Math.abs(diffCents) > toleranceCents) {
                                 color = '#FFA500';
@@ -706,6 +717,7 @@ export class Visualizer {
                         ctx.moveTo(prevX, prevY);
                         ctx.lineTo(currX, currY);
                         ctx.stroke();
+                        if (curr.held) ctx.globalAlpha = 1;
                     }
                     ctx.restore();
                 }

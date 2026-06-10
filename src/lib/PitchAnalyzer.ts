@@ -3,6 +3,8 @@ import { PitchDetector } from 'pitchy';
 export interface PitchResult {
     freq: number;
     conf: number;
+    // true = 検出が途切れた間を直前値で埋めた「つなぎ」フレーム（実測ではない）
+    held?: boolean;
 }
 
 // オクターブ飛び対策入り実装。
@@ -77,7 +79,7 @@ export class PitchAnalyzer {
         return sorted.length % 2 === 0 ? (sorted[mid - 1] + sorted[mid]) / 2 : sorted[mid];
     }
 
-    analyze(buf: Float32Array, sampleRate: number, options: { viterbi?: boolean, guideFreq?: number, minRms?: number, version?: 'v1' | 'v2' } = { viterbi: true }): PitchResult {
+    analyze(buf: Float32Array, sampleRate: number, options: { viterbi?: boolean, guideFreq?: number, minRms?: number, version?: 'v1' | 'v2', externalRms?: number } = { viterbi: true }): PitchResult {
         return options.version === 'v2'
             ? this.analyzeV2(buf, sampleRate, options)
             : this.analyzeV1(buf, sampleRate, options);
@@ -91,7 +93,7 @@ export class PitchAnalyzer {
      *   本物の跳躍は次フレームで採用される（遅延 ≈ 1 フレーム）。
      * - ガイド音は一切使わないため、奏者の本当のオクターブ違いも正直に表示される。
      */
-    private analyzeV2(buf: Float32Array, sampleRate: number, options: { minRms?: number, guideFreq?: number }): PitchResult {
+    private analyzeV2(buf: Float32Array, sampleRate: number, options: { minRms?: number, guideFreq?: number, externalRms?: number }): PitchResult {
         if (!this.detector || this.inputLength !== buf.length) {
             this.inputLength = buf.length;
             this.detector = PitchDetector.forFloat32Array(this.inputLength);
@@ -99,9 +101,13 @@ export class PitchAnalyzer {
         }
 
         // 1. RMS Gate（無音判定）
-        let rms = 0;
-        for (let i = 0; i < buf.length; i++) rms += buf[i] * buf[i];
-        rms = Math.sqrt(rms / buf.length);
+        // externalRms があればそちらを使う（モバイル: コンプレッサ前の生信号 RMS）
+        let rms = options.externalRms ?? -1;
+        if (rms < 0) {
+            rms = 0;
+            for (let i = 0; i < buf.length; i++) rms += buf[i] * buf[i];
+            rms = Math.sqrt(rms / buf.length);
+        }
 
         const minRms = options.minRms ?? 0.01;
         if (rms < minRms) {
@@ -113,7 +119,7 @@ export class PitchAnalyzer {
                 this.holdFramesLeft = 0;
             } else if (this.holdFramesLeft > 0 && this.v2Last > 0) {
                 this.holdFramesLeft--;
-                return { freq: this.v2Last, conf: HOLD_CONF };
+                return { freq: this.v2Last, conf: HOLD_CONF, held: true };
             }
             return { freq: 0, conf: 0 };
         }
@@ -124,7 +130,7 @@ export class PitchAnalyzer {
         if (clarity < 0.35 || rawFreq < 60 || rawFreq > 4200) {
             if (this.holdFramesLeft > 0 && this.v2Last > 0) {
                 this.holdFramesLeft--;
-                return { freq: this.v2Last, conf: HOLD_CONF };
+                return { freq: this.v2Last, conf: HOLD_CONF, held: true };
             }
             return { freq: 0, conf: 0 };
         }
@@ -171,7 +177,7 @@ export class PitchAnalyzer {
         return { freq: resolved, conf: clarity };
     }
 
-    private analyzeV1(buf: Float32Array, sampleRate: number, options: { viterbi?: boolean, guideFreq?: number, minRms?: number } = { viterbi: true }): PitchResult {
+    private analyzeV1(buf: Float32Array, sampleRate: number, options: { viterbi?: boolean, guideFreq?: number, minRms?: number, externalRms?: number } = { viterbi: true }): PitchResult {
         if (!this.detector || this.inputLength !== buf.length) {
             this.inputLength = buf.length;
             this.detector = PitchDetector.forFloat32Array(this.inputLength);
@@ -192,9 +198,13 @@ export class PitchAnalyzer {
             : (this.framesSinceGuide <= RECENT_GUIDE_MAX_FRAMES ? this.recentExpectedFreq : 0);
 
         // 1. RMS Gate (silence detection)
-        let rms = 0;
-        for (let i = 0; i < buf.length; i++) rms += buf[i] * buf[i];
-        rms = Math.sqrt(rms / buf.length);
+        // externalRms があればそちらを使う（モバイル: コンプレッサ前の生信号 RMS）
+        let rms = options.externalRms ?? -1;
+        if (rms < 0) {
+            rms = 0;
+            for (let i = 0; i < buf.length; i++) rms += buf[i] * buf[i];
+            rms = Math.sqrt(rms / buf.length);
+        }
 
         const minRms = options.minRms ?? 0.01;
         if (rms < minRms) {
@@ -209,7 +219,7 @@ export class PitchAnalyzer {
                 this.rawHistory = [];
             } else if (this.holdFramesLeft > 0 && this.lastStableFreq > 0) {
                 this.holdFramesLeft--;
-                return { freq: this.lastStableFreq, conf: HOLD_CONF };
+                return { freq: this.lastStableFreq, conf: HOLD_CONF, held: true };
             }
             return { freq: 0, conf: 0 };
         }
@@ -221,7 +231,7 @@ export class PitchAnalyzer {
         if (clarity < 0.45 || rawFreq < 60 || rawFreq > 4200) {
             if (this.holdFramesLeft > 0 && this.lastStableFreq > 0) {
                 this.holdFramesLeft--;
-                return { freq: this.lastStableFreq, conf: HOLD_CONF };
+                return { freq: this.lastStableFreq, conf: HOLD_CONF, held: true };
             }
             return { freq: 0, conf: 0 };
         }
