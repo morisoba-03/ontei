@@ -12,6 +12,7 @@ declare global {
 
 
 import { AnalysisProcessor } from './audio/AnalysisProcessor';
+import { v3WindowSamples } from './PitchEngineV3';
 import { midiToFreq } from './pitch';
 import { Visualizer } from './Visualizer';
 import { extractMelodyNotesFromBuffer } from './MelodyExtractor';
@@ -231,7 +232,8 @@ export class AudioEngine {
             showTuner: true,
             showTolerancePreview: false,
             markers: [],
-            pitchEngineVersion: 'v2',
+            pitchEngineVersion: 'v3',
+            octaveFreeJudge: true,
             autoOctaveEstimate: true,
             metronomeVolume: 0.3,
             metronomeTone: 'beep',
@@ -455,7 +457,12 @@ export class AudioEngine {
         // The mic data captures audio from ~inputLatency seconds ago, and the pitch estimate
         // represents the CENTER of the analysis window (fftSize/2 samples ago — ~85 ms on
         // mobile's 8192 buffer vs ~11 ms on PC's 2048). Look up the guide at that moment.
-        const bufferCenterSec = this.micData.length / 2 / this.audioCtx.sampleRate;
+        // v3 はバッファ末尾の約 43ms だけを解析するので、窓の中心もそのぶん新しい。
+        const engineVersion = this.state.pitchEngineVersion || 'v3';
+        const analysisWindow = engineVersion === 'v3'
+            ? v3WindowSamples(this.audioCtx.sampleRate, this.micData.length)
+            : this.micData.length;
+        const bufferCenterSec = analysisWindow / 2 / this.audioCtx.sampleRate;
         const eff = this.state.playbackPosition + this.state.timelineOffsetSec;
         const guideEff = eff - (this.state.inputLatency || 0) - bufferCenterSec;
         if (this.hasContinuousGuide()) {
@@ -484,7 +491,7 @@ export class AudioEngine {
         }
 
         // Offload analysis to Worker
-        this.analysisProcessor.processAsync(this.micData, guideFreq, minRms, this.state.pitchEngineVersion || 'v2', externalRms);
+        this.analysisProcessor.processAsync(this.micData, guideFreq, minRms, engineVersion, externalRms, this.state.octaveFreeJudge ?? true);
     }
 
     private handleAnalysisResult(result: { freq: number, conf: number, guideFreq: number, held?: boolean }) {
@@ -1302,7 +1309,7 @@ export class AudioEngine {
                     'guideVolume', 'accompVolume', 'gateThreshold', 'toleranceCents',
                     'isParticlesEnabled', 'showPitchDeviation', 'inputLatency',
                     'micRenderMode', 'showTuner', 'selectedMidiTrackId', 'pitchEngineVersion',
-                    'autoOctaveEstimate', 'metronomeVolume', 'metronomeTone', 'pitchSmoothing', 'tunerShowNote',
+                    'autoOctaveEstimate', 'octaveFreeJudge', 'metronomeVolume', 'metronomeTone', 'pitchSmoothing', 'tunerShowNote',
                     'a4Reference', 'showHeatmap', 'showBestGhost',
                 ];
 
@@ -1329,7 +1336,7 @@ export class AudioEngine {
                 'guideVolume', 'accompVolume', 'gateThreshold', 'toleranceCents',
                 'isParticlesEnabled', 'showPitchDeviation', 'inputLatency',
                 'micRenderMode', 'showTuner', 'pitchEngineVersion',
-                'autoOctaveEstimate', 'metronomeVolume', 'metronomeTone', 'pitchSmoothing', 'tunerShowNote',
+                'autoOctaveEstimate', 'octaveFreeJudge', 'metronomeVolume', 'metronomeTone', 'pitchSmoothing', 'tunerShowNote',
                 'a4Reference', 'showHeatmap', 'showBestGhost',
             ];
 
@@ -1347,7 +1354,8 @@ export class AudioEngine {
     updateState(updates: Partial<AudioEngineState>) {
 
         // 判定エンジンのバージョン切替時はアナライザ内部状態をリセット（旧エンジンの残留を防ぐ）
-        if (updates.pitchEngineVersion !== undefined && updates.pitchEngineVersion !== this.state.pitchEngineVersion) {
+        if ((updates.pitchEngineVersion !== undefined && updates.pitchEngineVersion !== this.state.pitchEngineVersion) ||
+            (updates.octaveFreeJudge !== undefined && updates.octaveFreeJudge !== this.state.octaveFreeJudge)) {
             this.analysisProcessor.reset();
         }
 
@@ -1394,6 +1402,7 @@ export class AudioEngine {
             'guideOctaveOffset',
             'guideVolume', 'accompVolume', 'gateThreshold', 'toleranceCents',
             'isParticlesEnabled', 'showPitchDeviation', 'inputLatency', 'micRenderMode', 'showTuner',
+            'pitchEngineVersion', 'octaveFreeJudge',
         ];
 
         if (Object.keys(updates).some(k => persistentKeys.includes(k as typeof persistentKeys[number]))) {

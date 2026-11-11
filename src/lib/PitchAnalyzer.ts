@@ -1,10 +1,14 @@
 import { PitchDetector } from 'pitchy';
+import { PitchEngineV3, OctaveFolder } from './PitchEngineV3';
 
 export interface PitchResult {
     freq: number;
     conf: number;
     // true = 検出が途切れた間を直前値で埋めた「つなぎ」フレーム（実測ではない）
     held?: boolean;
+    // v3 のみ: オクターブ折り返し前の実音と、折り返したオクターブ数（+1 = 1 オクターブ上げて表示）
+    rawFreq?: number;
+    octaveShift?: number;
 }
 
 // オクターブ飛び対策入り実装。
@@ -51,10 +55,16 @@ export class PitchAnalyzer {
     private v2Last: number = 0;       // 直近に採用した周波数
     private v2PendingCount: number = 0; // 急ジャンプの連続フレーム数
 
+    // v3「高精度モード」
+    private v3 = new PitchEngineV3();
+    private folder = new OctaveFolder();
+
     setAnalysisRate(hz: number, holdMs?: number) {
         // holdMs overrides the default 200 ms hold duration (useful for mobile gap-bridging)
         const duration = holdMs !== undefined ? holdMs / 1000 : 0.2;
         this.maxHoldFrames = Math.max(3, Math.round(hz * duration));
+        this.v3.setAnalysisRate(hz, holdMs);
+        this.folder.setAnalysisRate(hz);
     }
 
     reset() {
@@ -70,6 +80,8 @@ export class PitchAnalyzer {
         this.framesSinceGuide = 999;
         this.v2Last = 0;
         this.v2PendingCount = 0;
+        this.v3.reset();
+        this.folder.reset();
     }
 
     private getMedian(arr: number[]): number {
@@ -79,10 +91,26 @@ export class PitchAnalyzer {
         return sorted.length % 2 === 0 ? (sorted[mid - 1] + sorted[mid]) / 2 : sorted[mid];
     }
 
-    analyze(buf: Float32Array, sampleRate: number, options: { viterbi?: boolean, guideFreq?: number, minRms?: number, version?: 'v1' | 'v2', externalRms?: number } = { viterbi: true }): PitchResult {
+    analyze(buf: Float32Array, sampleRate: number, options: { viterbi?: boolean, guideFreq?: number, minRms?: number, version?: 'v1' | 'v2' | 'v3', externalRms?: number, octaveFree?: boolean } = { viterbi: true }): PitchResult {
+        if (options.version === 'v3') return this.analyzeV3(buf, sampleRate, options);
         return options.version === 'v2'
             ? this.analyzeV2(buf, sampleRate, options)
             : this.analyzeV1(buf, sampleRate, options);
+    }
+
+    /**
+     * v3「高精度モード」: 検出はガイドを一切見ない（PitchEngineV3）。
+     * 演奏者のオクターブ違いを許すかどうかは、検出後の折り返し（OctaveFolder）だけで決める。
+     */
+    private analyzeV3(buf: Float32Array, sampleRate: number, options: { guideFreq?: number, minRms?: number, externalRms?: number, octaveFree?: boolean }): PitchResult {
+        const r = this.v3.analyze(buf, sampleRate, { minRms: options.minRms, externalRms: options.externalRms });
+        if (!(r.freq > 0)) return { freq: 0, conf: 0 };
+        if (options.octaveFree === false) {
+            this.folder.reset();
+            return { ...r, rawFreq: r.freq, octaveShift: 0 };
+        }
+        const folded = this.folder.fold(r.freq, options.guideFreq ?? 0);
+        return { freq: folded.freq, conf: r.conf, held: r.held, rawFreq: r.freq, octaveShift: folded.octaveShift };
     }
 
     /**

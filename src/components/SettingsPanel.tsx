@@ -269,14 +269,32 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
                             <div className="space-y-2">
                                 <div className="flex justify-between text-sm items-center">
                                     <span>判定エンジン</span>
-                                    <span className="font-mono text-violet-400 bg-violet-400/10 px-2 py-0.5 rounded">{(state.pitchEngineVersion || 'v2') === 'v2' ? '厳密 (v2)' : '従来 (v1)'}</span>
+                                    <span className="font-mono text-violet-400 bg-violet-400/10 px-2 py-0.5 rounded">{{ v1: '従来 (v1)', v2: '厳密 (v2)', v3: '高精度 (v3)' }[state.pitchEngineVersion || 'v3']}</span>
                                 </div>
                                 <div className="flex bg-white/5 rounded-lg p-1 text-xs">
-                                    <button onClick={() => update('pitchEngineVersion', 'v1')} className={`flex-1 py-1.5 rounded-md transition-colors ${(state.pitchEngineVersion || 'v2') === 'v1' ? 'bg-violet-500 text-white' : 'text-white/50 hover:text-white'}`}>従来 (v1)</button>
-                                    <button onClick={() => update('pitchEngineVersion', 'v2')} className={`flex-1 py-1.5 rounded-md transition-colors ${(state.pitchEngineVersion || 'v2') === 'v2' ? 'bg-violet-500 text-white' : 'text-white/50 hover:text-white'}`}>厳密 (v2)</button>
+                                    <button onClick={() => update('pitchEngineVersion', 'v1')} className={`flex-1 py-1.5 rounded-md transition-colors ${(state.pitchEngineVersion || 'v3') === 'v1' ? 'bg-violet-500 text-white' : 'text-white/50 hover:text-white'}`}>従来 (v1)</button>
+                                    <button onClick={() => update('pitchEngineVersion', 'v2')} className={`flex-1 py-1.5 rounded-md transition-colors ${(state.pitchEngineVersion || 'v3') === 'v2' ? 'bg-violet-500 text-white' : 'text-white/50 hover:text-white'}`}>厳密 (v2)</button>
+                                    <button onClick={() => update('pitchEngineVersion', 'v3')} className={`flex-1 py-1.5 rounded-md transition-colors ${(state.pitchEngineVersion || 'v3') === 'v3' ? 'bg-violet-500 text-white' : 'text-white/50 hover:text-white'}`}>高精度 (v3)</button>
                                 </div>
-                                <p className="text-[10px] text-white/30 leading-relaxed">{(state.pitchEngineVersion || 'v2') === 'v2' ? '吹いた音をほぼそのまま判定（平滑化なしでセント精度が高い）。オクターブだけはガイドに合わせて補正するので、口笛の音域でそのまま吹けます。' : 'ガイド音を基準にオクターブ補正・平滑化を行う安定重視の従来方式です。'}</p>
+                                <p className="text-[10px] text-white/30 leading-relaxed">{{
+                                    v1: 'ガイド音を基準にオクターブ補正・平滑化を行う安定重視の従来方式です。',
+                                    v2: '吹いた音をほぼそのまま判定（平滑化なしでセント精度が高い）。オクターブだけはガイドに合わせて補正するので、口笛の音域でそのまま吹けます。',
+                                    v3: '波形の周期と倍音の並びの両方から音程を決め、時間方向にも追跡します。雑音に強く、機械的なオクターブ誤検出をガイドに頼らず防ぎます。',
+                                }[state.pitchEngineVersion || 'v3']}</p>
                             </div>
+
+                            {/* オクターブ違いの扱い（v3） */}
+                            {(state.pitchEngineVersion || 'v3') === 'v3' && (
+                                <>
+                                    <div className="flex justify-between text-sm items-center pt-2 border-t border-white/5">
+                                        <span>オクターブ違いも正解にする</span>
+                                        <button onClick={() => update('octaveFreeJudge', !(state.octaveFreeJudge ?? true))} className={`w-10 h-5 rounded-full transition-colors relative ${(state.octaveFreeJudge ?? true) ? 'bg-violet-500' : 'bg-white/10'}`}>
+                                            <span className={`absolute top-0.5 w-4 h-4 bg-white rounded-full transition-transform duration-200 ${(state.octaveFreeJudge ?? true) ? 'left-5.5' : 'left-0.5'}`} />
+                                        </button>
+                                    </div>
+                                    <p className="text-[10px] text-white/30 -mt-4 leading-relaxed">オン: ガイドより何オクターブ上下で吹いても、音名が合っていれば正解として表示・採点します。オフ: 実際に出ている高さのまま判定します。</p>
+                                </>
+                            )}
 
                             {/* 判定許容誤差 */}
                             <div className="space-y-2 pt-2 border-t border-white/5">

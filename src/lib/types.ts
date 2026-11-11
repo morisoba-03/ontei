@@ -120,7 +120,10 @@ export interface AudioEngineState {
     // 音程判定エンジンのバージョン
     //  'v1' = 従来（ガイドスナップ + EMA平滑 + 多段確認）
     //  'v2' = 厳密（ガイド非依存・無平滑・最小オクターブスパイク保護）
-    pitchEngineVersion: 'v1' | 'v2';
+    //  'v3' = 高精度（NSDF + 倍音整合 + ビタビ追跡。オクターブ誤検出に強い）
+    pitchEngineVersion: 'v1' | 'v2' | 'v3';
+    // v3 用: ガイドと違うオクターブで演奏しても、音名が合っていれば正解扱いにする
+    octaveFreeJudge: boolean;
     // MIDI読み込み時に口笛で吹きやすい音域へガイドのオクターブを自動調整する（キーは変えない）
     autoOctaveEstimate: boolean;
     // メトロノーム音量（0〜1）と音色

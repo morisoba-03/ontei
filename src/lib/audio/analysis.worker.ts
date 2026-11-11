@@ -11,14 +11,15 @@ self.onmessage = (e: MessageEvent) => {
         sampleRate = payload.sampleRate;
         if (payload.analysisRate) analyzer.setAnalysisRate(payload.analysisRate, payload.holdMs);
     } else if (type === 'process') {
-        const { buffer, guideFreq, minRms, version, externalRms } = payload;
+        const { buffer, guideFreq, minRms, version, externalRms, octaveFree } = payload;
         // buffer is a Float32Array
         const result: PitchResult = analyzer.analyze(buffer, sampleRate, {
             viterbi: true,
             guideFreq: guideFreq,
             minRms: minRms,
             version: version,
-            externalRms: externalRms
+            externalRms: externalRms,
+            octaveFree: octaveFree
         });
         self.postMessage({ type: 'result', payload: { ...result, guideFreq } });
     } else if (type === 'reset') {
