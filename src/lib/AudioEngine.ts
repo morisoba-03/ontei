@@ -462,10 +462,7 @@ export class AudioEngine {
         // mobile's 8192 buffer vs ~11 ms on PC's 2048). Look up the guide at that moment.
         // v3 はバッファ末尾の約 43ms だけを解析するので、窓の中心もそのぶん新しい。
         const engineVersion = this.state.pitchEngineVersion || 'v3';
-        const analysisWindow = engineVersion === 'v3'
-            ? v3WindowSamples(this.audioCtx.sampleRate, this.micData.length)
-            : this.micData.length;
-        const bufferCenterSec = analysisWindow / 2 / this.audioCtx.sampleRate;
+        const bufferCenterSec = this.analysisCenterSec();
         const eff = this.state.playbackPosition + this.state.timelineOffsetSec;
         const guideEff = eff - (this.state.inputLatency || 0) - bufferCenterSec;
         if (this.hasContinuousGuide()) {
@@ -495,6 +492,16 @@ export class AudioEngine {
 
         // Offload analysis to Worker
         this.analysisProcessor.processAsync(this.micData, guideFreq, minRms, engineVersion, externalRms, this.state.octaveFreeJudge ?? true);
+    }
+
+    /** ピッチ推定が代表する時刻が「今」から何秒前か（＝実際に解析する窓の中心）。描画・ガイド参照の両方で使う */
+    private analysisCenterSec(): number {
+        if (!this.micData || !this.audioCtx) return 0;
+        const sr = this.audioCtx.sampleRate;
+        const win = (this.state.pitchEngineVersion || 'v3') === 'v3'
+            ? v3WindowSamples(sr, this.micData.length)
+            : this.micData.length;
+        return win / 2 / sr;
     }
 
     private handleAnalysisResult(result: { freq: number, conf: number, guideFreq: number, held?: boolean }) {
@@ -544,7 +551,8 @@ export class AudioEngine {
             const now = this.state.playbackPosition; // Simplification
             const vOff = 0.05; // Fixed for now
             // ピッチ推定は解析窓の中心時刻を代表する（analyze() の guideEff と同じ補正）
-            const bufferCenterSec = this.micData ? this.micData.length / 2 / this.audioCtx.sampleRate : 0;
+            // v3 はバッファ末尾の短い窓だけを解析するため、中心は micData.length/2 より新しい（スマホで約 64ms 差）
+            const bufferCenterSec = this.analysisCenterSec();
 
             // Overwrite mode: If recording, remove existing pitch data at current time
             if (this.isRecording) {
