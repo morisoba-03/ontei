@@ -126,6 +126,11 @@ export interface AudioEngineState {
     octaveFreeJudge: boolean;
     // MIDI読み込み時に口笛で吹きやすい音域へガイドのオクターブを自動調整する（キーは変えない）
     autoOctaveEstimate: boolean;
+    // 口笛の音域（MIDI 番号）。ガイドのオクターブ自動調整がこの範囲に収める
+    //  whistleLowMidi = 最低音（既定 C5=72）, whistleComfortMidi = 出しやすい中心（既定 C6=84）, whistleHighMidi = 最高音（既定 G7=103）
+    whistleLowMidi: number;
+    whistleComfortMidi: number;
+    whistleHighMidi: number;
     // メトロノーム音量（0〜1）と音色
     metronomeVolume: number;
     metronomeTone: 'beep' | 'click' | 'wood';

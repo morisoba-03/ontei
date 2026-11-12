@@ -235,6 +235,9 @@ export class AudioEngine {
             pitchEngineVersion: 'v3',
             octaveFreeJudge: true,
             autoOctaveEstimate: true,
+            whistleLowMidi: 72,
+            whistleComfortMidi: 84,
+            whistleHighMidi: 103,
             metronomeVolume: 0.3,
             metronomeTone: 'beep',
             pitchSmoothing: 0,
@@ -1309,7 +1312,7 @@ export class AudioEngine {
                     'guideVolume', 'accompVolume', 'gateThreshold', 'toleranceCents',
                     'isParticlesEnabled', 'showPitchDeviation', 'inputLatency',
                     'micRenderMode', 'showTuner', 'selectedMidiTrackId', 'pitchEngineVersion',
-                    'autoOctaveEstimate', 'octaveFreeJudge', 'metronomeVolume', 'metronomeTone', 'pitchSmoothing', 'tunerShowNote',
+                    'autoOctaveEstimate', 'octaveFreeJudge', 'whistleLowMidi', 'whistleComfortMidi', 'whistleHighMidi', 'metronomeVolume', 'metronomeTone', 'pitchSmoothing', 'tunerShowNote',
                     'a4Reference', 'showHeatmap', 'showBestGhost',
                 ];
 
@@ -1336,7 +1339,7 @@ export class AudioEngine {
                 'guideVolume', 'accompVolume', 'gateThreshold', 'toleranceCents',
                 'isParticlesEnabled', 'showPitchDeviation', 'inputLatency',
                 'micRenderMode', 'showTuner', 'pitchEngineVersion',
-                'autoOctaveEstimate', 'octaveFreeJudge', 'metronomeVolume', 'metronomeTone', 'pitchSmoothing', 'tunerShowNote',
+                'autoOctaveEstimate', 'octaveFreeJudge', 'whistleLowMidi', 'whistleComfortMidi', 'whistleHighMidi', 'metronomeVolume', 'metronomeTone', 'pitchSmoothing', 'tunerShowNote',
                 'a4Reference', 'showHeatmap', 'showBestGhost',
             ];
 
@@ -1402,7 +1405,8 @@ export class AudioEngine {
             'guideOctaveOffset',
             'guideVolume', 'accompVolume', 'gateThreshold', 'toleranceCents',
             'isParticlesEnabled', 'showPitchDeviation', 'inputLatency', 'micRenderMode', 'showTuner',
-            'pitchEngineVersion', 'octaveFreeJudge',
+            'pitchEngineVersion', 'octaveFreeJudge', 'autoOctaveEstimate',
+            'whistleLowMidi', 'whistleComfortMidi', 'whistleHighMidi',
         ];
 
         if (Object.keys(updates).some(k => persistentKeys.includes(k as typeof persistentKeys[number]))) {
@@ -1883,12 +1887,10 @@ export class AudioEngine {
             if (result.notes.length > 0) {
                 const midiNums = result.notes.map(n => n.midi);
                 if (this.state.autoOctaveEstimate) {
-                    const estimated = this.estimateGuideOctaveOffset(midiNums);
-                    if (estimated !== this.state.guideOctaveOffset) {
-                        this.state.guideOctaveOffset = estimated;
-                        const sign = estimated > 0 ? '+' : '';
-                        toast.show(`ガイド音程を ${sign}${estimated} オクターブに自動調整しました`, 'info', { duration: 3000 });
-                    }
+                    const fit = this.fitGuideOctave(result.notes);
+                    const changed = fit.offset !== this.state.guideOctaveOffset;
+                    this.state.guideOctaveOffset = fit.offset;
+                    this.notifyAutoFit(fit, changed);
                 }
                 const octShift = this.state.guideOctaveOffset * 12;
                 const minMidi = Math.min(...midiNums) + octShift;
@@ -2162,24 +2164,89 @@ export class AudioEngine {
         this.updateState({ phrases });
     }
 
-    // 口笛で無理なく出せる音域（中心 ≈ B♭5, MIDI 82）に楽曲の音域中心が来るような
-    // オクターブシフト（12半音単位）を推定する。キー（transposeOffset）は変更しない。
-    private estimateGuideOctaveOffset(midiNums: number[]): number {
-        if (midiNums.length === 0) return this.state.guideOctaveOffset;
-        const minMidi = Math.min(...midiNums);
-        const maxMidi = Math.max(...midiNums);
-        const centerMidi = (minMidi + maxMidi) / 2;
-        const TARGET_CENTER = 82; // ≈ B♭5（口笛で出しやすい中心音）
-        let bestOffset = 0;
-        let bestDist = Infinity;
-        for (let oct = -3; oct <= 3; oct++) {
-            const dist = Math.abs((centerMidi + oct * 12) - TARGET_CENTER);
-            if (dist < bestDist) {
-                bestDist = dist;
-                bestOffset = oct;
+    /**
+     * ガイドを口笛の音域 [whistleLowMidi, whistleHighMidi] に収めるオクターブシフト（12 半音単位）を求める。
+     *  1. 音域からはみ出す量（半音 × 音の長さ）が最小のシフトを優先する
+     *  2. はみ出しが同じなら、曲の中心音（長さで重み付けした中央値）が whistleComfortMidi に最も近いもの
+     *  3. それも同じなら、シフト量が小さいもの
+     * キー（transposeOffset）は変更しない。notes の midi には移調を含めないこと（ここで加える）。
+     */
+    fitGuideOctave(notes: { midi: number; duration?: number }[]): { offset: number; lo: number; hi: number; fits: boolean } {
+        const cur = this.state.guideOctaveOffset;
+        if (notes.length === 0) return { offset: cur, lo: 0, hi: 0, fits: true };
+        const low = this.state.whistleLowMidi ?? 72;
+        const high = this.state.whistleHighMidi ?? 103;
+        const comfort = this.state.whistleComfortMidi ?? 84;
+        const tr = this.state.transposeOffset || 0;
+
+        const items = notes
+            .map(n => ({ m: n.midi + tr, w: n.duration && n.duration > 0 ? n.duration : 1 }))
+            .sort((x, y) => x.m - y.m);
+        const totalW = items.reduce((s, it) => s + it.w, 0);
+        let acc = 0;
+        let median = items[items.length - 1].m;
+        for (const it of items) { acc += it.w; if (acc >= totalW / 2) { median = it.m; break; } }
+        const minM = items[0].m;
+        const maxM = items[items.length - 1].m;
+
+        let best = { offset: cur, out: Infinity, center: Infinity };
+        for (let k = -4; k <= 4; k++) {
+            const sh = k * 12;
+            let out = 0;
+            for (const it of items) {
+                const m = it.m + sh;
+                if (m < low) out += (low - m) * it.w;
+                else if (m > high) out += (m - high) * it.w;
             }
+            out /= totalW;
+            const center = Math.abs(median + sh - comfort);
+            const better =
+                out < best.out - 1e-9 ||
+                (Math.abs(out - best.out) <= 1e-9 && (center < best.center - 1e-9 ||
+                    (Math.abs(center - best.center) <= 1e-9 && Math.abs(k) < Math.abs(best.offset))));
+            if (better) best = { offset: k, out, center };
         }
-        return bestOffset;
+        const sh = best.offset * 12;
+        return { offset: best.offset, lo: minM + sh, hi: maxM + sh, fits: minM + sh >= low && maxM + sh <= high };
+    }
+
+    /** 今読み込まれているガイド（MIDI ノート or 音声解析ノート）。オクターブ・移調を含まない素の音 */
+    private currentGuideNotes(): { midi: number; duration?: number }[] {
+        if (Array.isArray(this.state.midiGhostNotes) && this.state.midiGhostNotes.length > 0) return this.state.midiGhostNotes;
+        const t = this.state.currentTracks?.[this.state.melodyTrackIndex ?? 0];
+        return t?.notes ?? [];
+    }
+
+    /** 今表示されているガイドの最低音・最高音（オクターブ・移調込み）。ガイドが無ければ null */
+    getGuideRange(): { lo: number; hi: number } | null {
+        const notes = this.currentGuideNotes();
+        if (notes.length === 0) return null;
+        const sh = this.state.guideOctaveOffset * 12 + (this.state.transposeOffset || 0);
+        let lo = Infinity, hi = -Infinity;
+        for (const n of notes) { lo = Math.min(lo, n.midi + sh); hi = Math.max(hi, n.midi + sh); }
+        return { lo, hi };
+    }
+
+    /** 今のガイドを口笛の音域に合わせ直す（設定画面のボタン用） */
+    autoFitGuideOctaveNow(): boolean {
+        const notes = this.currentGuideNotes();
+        if (notes.length === 0) {
+            toast.show('ガイドが読み込まれていません', 'info', { duration: 2500 });
+            return false;
+        }
+        const r = this.fitGuideOctave(notes);
+        this.updateState({ guideOctaveOffset: r.offset });
+        this.notifyAutoFit(r, true);
+        return true;
+    }
+
+    private notifyAutoFit(r: { offset: number; fits: boolean }, always: boolean) {
+        const sign = r.offset > 0 ? '+' : '';
+        if (!r.fits) {
+            toast.show(`ガイドを ${sign}${r.offset} オクターブに調整しました（曲の音域が広く、一部が口笛の音域外です）`, 'info', { duration: 4000 });
+        } else if (always) {
+            toast.show(`ガイドを ${sign}${r.offset} オクターブに調整しました`, 'info', { duration: 3000 });
+        }
     }
 
     importMidiTrack(trackIndex: number, transpose: number = 0) {
@@ -2281,12 +2348,10 @@ export class AudioEngine {
 
             // オクターブ自動推定: 口笛で吹きやすい音域へガイドを移動（キーは変えない）
             if (this.state.autoOctaveEstimate) {
-                const estimated = this.estimateGuideOctaveOffset(midiNums);
-                if (estimated !== this.state.guideOctaveOffset) {
-                    this.state.guideOctaveOffset = estimated;
-                    const sign = estimated > 0 ? '+' : '';
-                    toast.show(`ガイド音程を ${sign}${estimated} オクターブに自動調整しました`, 'info', { duration: 3000 });
-                }
+                const fit = this.fitGuideOctave(ghostNotes);
+                const changed = fit.offset !== this.state.guideOctaveOffset;
+                this.state.guideOctaveOffset = fit.offset;
+                this.notifyAutoFit(fit, changed);
             }
 
             // 音域全体が見えるよう verticalOffset を自動調整（縦ズームは変えない）

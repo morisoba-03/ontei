@@ -5,6 +5,11 @@ import { useState, useEffect, useRef } from 'react';
 import { HelpModal } from './HelpModal';
 import type { AudioEngineState } from '../lib/types';
 
+const NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+const midiName = (m: number) => `${NOTE_NAMES[((Math.round(m) % 12) + 12) % 12]}${Math.floor(Math.round(m) / 12) - 1}`;
+// 口笛の音域の選択肢: C4〜C8
+const WHISTLE_NOTE_OPTIONS = Array.from({ length: 49 }, (_, i) => 60 + i);
+
 export function SettingsPanel({ onClose }: { onClose: () => void }) {
     const [state, setState] = useState(audioEngine.state);
     const [showHelp, setShowHelp] = useState(false);
@@ -37,6 +42,18 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
     const update = <K extends keyof AudioEngineState>(key: K, value: AudioEngineState[K]) => {
         audioEngine.updateState({ [key]: value } as Partial<AudioEngineState>);
     };
+
+    // 口笛の音域: 最低音 < 出しやすい音 < 最高音 の順序を保つ（動かした値に合わせて他を押し出す）
+    const setWhistle = (key: 'whistleLowMidi' | 'whistleComfortMidi' | 'whistleHighMidi', v: number) => {
+        let lo = state.whistleLowMidi ?? 72;
+        let mid = state.whistleComfortMidi ?? 84;
+        let hi = state.whistleHighMidi ?? 103;
+        if (key === 'whistleLowMidi') { lo = v; if (mid <= lo) mid = lo + 1; if (hi <= mid) hi = mid + 1; }
+        else if (key === 'whistleHighMidi') { hi = v; if (mid >= hi) mid = hi - 1; if (lo >= mid) lo = mid - 1; }
+        else { mid = v; if (lo >= mid) lo = mid - 1; if (hi <= mid) hi = mid + 1; }
+        audioEngine.updateState({ whistleLowMidi: lo, whistleComfortMidi: mid, whistleHighMidi: hi });
+    };
+    const guideRange = audioEngine.getGuideRange();
 
     const handleCalibrate = async () => {
         setIsCalibrating(true);
@@ -249,14 +266,53 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
                                 <p className="text-[10px] text-white/30">移調と組み合わせて使うと±6オクターブ以上の調整が可能</p>
                             </div>
 
-                            {/* オクターブ自動調整 */}
+                            {/* オクターブ自動調整（口笛の音域に合わせる） */}
                             <div className="flex items-center justify-between text-sm pt-2 border-t border-white/5">
                                 <span>オクターブ自動調整</span>
                                 <button onClick={() => update('autoOctaveEstimate', !(state.autoOctaveEstimate ?? true))} className={`w-10 h-5 rounded-full transition-colors relative ${(state.autoOctaveEstimate ?? true) ? 'bg-yellow-500' : 'bg-white/10'}`}>
                                     <span className={`absolute top-0.5 w-4 h-4 bg-white rounded-full transition-transform duration-200 ${(state.autoOctaveEstimate ?? true) ? 'left-5.5' : 'left-0.5'}`} />
                                 </button>
                             </div>
-                            <p className="text-[10px] text-white/30 -mt-4">MIDI読み込み時、口笛で吹きやすい音域へガイドのオクターブを自動調整します（キーは変わりません）</p>
+                            <p className="text-[10px] text-white/30 -mt-4 leading-relaxed">曲（MIDI・音声）を読み込んだとき、ガイドが下の「口笛の音域」に収まるようオクターブを自動で合わせます（キーは変わりません）。</p>
+
+                            <div className="space-y-2">
+                                <div className="text-sm">口笛の音域</div>
+                                <div className="grid grid-cols-3 gap-2 text-xs">
+                                    {([
+                                        ['whistleLowMidi', '最低音', 72],
+                                        ['whistleComfortMidi', '出しやすい音', 84],
+                                        ['whistleHighMidi', '最高音', 103],
+                                    ] as const).map(([key, label, def]) => (
+                                        <label key={key} className="flex flex-col gap-1">
+                                            <span className="text-white/50">{label}</span>
+                                            <select
+                                                value={state[key] ?? def}
+                                                onChange={(e) => setWhistle(key, parseInt(e.target.value))}
+                                                className="bg-white/10 rounded-md px-2 py-1.5 text-white font-mono"
+                                            >
+                                                {WHISTLE_NOTE_OPTIONS.map(m => (
+                                                    <option key={m} value={m} className="bg-neutral-900">{midiName(m)}</option>
+                                                ))}
+                                            </select>
+                                        </label>
+                                    ))}
+                                </div>
+                                <div className="flex items-center justify-between gap-2 text-xs">
+                                    <span className="text-white/50">
+                                        今のガイド: {guideRange ? (
+                                            <span className={`font-mono ${guideRange.lo >= (state.whistleLowMidi ?? 72) && guideRange.hi <= (state.whistleHighMidi ?? 103) ? 'text-emerald-400' : 'text-orange-400'}`}>
+                                                {midiName(guideRange.lo)}〜{midiName(guideRange.hi)}
+                                            </span>
+                                        ) : 'なし'}
+                                    </span>
+                                    <button
+                                        onClick={() => audioEngine.autoFitGuideOctaveNow()}
+                                        disabled={!guideRange}
+                                        className="px-3 py-1.5 rounded-md bg-yellow-500/20 text-yellow-300 hover:bg-yellow-500/30 disabled:opacity-30"
+                                    >今の曲を音域に合わせる</button>
+                                </div>
+                                <button onClick={() => audioEngine.updateState({ whistleLowMidi: 72, whistleComfortMidi: 84, whistleHighMidi: 103 })} className="text-[10px] text-white/40 hover:text-white">音域を初期値（C5・C6・G7）に戻す</button>
+                            </div>
                         </div>
                     </div>
 
