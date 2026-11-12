@@ -25,6 +25,12 @@ function getDb(): Promise<IDBDatabase> {
     });
 }
 
+// 曲や練習記録が変わったことを同期処理へ知らせる（driveSync が購読）
+type ChangeListener = () => void;
+const changeListeners: ChangeListener[] = [];
+export function onStorageChange(fn: ChangeListener) { changeListeners.push(fn); }
+function notifyChange() { for (const fn of changeListeners) { try { fn(); } catch { /* ignore */ } } }
+
 export const storage = {
     async hasStoredMidi(): Promise<boolean> {
         try {
@@ -53,8 +59,45 @@ export const storage = {
         return result ?? null;
     },
 
-    async saveUserPresets(presets: any[]) {
-        return this._put('user_presets', presets);
+    /**
+     * 曲リストを保存する。同期のため、変わった曲には updatedAt を付け、消えた曲は削除記録（tombstone）に残す。
+     * fromSync=true は同期処理からの書き込み（印を付け直さない・同期を再予約しない）。
+     */
+    async saveUserPresets(presets: any[], opts: { fromSync?: boolean } = {}) {
+        if (!opts.fromSync) {
+            const now = Date.now();
+            const old: any[] = (await this._get('user_presets')) || [];
+            const oldMap = new Map(old.map(s => [s.id, s]));
+            const strip = (s: any) => { const { updatedAt: _u, ...rest } = s || {}; void _u; return JSON.stringify(rest); };
+            presets = presets.map(s => {
+                const prev = oldMap.get(s.id);
+                if (!prev || strip(prev) !== strip(s)) return { ...s, updatedAt: now };
+                return { ...s, updatedAt: s.updatedAt ?? prev.updatedAt ?? s.createdAt ?? 0 };
+            });
+            const keep = new Set(presets.map(s => s.id));
+            const removed = old.filter(s => !keep.has(s.id));
+            if (removed.length) {
+                const tomb: Record<string, number> = (await this._get('sync_tombstones')) || {};
+                for (const s of removed) tomb[s.id] = now;
+                await this._put('sync_tombstones', tomb);
+            }
+        }
+        await this._put('user_presets', presets);
+        if (!opts.fromSync) notifyChange();
+    },
+
+    async loadTombstones(): Promise<Record<string, number>> {
+        return (await this._get('sync_tombstones')) || {};
+    },
+
+    async saveTombstones(t: Record<string, number>) {
+        return this._put('sync_tombstones', t);
+    },
+
+    /** 保存されているベスト記録のシグネチャ一覧 */
+    async listBestRunSigs(): Promise<string[]> {
+        const keys = await this._keys();
+        return keys.filter(k => k.startsWith('best_')).map(k => k.slice(5));
     },
 
     async loadUserPresets(): Promise<any[]> {
@@ -76,13 +119,24 @@ export const storage = {
     },
 
     // 曲ごとのベスト記録（スコア + ピッチ軌跡ゴースト）。キーは曲のシグネチャ。
-    async saveBestRun(sig: string, data: { score: number; ghost: unknown[] }) {
-        return this._put(`best_${sig}`, data);
+    async saveBestRun(sig: string, data: { score: number; ghost: unknown[] }, opts: { fromSync?: boolean } = {}) {
+        await this._put(`best_${sig}`, data);
+        if (!opts.fromSync) notifyChange();
     },
 
     async loadBestRun(sig: string): Promise<{ score: number; ghost: unknown[] } | null> {
         const result = await this._get(`best_${sig}`);
         return result && typeof result.score === 'number' ? result : null;
+    },
+
+    async _keys(): Promise<string[]> {
+        const db = await getDb();
+        return new Promise((resolve, reject) => {
+            const tx = db.transaction(STORE_NAME, 'readonly');
+            const req = tx.objectStore(STORE_NAME).getAllKeys();
+            req.onsuccess = () => resolve((req.result as IDBValidKey[]).map(String));
+            req.onerror = () => reject(req.error);
+        });
     },
 
     async _put(key: string, value: any) {

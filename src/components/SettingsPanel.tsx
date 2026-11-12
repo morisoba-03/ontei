@@ -3,6 +3,7 @@ import { APP_VERSION } from '../constants';
 import { audioEngine } from '../lib/AudioEngine';
 import { useState, useEffect, useRef } from 'react';
 import { HelpModal } from './HelpModal';
+import { SyncSettings } from './SyncSettings';
 import type { AudioEngineState } from '../lib/types';
 
 const NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
@@ -97,6 +98,12 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
                 <div className="p-5 space-y-6 overflow-y-auto overscroll-contain flex-1 min-h-0">
 
                     {/* ── 表示設定 ── */}
+                    <div className="bg-white/5 rounded-lg overflow-hidden border border-white/5">
+                        <div className="px-4 py-2 bg-white/10 text-xs font-bold uppercase tracking-wider text-white/70">PCとスマホの同期（Googleドライブ）</div>
+                        <div className="p-4">
+                            <SyncSettings />
+                        </div>
+                    </div>
                     <div className="bg-white/5 rounded-lg overflow-hidden border border-white/5">
                         <div className="px-4 py-2 bg-white/10 text-xs font-bold uppercase tracking-wider text-white/70">表示</div>
                         <div className="p-4 space-y-6">

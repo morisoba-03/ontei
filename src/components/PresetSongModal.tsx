@@ -4,6 +4,9 @@ import { QRShareModal } from './QRShareModal';
 import { QRScanModal } from './QRScanModal';
 import { audioEngine } from '../lib/AudioEngine';
 import { storage } from '../lib/storage';
+import { CircleSongsSection } from './CircleSongsSection';
+import { SyncButton } from './SyncSettings';
+import { isSyncEnabled } from '../lib/driveSync';
 import { cn } from '../lib/utils';
 import { toast } from './Toast';
 import { useState, useEffect } from 'react';
@@ -42,6 +45,14 @@ export function PresetSongModal({ open, onClose }: PresetSongModalProps) {
     useEffect(() => {
         if (open) loadUserDocs();
     }, [open]);
+
+    // 同期でライブラリが更新されたら読み直す
+    useEffect(() => {
+        const h = () => { if (open) loadUserDocs(); };
+        window.addEventListener('ontei-library-updated', h);
+        return () => window.removeEventListener('ontei-library-updated', h);
+    }, [open]);
+    const syncLabel = isSyncEnabled() ? '・Googleドライブと同期' : 'だけに保存';
 
     const loadUserDocs = async () => {
         const presets = await storage.loadUserPresets();
@@ -206,12 +217,15 @@ export function PresetSongModal({ open, onClose }: PresetSongModalProps) {
                 <div className="mx-3 mt-3 shrink-0 flex items-start gap-2 bg-amber-500/10 border border-amber-500/30 rounded-lg px-3 py-2">
                     <AlertCircle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
                     <p className="text-xs text-amber-300/80">
-                        データはこのブラウザにのみ保存されます。<strong>定期的にエクスポート</strong>してバックアップしてください。
+                        {isSyncEnabled()
+                            ? <>マイリストはGoogleドライブと同期しています。</>
+                            : <>マイリストはこのブラウザにのみ保存されます。<strong>定期的にエクスポート</strong>するか、設定の「PCとスマホの同期」を使ってください。</>}
                     </p>
                 </div>
 
                 {/* Toolbar */}
                 <div className="px-3 pt-2 pb-2 flex items-center gap-2 shrink-0 flex-wrap">
+                    <SyncButton />
                     <button
                         onClick={() => setShowScanner(true)}
                         className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-500/20 hover:bg-blue-500/30 border border-blue-500/30 text-xs text-blue-300 hover:text-blue-200 transition-all"
@@ -241,6 +255,10 @@ export function PresetSongModal({ open, onClose }: PresetSongModalProps) {
 
                 {/* Song List */}
                 <div className="px-3 pb-3 overflow-y-auto flex-1 space-y-2 min-h-0">
+                    <CircleSongsSection onLoaded={onClose} />
+                    {sortedSongs.length > 0 && (
+                        <div className="pt-1 text-xs font-semibold text-white/40">マイリスト（この端末{syncLabel}）</div>
+                    )}
                     {sortedSongs.length === 0 ? (
                         <div className="flex flex-col items-center gap-3 py-10 text-white/30">
                             <FolderSync className="w-10 h-10 opacity-40" />
