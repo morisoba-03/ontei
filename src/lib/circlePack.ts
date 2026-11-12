@@ -7,6 +7,15 @@
  * パックの作成は scripts/circle-pack.mjs（同じ形式）で行う。
  */
 
+/** 合言葉なし（平文）の課題曲パック */
+export interface CirclePlainFile {
+    v: 1;
+    plain: true;
+    title: string;
+    updatedAt: string;
+    songs: CircleSong[];
+}
+
 export interface CirclePackFile {
     v: 1;
     kdf: 'PBKDF2-SHA256';
@@ -64,11 +73,12 @@ export async function decryptPack(file: CirclePackFile, pass: string): Promise<C
 }
 
 /** 課題曲パックを取得する。パックが無ければ null（＝課題曲欄を出さない） */
-export async function fetchPackFile(): Promise<CirclePackFile | null> {
+export async function fetchPackFile(): Promise<CirclePackFile | CirclePlainFile | null> {
     try {
         const res = await fetch(PACK_URL, { cache: 'no-store' });
         if (!res.ok) return null;
         const json = await res.json();
+        if (json && json.v === 1 && json.plain && Array.isArray(json.songs)) return json as CirclePlainFile;
         return json && json.v === 1 && json.data ? json as CirclePackFile : null;
     } catch {
         return null;

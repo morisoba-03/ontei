@@ -4,7 +4,7 @@ import { audioEngine } from '../lib/AudioEngine';
 import { toast } from './Toast';
 import {
     fetchPackFile, decryptPack, loadSavedPass, savePass, clearPass, songMidiBuffer,
-    type CirclePack, type CirclePackFile, type CircleSong,
+    type CirclePack, type CirclePackFile, type CirclePlainFile, type CircleSong,
 } from '../lib/circlePack';
 
 /**
@@ -13,7 +13,7 @@ import {
  * 合言葉はこの端末に記憶する（次回から入力不要）。個人の曲リストとは完全に別。
  */
 export function CircleSongsSection({ onLoaded }: { onLoaded: () => void }) {
-    const [file, setFile] = useState<CirclePackFile | null | undefined>(undefined);
+    const [file, setFile] = useState<CirclePackFile | CirclePlainFile | null | undefined>(undefined);
     const [pack, setPack] = useState<CirclePack | null>(null);
     const [pass, setPass] = useState('');
     const [busy, setBusy] = useState(false);
@@ -26,8 +26,9 @@ export function CircleSongsSection({ onLoaded }: { onLoaded: () => void }) {
             const f = await fetchPackFile();
             if (!alive) return;
             setFile(f);
+            if (f && 'plain' in f) { setPack(f); return; } // 合言葉なしのパック
             const saved = loadSavedPass();
-            if (f && saved) {
+            if (f && saved && !('plain' in f)) {
                 try {
                     const p = await decryptPack(f, saved);
                     if (alive) setPack(p);
@@ -45,6 +46,7 @@ export function CircleSongsSection({ onLoaded }: { onLoaded: () => void }) {
         if (!pass.trim() || busy) return;
         setBusy(true);
         setError('');
+        if ('plain' in file) return;
         try {
             const p = await decryptPack(file, pass);
             savePass(pass);
@@ -87,7 +89,7 @@ export function CircleSongsSection({ onLoaded }: { onLoaded: () => void }) {
             <div className="flex items-center gap-2 text-sm font-semibold text-emerald-300">
                 <Users className="w-4 h-4" />
                 {pack ? pack.title : 'サークル課題曲'}
-                {pack && (
+                {pack && !('plain' in file) && (
                     <button
                         onClick={() => { clearPass(); setPack(null); }}
                         className="ml-auto p-1 rounded text-white/30 hover:text-white/70"

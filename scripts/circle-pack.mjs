@@ -5,6 +5,8 @@
  * 使い方:
  *   node scripts/circle-pack.mjs --pass "合言葉" --title "2026年冬の課題曲" 曲A.mid 曲B.mid ...
  *   node scripts/circle-pack.mjs --pass "合言葉" --manifest songs.json
+ *   node scripts/circle-pack.mjs --no-pass --manifest songs.json   （合言葉なし・誰でも表示）
+ *   node scripts/circle-pack.mjs --no-pass --manifest songs.json   （合言葉なし・誰でも表示）
  *
  * songs.json の形式（任意。曲名・説明・BPM・ガイドのトラック番号を指定したいとき）:
  *   { "title": "...", "songs": [ { "file": "a.mid", "name": "曲名", "description": "...", "bpm": 90, "track": 1 } ] }
@@ -22,13 +24,14 @@ const files = [];
 for (let i = 0; i < args.length; i++) {
     const a = args[i];
     if (a === '--pass') opt.pass = args[++i];
+    else if (a === '--no-pass') opt.noPass = true;
     else if (a === '--title') opt.title = args[++i];
     else if (a === '--manifest') opt.manifest = args[++i];
     else if (a === '--out') opt.out = args[++i];
     else if (a === '--iter') opt.iter = parseInt(args[++i], 10);
     else files.push(a);
 }
-if (!opt.pass) { console.error('--pass "合言葉" を指定してください'); process.exit(1); }
+if (!opt.pass && !opt.noPass) { console.error('--pass "合言葉" か --no-pass を指定してください'); process.exit(1); }
 
 let entries = [];
 let title = opt.title || 'サークル課題曲';
@@ -55,7 +58,15 @@ const songs = entries.map((e, i) => {
     };
 });
 
-const plain = new TextEncoder().encode(JSON.stringify({ title, updatedAt: new Date().toISOString(), songs }));
+const packObj = { title, updatedAt: new Date().toISOString(), songs };
+if (opt.noPass) {
+    mkdirSync(dirname(opt.out), { recursive: true });
+    writeFileSync(opt.out, JSON.stringify({ v: 1, plain: true, ...packObj }));
+    console.log(`${opt.out} に ${songs.length} 曲を書き出しました（合言葉なし・${title}）`);
+    for (const s of songs) console.log(` - ${s.name}`);
+    process.exit(0);
+}
+const plain = new TextEncoder().encode(JSON.stringify(packObj));
 const salt = crypto.getRandomValues(new Uint8Array(16));
 const iv = crypto.getRandomValues(new Uint8Array(12));
 const baseKey = await crypto.subtle.importKey('raw', new TextEncoder().encode(opt.pass.normalize('NFKC').trim()), 'PBKDF2', false, ['deriveKey']);
