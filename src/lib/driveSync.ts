@@ -12,7 +12,7 @@ import { storage, onStorageChange } from './storage';
 import { mergeSnapshots, sameSnapshot, emptySnapshot, type SyncSnapshot, type SyncSong } from './syncMerge';
 
 /** Google Cloud で作った OAuth クライアント ID（設定画面で上書き可） */
-export const DEFAULT_CLIENT_ID = '';
+export const DEFAULT_CLIENT_ID = '868392013433-42ebi3f0iha0erk976rhks9a2ikqqgnv.apps.googleusercontent.com';
 
 const SCOPE = 'https://www.googleapis.com/auth/drive.appdata';
 const FILE_NAME = 'ontei-sync-v1.json';
