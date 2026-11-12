@@ -1,64 +1,54 @@
-const CACHE_NAME = 'ontei-cache-v1';
-const ASSETS_TO_CACHE = [
-    './',
-    './index.html',
-    './manifest.json',
-    // Vite generates hashed filenames, so we can't hardcode them easily here without a build step plugin.
-    // Instead, we will cache requests as they are made (runtime caching).
-];
+// Ontei Service Worker
+//  - ページ本体（index.html / ナビゲーション）: ネットワーク優先。オンラインなら必ず最新版を読み込み、
+//    オフライン時だけキャッシュを使う。（以前の stale-while-revalidate では、更新後も 1 回目の
+//    再読み込みで古い版が表示されていた）
+//  - Vite が出力するハッシュ付きファイル（assets/*）: 中身が変わると名前も変わるのでキャッシュ優先。
+const CACHE_NAME = 'ontei-cache-v2';
 
-// Install event - cache static assets
 self.addEventListener('install', (event) => {
-    event.waitUntil(
-        caches.open(CACHE_NAME).then((cache) => {
-            return cache.addAll(ASSETS_TO_CACHE);
-        })
-    );
+    event.waitUntil(caches.open(CACHE_NAME).then((cache) => cache.addAll(['./', './manifest.json'])));
     self.skipWaiting();
 });
 
-// Activate event - cleanup old caches
 self.addEventListener('activate', (event) => {
     event.waitUntil(
-        caches.keys().then((cacheNames) => {
-            return Promise.all(
-                cacheNames.map((cacheName) => {
-                    if (cacheName !== CACHE_NAME) {
-                        return caches.delete(cacheName);
-                    }
-                })
-            );
-        })
+        caches.keys()
+            .then((names) => Promise.all(names.filter((n) => n !== CACHE_NAME).map((n) => caches.delete(n))))
+            .then(() => self.clients.claim())
     );
-    self.clients.claim();
 });
 
-// Fetch event - Stale-while-revalidate strategy
+function isHashedAsset(url) {
+    return /\/assets\/[^/]+-[A-Za-z0-9_-]{6,}\.[a-z0-9]+$/.test(url.pathname);
+}
+
 self.addEventListener('fetch', (event) => {
-    // Skip non-GET requests
-    if (event.request.method !== 'GET') return;
+    const req = event.request;
+    if (req.method !== 'GET') return;
+    const url = new URL(req.url);
+    if (!url.protocol.startsWith('http') || url.origin !== self.location.origin) return;
 
-    // Skip chrome-extension requests or other non-http schemas
-    if (!event.request.url.startsWith('http')) return;
+    // ハッシュ付きアセット: キャッシュ優先
+    if (isHashedAsset(url)) {
+        event.respondWith(
+            caches.open(CACHE_NAME).then((cache) =>
+                cache.match(req).then((hit) => hit || fetch(req).then((res) => {
+                    if (res.ok) cache.put(req, res.clone());
+                    return res;
+                }))
+            )
+        );
+        return;
+    }
 
+    // それ以外（ページ本体・manifest・MIDI など）: ネットワーク優先、失敗時のみキャッシュ
     event.respondWith(
-        caches.open(CACHE_NAME).then((cache) => {
-            return cache.match(event.request).then((response) => {
-                const fetchPromise = fetch(event.request).then((networkResponse) => {
-                    // Cache successful network responses
-                    if (networkResponse.ok) {
-                        cache.put(event.request, networkResponse.clone());
-                    }
-                    return networkResponse;
-                }).catch(() => {
-                    // Network failed
-                    // If we have a cached response, return it (handled by .match above, but what if match failed?)
-                    // If match failed and network failed, we are offline and missing the resource.
-                });
-
-                // Return cached response immediately if available, otherwise wait for network
-                return response || fetchPromise;
-            });
-        })
+        fetch(req, { cache: 'no-store' }).then((res) => {
+            if (res.ok) {
+                const copy = res.clone();
+                caches.open(CACHE_NAME).then((cache) => cache.put(req, copy));
+            }
+            return res;
+        }).catch(() => caches.match(req).then((hit) => hit || (req.mode === 'navigate' ? caches.match('./') : undefined)))
     );
 });
