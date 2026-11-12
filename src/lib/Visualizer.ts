@@ -740,19 +740,9 @@ export class Visualizer {
             if (midi >= vmin && midi <= vmin + total) {
                 const y = h - (midi - vmin + 1) * pxSemi;
 
-                // 再生中は、点を「歌った線の先端」の位置に描く。
-                // 線はマイク遅延補正ぶん過去の時刻に描かれるため、再生位置（縦線）上に描くと
-                // 線の先端と点が離れて見える（スマホの広い画面で特に目立つ）。
-                let dotX = playX;
-                if (state.isPlaying && pitchHistory && pitchHistory.length) {
-                    const last = pitchHistory[pitchHistory.length - 1];
-                    const tHead = last.time + ((last.visOff != null) ? (last.visOff - 0.05) : 0);
-                    if (tHead <= eff && eff - tHead < 1.0) dotX = playX + (tHead - eff) * pxPerSec;
-                }
-
                 ctx.save();
                 ctx.beginPath();
-                ctx.arc(dotX, y, 5, 0, Math.PI * 2);
+                ctx.arc(playX, y, 5, 0, Math.PI * 2);
                 ctx.fillStyle = state.meterColor || '#00FFFF'; // Cyan or Green
                 ctx.shadowBlur = 15;
                 ctx.shadowColor = state.meterColor || '#00FFFF';

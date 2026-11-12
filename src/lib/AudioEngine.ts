@@ -1830,8 +1830,29 @@ export class AudioEngine {
 
     draw() {
         if (this.visualizer) {
-            this.visualizer.draw(this.state);
+            this.visualizer.draw(this.viewState());
         }
+    }
+
+    /**
+     * 画面表示の遅れ（秒）。歌った線はマイク遅延補正＋解析窓のぶん過去の時刻に記録されるので、
+     * 表示全体（ガイド・小節線・線）をこのぶん過去にずらし、再生位置の縦線＝「今歌っている音が
+     * ガイドのどこに当たるか」になるようにする。判定・採点の時刻には一切影響しない。
+     */
+    viewLagSec(): number {
+        if (!this.micData || !this.audioCtx) return 0;
+        return (this.state.inputLatency || 0) + this.analysisCenterSec();
+    }
+
+    /** 表示用の timelineOffsetSec（描画・タップ位置の換算はすべてこれを使う） */
+    viewOffsetSec(): number {
+        return this.state.timelineOffsetSec - this.viewLagSec();
+    }
+
+    /** 描画・ヒットテスト用の状態（timelineOffsetSec だけ表示用に置き換えたもの） */
+    viewState(): AudioEngineState {
+        const lag = this.viewLagSec();
+        return lag ? { ...this.state, timelineOffsetSec: this.state.timelineOffsetSec - lag } : this.state;
     }
 
     // Tools

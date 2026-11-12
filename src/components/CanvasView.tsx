@@ -96,7 +96,7 @@ export function CanvasView() {
                 const centerXOnCanvas = lastTouchCenterX - rect.left;
                 const playX = getPlayX(canvas.width);
                 const ppm = audioEngine.state.pxPerSec;
-                const eff = audioEngine.state.playbackPosition + audioEngine.state.timelineOffsetSec;
+                const eff = audioEngine.state.playbackPosition + audioEngine.viewOffsetSec();
                 anchorTime = eff + (centerXOnCanvas - playX) / ppm;
 
                 audioEngine.startSeek();
@@ -124,7 +124,7 @@ export function CanvasView() {
                     // Calculate new playback position to keep anchorTime at the same screen position
                     // anchorTime should appear at centerXOnCanvas
                     // newPlaybackPos = anchorTime - timelineOffset - (centerXOnCanvas - playX) / newPpm
-                    const newPos = Math.max(0, anchorTime - audioEngine.state.timelineOffsetSec - (centerXOnCanvas - playX) / newPpm);
+                    const newPos = Math.max(0, anchorTime - audioEngine.viewOffsetSec() - (centerXOnCanvas - playX) / newPpm);
 
                     audioEngine.updateState({
                         pxPerSec: newPxPerSec,
@@ -142,7 +142,7 @@ export function CanvasView() {
                 audioEngine.updateState({ playbackPosition: newPos });
 
                 // Update anchor time for the new center position
-                const eff = newPos + audioEngine.state.timelineOffsetSec;
+                const eff = newPos + audioEngine.viewOffsetSec();
                 anchorTime = eff + (centerXOnCanvas - playX) / ppm;
             }
 
@@ -185,7 +185,8 @@ export function CanvasView() {
         canvas.setPointerCapture(e.pointerId);
         startPosRef.current = { x, y };
 
-        const { editTool, timelineOffsetSec, verticalOffset, selectedNote, playbackPosition, pxPerSec, guideOctaveOffset } = audioEngine.state;
+        const timelineOffsetSec = audioEngine.viewOffsetSec();
+        const { editTool, verticalOffset, selectedNote, playbackPosition, pxPerSec, guideOctaveOffset } = audioEngine.state;
         const offset = guideOctaveOffset * 12;
 
         // --- RULER SEEK (Top 30px) ---
@@ -197,7 +198,7 @@ export function CanvasView() {
             const newPos = Math.max(0, targetTime - timelineOffsetSec);
 
             // Check for Loop Handle Hit
-            const loopHit = audioEngine.visualizer?.getLoopHandleHit(x, y, audioEngine.state);
+            const loopHit = audioEngine.visualizer?.getLoopHandleHit(x, y, audioEngine.viewState());
             if (loopHit) {
                 if (loopHit === 'start') {
                     modeRef.current = 'resize_loop_start';
@@ -247,7 +248,7 @@ export function CanvasView() {
         }
 
         // ... (rest of hit tests)
-        const result = audioEngine.visualizer?.getQuantizedTimeMidi(x, y, audioEngine.state);
+        const result = audioEngine.visualizer?.getQuantizedTimeMidi(x, y, audioEngine.viewState());
         // ...
 
         // (Copy Note Body logic)
@@ -426,7 +427,7 @@ export function CanvasView() {
         if (modeRef.current === 'resize_loop_start') {
             const ppm = pxPerSec;
             const playX = getPlayX(canvas.width);
-            const eff = audioEngine.state.playbackPosition + audioEngine.state.timelineOffsetSec;
+            const eff = audioEngine.state.playbackPosition + audioEngine.viewOffsetSec();
             const currentTime = eff + (x - playX) / ppm;
 
             // Ensure start < end
@@ -441,7 +442,7 @@ export function CanvasView() {
         if (modeRef.current === 'resize_loop_end') {
             const ppm = pxPerSec;
             const playX = getPlayX(canvas.width);
-            const eff = audioEngine.state.playbackPosition + audioEngine.state.timelineOffsetSec;
+            const eff = audioEngine.state.playbackPosition + audioEngine.viewOffsetSec();
             const currentTime = eff + (x - playX) / ppm;
 
             // Ensure end > start
@@ -456,7 +457,7 @@ export function CanvasView() {
         if (modeRef.current === 'set_loop') {
             const ppm = pxPerSec;
             const playX = getPlayX(canvas.width);
-            const eff = audioEngine.state.playbackPosition + audioEngine.state.timelineOffsetSec;
+            const eff = audioEngine.state.playbackPosition + audioEngine.viewOffsetSec();
             const currentTime = eff + (x - playX) / ppm;
 
             // Anchor is startStateRef.current.noteTime
@@ -500,7 +501,7 @@ export function CanvasView() {
             return;
         }
 
-        const result = audioEngine.visualizer?.getQuantizedTimeMidi(x, y, audioEngine.state);
+        const result = audioEngine.visualizer?.getQuantizedTimeMidi(x, y, audioEngine.viewState());
         if (!result || !targetNoteRef.current) return;
         const n = targetNoteRef.current;
 
