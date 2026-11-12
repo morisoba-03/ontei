@@ -13,11 +13,12 @@ declare global {
 
 import { AnalysisProcessor } from './audio/AnalysisProcessor';
 import { v3WindowSamples } from './PitchEngineV3';
+import { fitOctaveToRange, type OctaveFit } from './guideRange';
 import { midiToFreq } from './pitch';
 import { Visualizer } from './Visualizer';
 import { extractMelodyNotesFromBuffer } from './MelodyExtractor';
 import { PracticePatternGenerator } from './PracticePatternGenerator';
-import { toast } from '../components/Toast';
+import { toast } from './toast';
 
 export class AudioEngine {
     state: AudioEngineState;
@@ -25,7 +26,7 @@ export class AudioEngine {
     analysisProcessor: AnalysisProcessor;
     scoreAnalyzer: import('./ScoreAnalyzer').ScoreAnalyzer;
 
-    // Sampler (Salamander Grand Piano via Tone.js CDN)
+    // Sampler (Salamander Grand Piano, public/samples/salamander)
     pianoBuffers: Record<string, AudioBuffer> = {};
     pianoLoadPromise: Promise<void> | null = null;
     static readonly PIANO_SAMPLES: { name: string, midi: number }[] = [
@@ -225,15 +226,15 @@ export class AudioEngine {
             // Key Change
             transposeOffset: 0,
             isParticlesEnabled: true,
-            noteNotation: 'alphabet',
+            noteNotation: 'katakana', // 新規ユーザーはドレミ表記（年配の方にもわかりやすい）
             metronomeMode: 'off',
             inputLatency: 0.12, // 120ms default latency compensation
             showPitchDeviation: true,
             showTuner: true,
             showTolerancePreview: false,
             markers: [],
-            pitchEngineVersion: 'v3',
             octaveFreeJudge: true,
+            uiMode: 'simple',
             autoOctaveEstimate: true,
             whistleLowMidi: 72,
             whistleComfortMidi: 84,
@@ -260,7 +261,8 @@ export class AudioEngine {
         const Ctx = window.AudioContext || window.webkitAudioContext;
         const tempCtx = new Ctx();
 
-        const baseUrl = 'https://tonejs.github.io/audio/salamander/';
+        // Salamander Grand Piano（Alexander Holm, CC BY 3.0）。外部サイトに依存しないよう自前で配信
+        const baseUrl = `${import.meta.env.BASE_URL}samples/salamander/`;
 
         const promises = AudioEngine.PIANO_SAMPLES.map(async ({ name }) => {
             try {
@@ -461,7 +463,6 @@ export class AudioEngine {
         // represents the CENTER of the analysis window (fftSize/2 samples ago — ~85 ms on
         // mobile's 8192 buffer vs ~11 ms on PC's 2048). Look up the guide at that moment.
         // v3 はバッファ末尾の約 43ms だけを解析するので、窓の中心もそのぶん新しい。
-        const engineVersion = this.state.pitchEngineVersion || 'v3';
         const bufferCenterSec = this.analysisCenterSec();
         const eff = this.state.playbackPosition + this.state.timelineOffsetSec;
         const guideEff = eff - (this.state.inputLatency || 0) - bufferCenterSec;
@@ -491,16 +492,14 @@ export class AudioEngine {
         }
 
         // Offload analysis to Worker
-        this.analysisProcessor.processAsync(this.micData, guideFreq, minRms, engineVersion, externalRms, this.state.octaveFreeJudge ?? true);
+        this.analysisProcessor.processAsync(this.micData, guideFreq, minRms, externalRms, this.state.octaveFreeJudge ?? true);
     }
 
     /** ピッチ推定が代表する時刻が「今」から何秒前か（＝実際に解析する窓の中心）。描画・ガイド参照の両方で使う */
     private analysisCenterSec(): number {
         if (!this.micData || !this.audioCtx) return 0;
         const sr = this.audioCtx.sampleRate;
-        const win = (this.state.pitchEngineVersion || 'v3') === 'v3'
-            ? v3WindowSamples(sr, this.micData.length)
-            : this.micData.length;
+        const win = v3WindowSamples(sr, this.micData.length);
         return win / 2 / sr;
     }
 
@@ -750,7 +749,6 @@ export class AudioEngine {
                     15, // Generate 15s chunks
                     this.state.bpm || 120, // Use current BPM
                     this.state.practiceConfig, // Use stored config
-                    undefined,
                     this.practiceBlocksGenerated
                 );
 
@@ -1307,6 +1305,18 @@ export class AudioEngine {
     }
 
     // Persistence
+    /** localStorage に保存する設定（ここに 1 か所でまとめる） */
+    static readonly PERSISTENT_KEYS: (keyof AudioEngineState)[] = [
+        'verticalZoom', 'pxPerSec', 'noteNotation',
+        'guideOctaveOffset',
+        'guideVolume', 'accompVolume', 'gateThreshold', 'toleranceCents',
+        'isParticlesEnabled', 'showPitchDeviation', 'inputLatency',
+        'micRenderMode', 'showTuner', 'selectedMidiTrackId',
+        'autoOctaveEstimate', 'octaveFreeJudge', 'whistleLowMidi', 'whistleComfortMidi', 'whistleHighMidi',
+        'metronomeVolume', 'metronomeTone', 'pitchSmoothing', 'tunerShowNote',
+        'a4Reference', 'showHeatmap', 'showBestGhost', 'uiMode',
+    ];
+
     private loadSettings() {
         try {
             const saved = localStorage.getItem('ontei-settings');
@@ -1314,15 +1324,7 @@ export class AudioEngine {
                 const parsed = JSON.parse(saved);
                 // Validate/Sanitize keys if needed, for now direct merge
                 // Only merge known persistent keys to avoid state corruption
-                const persistentKeys: (keyof AudioEngineState)[] = [
-                    'verticalZoom', 'pxPerSec', 'noteNotation',
-                    'guideOctaveOffset',
-                    'guideVolume', 'accompVolume', 'gateThreshold', 'toleranceCents',
-                    'isParticlesEnabled', 'showPitchDeviation', 'inputLatency',
-                    'micRenderMode', 'showTuner', 'selectedMidiTrackId', 'pitchEngineVersion',
-                    'autoOctaveEstimate', 'octaveFreeJudge', 'whistleLowMidi', 'whistleComfortMidi', 'whistleHighMidi', 'metronomeVolume', 'metronomeTone', 'pitchSmoothing', 'tunerShowNote',
-                    'a4Reference', 'showHeatmap', 'showBestGhost',
-                ];
+                const persistentKeys = AudioEngine.PERSISTENT_KEYS;
 
                 const updates: Partial<AudioEngineState> = {};
                 persistentKeys.forEach(key => {
@@ -1341,15 +1343,7 @@ export class AudioEngine {
 
     private saveSettings() {
         try {
-            const persistentKeys: (keyof AudioEngineState)[] = [
-                'verticalZoom', 'pxPerSec', 'noteNotation',
-                'guideOctaveOffset',
-                'guideVolume', 'accompVolume', 'gateThreshold', 'toleranceCents',
-                'isParticlesEnabled', 'showPitchDeviation', 'inputLatency',
-                'micRenderMode', 'showTuner', 'pitchEngineVersion',
-                'autoOctaveEstimate', 'octaveFreeJudge', 'whistleLowMidi', 'whistleComfortMidi', 'whistleHighMidi', 'metronomeVolume', 'metronomeTone', 'pitchSmoothing', 'tunerShowNote',
-                'a4Reference', 'showHeatmap', 'showBestGhost',
-            ];
+            const persistentKeys = AudioEngine.PERSISTENT_KEYS;
 
             const toSave = persistentKeys.reduce((acc, key) => {
                 (acc as Record<string, unknown>)[key] = this.state[key];
@@ -1365,8 +1359,7 @@ export class AudioEngine {
     updateState(updates: Partial<AudioEngineState>) {
 
         // 判定エンジンのバージョン切替時はアナライザ内部状態をリセット（旧エンジンの残留を防ぐ）
-        if ((updates.pitchEngineVersion !== undefined && updates.pitchEngineVersion !== this.state.pitchEngineVersion) ||
-            (updates.octaveFreeJudge !== undefined && updates.octaveFreeJudge !== this.state.octaveFreeJudge)) {
+        if ((updates.octaveFreeJudge !== undefined && updates.octaveFreeJudge !== this.state.octaveFreeJudge)) {
             this.analysisProcessor.reset();
         }
 
@@ -1408,14 +1401,7 @@ export class AudioEngine {
 
         // Auto-save on relevant changes
         // Simple check: if any persistent key is in updates, trigger save
-        const persistentKeys: (keyof AudioEngineState)[] = [
-            'verticalZoom', 'pxPerSec', 'noteNotation',
-            'guideOctaveOffset',
-            'guideVolume', 'accompVolume', 'gateThreshold', 'toleranceCents',
-            'isParticlesEnabled', 'showPitchDeviation', 'inputLatency', 'micRenderMode', 'showTuner',
-            'pitchEngineVersion', 'octaveFreeJudge', 'autoOctaveEstimate',
-            'whistleLowMidi', 'whistleComfortMidi', 'whistleHighMidi',
-        ];
+        const persistentKeys = AudioEngine.PERSISTENT_KEYS;
 
         if (Object.keys(updates).some(k => persistentKeys.includes(k as typeof persistentKeys[number]))) {
             this.saveSettings();
@@ -1917,9 +1903,7 @@ export class AudioEngine {
                 const midiNums = result.notes.map(n => n.midi);
                 if (this.state.autoOctaveEstimate) {
                     const fit = this.fitGuideOctave(result.notes);
-                    const changed = fit.offset !== this.state.guideOctaveOffset;
-                    this.state.guideOctaveOffset = fit.offset;
-                    this.notifyAutoFit(fit, changed);
+                    this.state.guideOctaveOffset = fit.offset; // 読み込み時は通知しない（設定画面で確認できる）
                 }
                 const octShift = this.state.guideOctaveOffset * 12;
                 const minMidi = Math.min(...midiNums) + octShift;
@@ -2019,7 +2003,8 @@ export class AudioEngine {
         return this.loadMidiFromBuffer(arrayBuffer);
     }
 
-    loadMidiFromBuffer(arrayBuffer: ArrayBuffer) {
+    /** noSelector=true: トラック選択画面を出さない（呼び出し側が importMidiTrack で選ぶ） */
+    loadMidiFromBuffer(arrayBuffer: ArrayBuffer, opts: { noSelector?: boolean } = {}) {
         const midi = new Midi(arrayBuffer);
         this.loadedMidi = midi;
 
@@ -2034,6 +2019,8 @@ export class AudioEngine {
         const playableTracks = candidates.filter(t => t.noteCount > 0);
 
         this.updateState({ scoreResult: null, midiAvailableTracks: candidates, transposeOffset: 0, guideOctaveOffset: 0 }); // Reset result, offsets, persist track list
+
+        if (opts.noSelector) return candidates;
 
         // Logic Refinement: Check for auto-import match BEFORE showing the selector
         if (candidates.length === 1) {
@@ -2200,43 +2187,14 @@ export class AudioEngine {
      *  3. それも同じなら、シフト量が小さいもの
      * キー（transposeOffset）は変更しない。notes の midi には移調を含めないこと（ここで加える）。
      */
-    fitGuideOctave(notes: { midi: number; duration?: number }[]): { offset: number; lo: number; hi: number; fits: boolean } {
-        const cur = this.state.guideOctaveOffset;
-        if (notes.length === 0) return { offset: cur, lo: 0, hi: 0, fits: true };
-        const low = this.state.whistleLowMidi ?? 72;
-        const high = this.state.whistleHighMidi ?? 103;
-        const comfort = this.state.whistleComfortMidi ?? 84;
-        const tr = this.state.transposeOffset || 0;
-
-        const items = notes
-            .map(n => ({ m: n.midi + tr, w: n.duration && n.duration > 0 ? n.duration : 1 }))
-            .sort((x, y) => x.m - y.m);
-        const totalW = items.reduce((s, it) => s + it.w, 0);
-        let acc = 0;
-        let median = items[items.length - 1].m;
-        for (const it of items) { acc += it.w; if (acc >= totalW / 2) { median = it.m; break; } }
-        const minM = items[0].m;
-        const maxM = items[items.length - 1].m;
-
-        let best = { offset: cur, out: Infinity, center: Infinity };
-        for (let k = -4; k <= 4; k++) {
-            const sh = k * 12;
-            let out = 0;
-            for (const it of items) {
-                const m = it.m + sh;
-                if (m < low) out += (low - m) * it.w;
-                else if (m > high) out += (m - high) * it.w;
-            }
-            out /= totalW;
-            const center = Math.abs(median + sh - comfort);
-            const better =
-                out < best.out - 1e-9 ||
-                (Math.abs(out - best.out) <= 1e-9 && (center < best.center - 1e-9 ||
-                    (Math.abs(center - best.center) <= 1e-9 && Math.abs(k) < Math.abs(best.offset))));
-            if (better) best = { offset: k, out, center };
-        }
-        const sh = best.offset * 12;
-        return { offset: best.offset, lo: minM + sh, hi: maxM + sh, fits: minM + sh >= low && maxM + sh <= high };
+    fitGuideOctave(notes: { midi: number; duration?: number }[]): OctaveFit {
+        return fitOctaveToRange(notes, {
+            low: this.state.whistleLowMidi ?? 72,
+            high: this.state.whistleHighMidi ?? 103,
+            comfort: this.state.whistleComfortMidi ?? 84,
+            transpose: this.state.transposeOffset || 0,
+            current: this.state.guideOctaveOffset,
+        });
     }
 
     /** 今読み込まれているガイド（MIDI ノート or 音声解析ノート）。オクターブ・移調を含まない素の音 */
@@ -2265,17 +2223,17 @@ export class AudioEngine {
         }
         const r = this.fitGuideOctave(notes);
         this.updateState({ guideOctaveOffset: r.offset });
-        this.notifyAutoFit(r, true);
+        this.notifyAutoFit(r);
         return true;
     }
 
-    private notifyAutoFit(r: { offset: number; fits: boolean }, always: boolean) {
+    private notifyAutoFit(r: { offset: number; fits: boolean }) {
         const sign = r.offset > 0 ? '+' : '';
-        if (!r.fits) {
-            toast.show(`ガイドを ${sign}${r.offset} オクターブに調整しました（曲の音域が広く、一部が口笛の音域外です）`, 'info', { duration: 4000 });
-        } else if (always) {
-            toast.show(`ガイドを ${sign}${r.offset} オクターブに調整しました`, 'info', { duration: 3000 });
-        }
+        toast.show(
+            r.fits
+                ? `ガイドを ${sign}${r.offset} オクターブに調整しました`
+                : `ガイドを ${sign}${r.offset} オクターブに調整しました（曲の音域が広く、一部が口笛の音域外です）`,
+            'info', { duration: 3500 });
     }
 
     importMidiTrack(trackIndex: number, transpose: number = 0) {
@@ -2378,9 +2336,7 @@ export class AudioEngine {
             // オクターブ自動推定: 口笛で吹きやすい音域へガイドを移動（キーは変えない）
             if (this.state.autoOctaveEstimate) {
                 const fit = this.fitGuideOctave(ghostNotes);
-                const changed = fit.offset !== this.state.guideOctaveOffset;
-                this.state.guideOctaveOffset = fit.offset;
-                this.notifyAutoFit(fit, changed);
+                this.state.guideOctaveOffset = fit.offset; // 読み込み時は通知しない（設定画面で確認できる）
             }
 
             // 音域全体が見えるよう verticalOffset を自動調整（縦ズームは変えない）
@@ -2691,7 +2647,7 @@ export class AudioEngine {
             if (detectedAt !== -1) {
                 // Latency = Measured Time - Scheduled Start Time
                 // Note: detectedAt is likely slightly AFTER the event due to JS event loop and buffer size.
-                let latency = detectedAt - startTime;
+                const latency = detectedAt - startTime;
 
                 // Adjustment: Analyzer buffer window creates a delay. 
                 // We detected it *after* it filled the buffer. 

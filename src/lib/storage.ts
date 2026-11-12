@@ -1,3 +1,8 @@
+import type { PresetSong } from './presetSongs';
+
+/** IndexedDB に保存する曲（同期用に updatedAt を持つ） */
+export type StoredSong = PresetSong & { updatedAt?: number; createdAt?: number };
+
 
 const DB_NAME = 'ontei_db';
 const DB_VERSION = 1;
@@ -46,7 +51,7 @@ export const storage = {
     },
 
     async loadMidi(): Promise<ArrayBuffer | null> {
-        const result = await this._get('lastMidi');
+        const result = await this._get<ArrayBuffer>('lastMidi');
         return result ?? null;
     },
 
@@ -55,7 +60,7 @@ export const storage = {
     },
 
     async loadBacking(): Promise<ArrayBuffer | null> {
-        const result = await this._get('lastBacking');
+        const result = await this._get<ArrayBuffer>('lastBacking');
         return result ?? null;
     },
 
@@ -63,12 +68,12 @@ export const storage = {
      * 曲リストを保存する。同期のため、変わった曲には updatedAt を付け、消えた曲は削除記録（tombstone）に残す。
      * fromSync=true は同期処理からの書き込み（印を付け直さない・同期を再予約しない）。
      */
-    async saveUserPresets(presets: any[], opts: { fromSync?: boolean } = {}) {
+    async saveUserPresets(presets: StoredSong[], opts: { fromSync?: boolean } = {}) {
         if (!opts.fromSync) {
             const now = Date.now();
-            const old: any[] = (await this._get('user_presets')) || [];
+            const old: StoredSong[] = (await this._get<StoredSong[]>('user_presets')) || [];
             const oldMap = new Map(old.map(s => [s.id, s]));
-            const strip = (s: any) => { const { updatedAt: _u, ...rest } = s || {}; void _u; return JSON.stringify(rest); };
+            const strip = (s: StoredSong) => { const { updatedAt: _u, ...rest } = s || {}; void _u; return JSON.stringify(rest); };
             presets = presets.map(s => {
                 const prev = oldMap.get(s.id);
                 if (!prev || strip(prev) !== strip(s)) return { ...s, updatedAt: now };
@@ -77,7 +82,7 @@ export const storage = {
             const keep = new Set(presets.map(s => s.id));
             const removed = old.filter(s => !keep.has(s.id));
             if (removed.length) {
-                const tomb: Record<string, number> = (await this._get('sync_tombstones')) || {};
+                const tomb: Record<string, number> = (await this._get<Record<string, number>>('sync_tombstones')) || {};
                 for (const s of removed) tomb[s.id] = now;
                 await this._put('sync_tombstones', tomb);
             }
@@ -87,7 +92,7 @@ export const storage = {
     },
 
     async loadTombstones(): Promise<Record<string, number>> {
-        return (await this._get('sync_tombstones')) || {};
+        return (await this._get<Record<string, number>>('sync_tombstones')) || {};
     },
 
     async saveTombstones(t: Record<string, number>) {
@@ -100,8 +105,8 @@ export const storage = {
         return keys.filter(k => k.startsWith('best_')).map(k => k.slice(5));
     },
 
-    async loadUserPresets(): Promise<any[]> {
-        return (await this._get('user_presets')) || [];
+    async loadUserPresets(): Promise<StoredSong[]> {
+        return (await this._get<StoredSong[]>('user_presets')) || [];
     },
 
     // A案: Per-song MIDI binary storage
@@ -110,7 +115,7 @@ export const storage = {
     },
 
     async loadSongMidi(id: string): Promise<ArrayBuffer | null> {
-        const result = await this._get(`song_midi_${id}`);
+        const result = await this._get<ArrayBuffer>(`song_midi_${id}`);
         return result instanceof ArrayBuffer ? result : null;
     },
 
@@ -125,7 +130,7 @@ export const storage = {
     },
 
     async loadBestRun(sig: string): Promise<{ score: number; ghost: unknown[] } | null> {
-        const result = await this._get(`best_${sig}`);
+        const result = await this._get<{ score: number; ghost: unknown[] }>(`best_${sig}`);
         return result && typeof result.score === 'number' ? result : null;
     },
 
@@ -139,7 +144,7 @@ export const storage = {
         });
     },
 
-    async _put(key: string, value: any) {
+    async _put(key: string, value: unknown) {
         const db = await getDb();
         return new Promise<void>((resolve, reject) => {
             const tx = db.transaction(STORE_NAME, 'readwrite');
@@ -150,7 +155,7 @@ export const storage = {
         });
     },
 
-    async _get(key: string): Promise<any | undefined> {
+    async _get<T = unknown>(key: string): Promise<T | undefined> {
         const db = await getDb();
         return new Promise((resolve, reject) => {
             const tx = db.transaction(STORE_NAME, 'readonly');

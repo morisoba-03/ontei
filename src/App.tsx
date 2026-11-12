@@ -20,6 +20,8 @@ import { storage } from './lib/storage';
 import { Trophy, Trash2, BookOpen, Save, Mic, ArrowLeftRight, ListMusic, ChevronDown, Check } from 'lucide-react';
 import { cn } from './lib/utils';
 import { MidiTrackSelector } from './components/MidiTrackSelector';
+import { InAppBrowserNotice } from './components/InAppBrowserNotice';
+import { setKeepAwake } from './lib/wakeLock';
 
 const VISITED_KEY = 'ontei_visited';
 const MIC_EXPLAINED_KEY = 'ontei_mic_explained';
@@ -34,7 +36,9 @@ function App() {
   const [showSaveModal, setShowSaveModal] = useState(false);
   const [showImportExport, setShowImportExport] = useState(false);
   const [showScalePractice, setShowScalePractice] = useState(false);
-  const [showWelcome, setShowWelcome] = useState(false);
+  const [showWelcome, setShowWelcome] = useState(() => {
+    try { return !localStorage.getItem(VISITED_KEY); } catch { return false; }
+  });
   const [showMicPermission, setShowMicPermission] = useState(false);
   const [showResume, setShowResume] = useState(false);
   const [showTrackSelector, setShowTrackSelector] = useState(false);
@@ -45,13 +49,6 @@ function App() {
   const [recordingBlob, setRecordingBlob] = useState<Blob | null>(null);
   const [state, setState] = useState(audioEngine.state);
   const [isMicOn, setIsMicOn] = useState(!!audioEngine.micStream);
-
-  // Show welcome screen only on first visit
-  useEffect(() => {
-    if (!localStorage.getItem(VISITED_KEY)) {
-      setShowWelcome(true);
-    }
-  }, []);
 
   const handleWelcomeClose = () => {
     localStorage.setItem(VISITED_KEY, '1');
@@ -80,6 +77,13 @@ function App() {
     }, 600);
     return () => clearTimeout(timer);
   }, []);
+
+  // 再生中は画面が自動で消えないようにする
+  useEffect(() => {
+    setKeepAwake(state.isPlaying);
+  }, [state.isPlaying]);
+
+  const simple = state.uiMode !== 'full';
 
   useEffect(() => {
     return engine.subscribe(() => {
@@ -178,24 +182,24 @@ function App() {
               <BookOpen className="w-5 h-5" /> <span>曲リスト</span>
             </button>
 
-            <button
+            {!simple && <button
               onClick={() => setShowImportExport(true)}
               className="h-11 w-12 md:w-14 rounded-lg bg-blue-500/20 text-blue-300 text-[9px] md:text-[10px] hover:bg-blue-500/30 transition-all border border-blue-500/30 flex flex-col items-center justify-center gap-0.5 leading-none p-1"
               title="インポート・エクスポート"
             >
               <ArrowLeftRight className="w-5 h-5" /> <span>入出力</span>
-            </button>
+            </button>}
 
-            <button
+            {!simple && <button
               onClick={() => setShowSaveModal(true)}
               className="h-11 w-12 md:w-14 rounded-lg bg-green-500/20 text-green-300 text-[9px] md:text-[10px] hover:bg-green-500/30 transition-all border border-green-500/30 flex flex-col items-center justify-center gap-0.5 leading-none p-1"
               title="曲リストに保存"
             >
               <Save className="w-5 h-5" /> <span>保存</span>
-            </button>
+            </button>}
 
             {/* Track Selector — shown when MIDI with multiple playable tracks is loaded */}
-            {(state.midiAvailableTracks ?? []).filter(t => t.noteCount > 0).length > 1 && (
+            {!simple && (state.midiAvailableTracks ?? []).filter(t => t.noteCount > 0).length > 1 && (
               <button
                 onClick={() => setShowTrackSelector(true)}
                 className="h-11 w-12 md:w-14 rounded-lg bg-emerald-500/20 text-emerald-300 text-[9px] md:text-[10px] hover:bg-emerald-500/30 transition-all border border-emerald-500/30 flex flex-col items-center justify-center gap-0.5 leading-none p-1"
@@ -263,19 +267,20 @@ function App() {
 
 
           {/* Reset Button */}
-          <button
+          {!simple && <button
             onClick={() => setShowReset(true)}
             className="h-8 w-8 rounded-full bg-red-500/10 text-red-400 hover:bg-red-500/20 transition-all border border-red-500/20 flex items-center justify-center"
             title="リセット"
           >
             <Trash2 className="w-4 h-4" />
-          </button>
+          </button>}
         </div>
       </div>
 
       {/* Main Area */}
       <div className="flex-1 relative min-h-0">
         <CanvasView />
+        <InAppBrowserNotice />
 
         {/* Real-time Pitch Indicator */}
         <PitchIndicator />

@@ -51,13 +51,23 @@ export function HelpModal({ onClose }: HelpModalProps) {
                             <section>
                                 <h3 className="text-white font-bold text-lg mb-3 flex items-center gap-2">
                                     <Music className="w-5 h-5 text-blue-400" />
-                                    ファイル読み込み
+                                    曲を選ぶ・読み込む
                                 </h3>
                                 <ul className="list-disc list-inside space-y-2 text-sm ml-2">
-                                    <li>画面上部の <span className="text-blue-300 font-medium">ガイド</span> から、練習したい曲のMIDIファイルまたは音声ファイルを読み込みます。</li>
-                                    <li><span className="text-purple-300 font-medium">伴奏</span> から、カラオケ音源などを読み込むと、ガイドと一緒に再生されます。</li>
-                                    <li><span className="text-pink-300 font-medium">練習曲</span> から、以前保存した曲やプリセット曲を選んで素早く読み込めます。</li>
+                                    <li>左上の <span className="text-pink-300 font-medium">曲リスト</span> から、サークルの課題曲や、自分で保存した曲（マイリスト）を選べます。</li>
+                                    <li>自分でMIDIファイルや音声ファイルを読み込むときは、下の「くわしく」を押してから、上部の <span className="text-blue-300 font-medium">入出力</span> を使います。</li>
+                                    <li>読み込んだ曲は、口笛で吹きやすい高さ（初期設定ではC5〜G7）に自動でオクターブが合います（キーは変わりません）。</li>
                                 </ul>
+                            </section>
+
+                            <section>
+                                <h3 className="text-white font-bold text-lg mb-3 flex items-center gap-2">
+                                    <Settings className="w-5 h-5 text-gray-300" />
+                                    かんたん表示とくわしい表示
+                                </h3>
+                                <div className="space-y-2 text-sm ml-2">
+                                    <p>最初は、練習に必要なボタンだけの <span className="text-white font-medium">かんたん表示</span> です。録音・ループ・マーカー・保存・入出力などを使うときは、画面下の <span className="text-white font-medium">くわしく</span> を押してください。もう一度押すと戻ります。</p>
+                                </div>
                             </section>
 
                             <section>
@@ -74,7 +84,6 @@ export function HelpModal({ onClose }: HelpModalProps) {
                                         <div className="font-bold text-orange-300 mb-1">ボーカルのみの MP3 → 折れ線ガイド</div>
                                         <div className="text-xs text-white/60">音源を自動解析し、歌の音程の動きを <span className="text-orange-400 font-medium">オレンジの折れ線</span> として配置します。しゃくり・ビブラートなどの自然な動きをそのまま目標にでき、採点も折れ線に追従します。読み込んだ MP3 の原音が「お手本」として再生されます。</div>
                                     </div>
-                                    <p className="text-white/50 text-xs">※ MP3 読み込み時は、口笛で吹きやすい音域へガイドのオクターブを自動調整します（キーは変わりません）。</p>
                                 </div>
                             </section>
 
@@ -85,8 +94,9 @@ export function HelpModal({ onClose }: HelpModalProps) {
                                 </h3>
                                 <div className="space-y-2 text-sm ml-2">
                                     <p>画面上部の <span className="inline-block px-2 py-0.5 bg-red-500/20 rounded border border-red-500/50 text-red-300 text-xs font-medium">MIC</span> ボタンでマイク入力をON/OFFします。初回はブラウザの許可が必要です。</p>
-                                    <p>マイクをONにして再生ボタンを押すと、吹いた音程が<span className="text-green-400 font-bold">緑色の線</span>でリアルタイムに描画されます。</p>
-                                    <p>録音ボタン（赤丸）を押すと、演奏を録音してあとで聴き返せます。</p>
+                                    <p>マイクをONにして再生ボタンを押すと、吹いた音程が線でリアルタイムに描画されます。お手本に合っていると<span className="text-green-400 font-bold">緑色</span>になります。</p>
+                                    <p>再生中は画面が自動で暗くならないようになっています。</p>
+                                    <p>録音ボタン（赤丸、「くわしく」表示のとき）を押すと、演奏を録音してあとで聴き返せます。</p>
                                 </div>
                             </section>
 
@@ -256,11 +266,11 @@ export function HelpModal({ onClose }: HelpModalProps) {
                             <section>
                                 <h3 className="text-white font-bold text-lg mb-3 flex items-center gap-2">
                                     <Waves className="w-5 h-5 text-violet-400" />
-                                    判定エンジン
+                                    音程の判定
                                 </h3>
                                 <div className="space-y-2 text-sm ml-2">
-                                    <p><span className="text-violet-300 font-medium">従来 (v1)</span> — ガイド音を基準にオクターブ補正・平滑化を行う、安定重視の方式です。普段はこちらが扱いやすいです。</p>
-                                    <p><span className="text-violet-300 font-medium">厳密 (v2)</span> — ガイドに依存せず、検出した音程をそのまま判定する厳密な方式です。よりシビアに自分の実力を測りたいときに。</p>
+                                    <p>波形のくり返しと、倍音の並びの両方から音の高さを決めるので、雑音に強く、1オクターブ上下に間違える誤判定がほとんどありません。</p>
+                                    <p><span className="text-violet-300 font-medium">オクターブ違いも正解にする</span> — オンにすると、お手本より何オクターブ上下で吹いても、音名が合っていれば正解として表示・採点します。</p>
                                 </div>
                             </section>
 
@@ -284,7 +294,7 @@ export function HelpModal({ onClose }: HelpModalProps) {
                                 <div className="space-y-2 text-sm ml-2">
                                     <p><span className="text-white font-medium">基準ピッチ (A4)</span> — 430〜446Hz の範囲で基準を調整できます。原曲のチューニングに合わせたいときに。</p>
                                     <p><span className="text-white font-medium">メトロノーム</span> — 音量と音色（<span className="text-white">ビープ / クリック / ウッド</span>）を選べます。鳴らすタイミング（常時・録音時のみ等）も切り替えられます。</p>
-                                    <p><span className="text-white font-medium">オクターブ自動調整</span> — ファイル読み込み時に、口笛で吹きやすい音域へガイドのオクターブを自動で合わせます（キーは変わりません）。</p>
+                                    <p><span className="text-white font-medium">オクターブ自動調整・口笛の音域</span> — 曲を読み込むと、お手本が「口笛の音域」（初期設定 C5〜G7、出しやすい音 C6）に収まるようオクターブを自動で合わせます。音域は自分に合わせて変えられ、「今の曲を音域に合わせる」で合わせ直せます。</p>
                                     <p><span className="text-white font-medium">マイク感度 (Gate)</span> — 小さな音を拾う／雑音を抑えるしきい値を調整します。</p>
                                     <p><span className="text-white font-medium">入力遅延の補正</span> — マイクや環境による遅れを補正し、判定タイミングを合わせます。</p>
                                 </div>
@@ -300,8 +310,10 @@ export function HelpModal({ onClose }: HelpModalProps) {
                                     マイクが反応しない
                                 </h3>
                                 <div className="space-y-2 text-sm ml-2">
-                                    <p>ブラウザのアドレスバー横の <span className="text-white font-medium">カメラ/マイクアイコン</span> をクリックし、このサイトへのマイク使用を「許可」に変更してください。</p>
-                                    <p className="text-white/50">iOS の場合は Safari の設定からも許可が必要なことがあります。それでも反応が弱い場合は、設定でマイク感度 (Gate) を上げてみてください。</p>
+                                    <p>ブラウザのアドレスバー横の <span className="text-white font-medium">カメラ/マイクアイコン</span> を押し、このサイトへのマイク使用を「許可」に変更してください。</p>
+                                    <p><span className="text-white font-medium">「このサイトは権限を要求できません」と出るとき（Android）</span> — 画面に浮いているアプリ（チャットのバブル、小窓の動画など）を閉じてください。それでも出るときは、設定 → アプリ → 「他のアプリの上に重ねて表示」を一時的にオフにして許可し、終わったら元に戻してください。</p>
+                                    <p><span className="text-white font-medium">LINEから開いたとき</span> — LINEの中ではマイクが使えないことがあります。右上のメニューから「ブラウザで開く」を選んでください。</p>
+                                    <p className="text-white/50">iPhone の場合は Safari の設定からも許可が必要なことがあります。それでも反応が弱い場合は、設定でマイク感度 (Gate) を上げてみてください。</p>
                                 </div>
                             </section>
 
@@ -311,7 +323,7 @@ export function HelpModal({ onClose }: HelpModalProps) {
                                     設定とデータの保存
                                 </h3>
                                 <p className="text-sm ml-2">
-                                    感度・音量・表示などの設定や、練習曲・自己ベスト記録は、お使いのブラウザに自動的に保存されます。次回も同じ環境で練習を再開できます。
+                                    感度・音量・表示などの設定や、マイリスト・自己ベスト記録は、お使いのブラウザに自動的に保存されます。次回も同じ環境で練習を再開できます。
                                 </p>
                             </section>
 
@@ -325,9 +337,14 @@ export function HelpModal({ onClose }: HelpModalProps) {
                                     <li><span className="font-bold text-white">音程が1オクターブずれて判定される:</span> 「オクターブ調整」または「オクターブ自動調整」で、ガイドを自分の音域に合わせてください。</li>
                                     <li><span className="font-bold text-white">判定が厳しすぎる／甘すぎる:</span> 設定の「厳しさプリセット」や「許容誤差」で調整できます。</li>
                                     <li><span className="font-bold text-white">タイミングがズレる:</span> 設定の「入力遅延の補正」を調整すると改善することがあります。</li>
-                                    <li><span className="font-bold text-white">練習曲が消えた:</span> 練習曲はブラウザのローカルストレージに保存されます。ブラウザのデータ削除で消えることがあるため、大切な曲は「保存」でファイルとして書き出してください。</li>
+                                    <li><span className="font-bold text-white">マイリストの曲が消えた:</span> マイリストはこの端末のブラウザの中に保存されます。ブラウザのデータを消すと消えるため、大切な曲は「入出力」から書き出しておいてください（サークルの課題曲は消えません）。</li>
                                     <li><span className="font-bold text-white">表示がおかしい:</span> ページを再読み込み（リロード）してみてください。</li>
                                 </ul>
+                            </section>
+
+                            <section>
+                                <h3 className="text-white font-bold text-lg mb-3">クレジット</h3>
+                                <p className="text-xs text-white/50 ml-2">ピアノ音源: Salamander Grand Piano（Alexander Holm, CC BY 3.0）</p>
                             </section>
                         </div>
                     )}

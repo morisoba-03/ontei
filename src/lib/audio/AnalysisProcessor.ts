@@ -1,4 +1,3 @@
-// @ts-ignore
 import AnalysisWorker from './analysis.worker?worker';
 
 export interface AnalysisResult {
@@ -29,11 +28,11 @@ export class AnalysisProcessor {
         this.worker.postMessage({ type: 'init', payload: { sampleRate, analysisRate, holdMs } });
     }
 
-    processAsync(inputBuffer: Float32Array, guideFreq: number = 0, minRms?: number, version: 'v1' | 'v2' | 'v3' = 'v3', externalRms?: number, octaveFree: boolean = true) {
+    processAsync(inputBuffer: Float32Array, guideFreq: number = 0, minRms?: number, externalRms?: number, octaveFree: boolean = true) {
         // Send buffer to worker for processing
         this.worker.postMessage({
             type: 'process',
-            payload: { buffer: inputBuffer, guideFreq, minRms, version, externalRms, octaveFree }
+            payload: { buffer: inputBuffer, guideFreq, minRms, externalRms, octaveFree }
         });
     }
 

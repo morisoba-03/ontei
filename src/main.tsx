@@ -4,6 +4,14 @@ import './index.css'
 import App from './App.tsx'
 import { initSync } from './lib/driveSync'
 
+// LINE のアプリ内ブラウザで開かれたら、外部ブラウザ（Chrome・Safari）で開き直す（1 回だけ）
+// 参考: LINE は URL に openExternalBrowser=1 が付いていると外部ブラウザで開く
+if (/\sLine\//i.test(navigator.userAgent) && !/[?&]openExternalBrowser=1/.test(location.search)) {
+  const u = new URL(location.href)
+  u.searchParams.set('openExternalBrowser', '1')
+  location.replace(u.toString())
+}
+
 initSync()
 
 createRoot(document.getElementById('root')!).render(

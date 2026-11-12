@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { X, Upload, Download, FileMusic, FileAudio, FileJson, Library, Music2, Volume2, Loader2, ArrowLeftRight } from 'lucide-react';
 import { audioEngine } from '../lib/AudioEngine';
 import { storage } from '../lib/storage';
-import { toast } from './Toast';
+import { toast } from '../lib/toast';
 import { cn } from '../lib/utils';
 import type { PresetSong } from '../lib/presetSongs';
 
@@ -81,8 +81,8 @@ export function ImportExportModal({ open, onClose }: ImportExportModalProps) {
 
                 for (const item of songs) {
                     if (!item.name || !item.notes) continue;
-                    currentMap.has(item.id) ? updated++ : added++;
-                    let entry = { ...item };
+                    if (currentMap.has(item.id)) updated++; else added++;
+                    const entry = { ...item };
                     if (midiDataMap[item.id]) {
                         try {
                             const binary = atob(midiDataMap[item.id]);

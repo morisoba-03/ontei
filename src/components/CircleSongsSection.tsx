@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { KeyRound, Loader2, Music, Users, LogOut } from 'lucide-react';
 import { audioEngine } from '../lib/AudioEngine';
-import { toast } from './Toast';
+import { toast } from '../lib/toast';
 import {
     fetchPackFile, decryptPack, loadSavedPass, savePass, clearPass, songMidiBuffer,
     type CirclePack, type CirclePackFile, type CirclePlainFile, type CircleSong,
@@ -65,12 +65,14 @@ export function CircleSongsSection({ onLoaded }: { onLoaded: () => void }) {
         try {
             audioEngine.stopPractice();
             audioEngine.stopPlayback();
-            const candidates = audioEngine.loadMidiFromBuffer(songMidiBuffer(song));
+            const candidates = audioEngine.loadMidiFromBuffer(songMidiBuffer(song), { noSelector: true });
             if (!candidates || candidates.length === 0) throw new Error('no tracks');
             const track = (song.track !== undefined && candidates.find(t => t.id === song.track && t.noteCount > 0))
                 || candidates.find(t => t.noteCount > 0);
             if (!track) throw new Error('no notes');
             audioEngine.importMidiTrack(track.id, 0);
+            // 課題曲はパートごとに別の曲として並べているので、トラック切替ボタンは出さない
+            audioEngine.updateState({ midiAvailableTracks: [track] });
             if (song.bpm) audioEngine.updateState({ bpm: song.bpm });
             audioEngine.updateState({ markers: [], loopEnabled: false, transposeOffset: 0 });
             audioEngine.startPractice({ mode: 'Midi' });

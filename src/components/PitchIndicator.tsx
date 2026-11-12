@@ -5,12 +5,14 @@ import { cn } from '../lib/utils';
 import { midiToFreq, freqToMidi } from '../lib/pitch';
 
 const NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+const NOTE_NAMES_KATA = ['ド', 'ド#', 'レ', 'レ#', 'ミ', 'ファ', 'ファ#', 'ソ', 'ソ#', 'ラ', 'ラ#', 'シ'];
 function freqToNoteName(freq: number, a4: number): string {
     if (freq <= 0) return '';
     const midi = Math.round(freqToMidi(freq, a4));
     const pc = ((midi % 12) + 12) % 12;
     const oct = Math.floor(midi / 12) - 1;
-    return NOTE_NAMES[pc] + oct;
+    const names = audioEngine.state.noteNotation === 'katakana' ? NOTE_NAMES_KATA : NOTE_NAMES;
+    return names[pc] + oct;
 }
 
 export function PitchIndicator() {
@@ -142,7 +144,7 @@ export function PitchIndicator() {
                     ) : "text-white/30"
                 )}>
                     {pitchData.currentPitch > 0 ? (
-                        isGood ? "🎯 Perfect!" :
+                        isGood ? "🎯 ぴったり！" :
                             isOk ? (pitchData.cents > 0 ? "少し高い" : "少し低い") :
                                 (pitchData.cents > 0 ? "高すぎ！" : "低すぎ！")
                     ) : "待機中..."}

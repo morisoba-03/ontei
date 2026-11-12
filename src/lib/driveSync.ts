@@ -8,7 +8,7 @@
  * ログインは Google Identity Services のトークン方式（ページ内だけで完結、サーバー不要）。
  * トークンの有効期限は約 1 時間。切れたら「同期」ボタンを 1 回タップして取り直す。
  */
-import { storage, onStorageChange } from './storage';
+import { storage, onStorageChange, type StoredSong } from './storage';
 import { mergeSnapshots, sameSnapshot, emptySnapshot, type SyncSnapshot, type SyncSong } from './syncMerge';
 
 /** Google Cloud で作った OAuth クライアント ID（設定画面で上書き可） */
@@ -152,7 +152,7 @@ function b64ToBuf(b64: string): ArrayBuffer {
 }
 
 async function localSnapshot(): Promise<SyncSnapshot> {
-    const songs = (await storage.loadUserPresets()) as SyncSong[];
+    const songs = (await storage.loadUserPresets()) as unknown as SyncSong[];
     const midi: Record<string, string> = {};
     for (const s of songs) {
         if (!s.hasMidiData) continue;
@@ -177,7 +177,7 @@ async function applyLocal(before: SyncSnapshot, merged: SyncSnapshot) {
         if (!before.best[sig] || before.best[sig].score !== r.score) await storage.saveBestRun(sig, r, { fromSync: true });
     }
     await storage.saveTombstones(merged.tombstones);
-    await storage.saveUserPresets(merged.songs, { fromSync: true });
+    await storage.saveUserPresets(merged.songs as unknown as StoredSong[], { fromSync: true });
     window.dispatchEvent(new Event('ontei-library-updated'));
 }
 

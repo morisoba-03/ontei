@@ -111,7 +111,7 @@ export async function extractMelodyNotesFromBuffer(
         // Note: analyzer expects raw float32 samples. We use the downsampled buffer 'ds'.
         // We pass targetSR (11025) as sample rate.
         // Pass minRms: 0.002 to catch quiet parts (since we did pre-emphasis)
-        const res = analyzer.analyze(frame, srd, { viterbi: true, minRms: 0.002 });
+        const res = analyzer.analyze(frame, srd, { minRms: 0.002, octaveFree: false });
 
         ftrack[wIdx] = res.freq;
         ctrack[wIdx] = res.conf;

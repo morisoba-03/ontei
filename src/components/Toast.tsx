@@ -1,46 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { CheckCircle, XCircle, AlertCircle, Info, X } from 'lucide-react';
 import { cn } from '../lib/utils';
-
-type ToastType = 'success' | 'error' | 'warning' | 'info';
-
-interface ToastAction {
-    label: string;
-    onClick: () => void;
-}
-
-interface Toast {
-    id: string;
-    message: string;
-    type: ToastType;
-    action?: ToastAction;
-}
-
-// Global toast state and functions
-let toastListeners: ((toasts: Toast[]) => void)[] = [];
-let toasts: Toast[] = [];
-
-const notifyListeners = () => {
-    toastListeners.forEach(listener => listener([...toasts]));
-};
-
-export const toast = {
-    show: (message: string, type: ToastType = 'info', options?: { action?: ToastAction; duration?: number }) => {
-        const id = crypto.randomUUID();
-        toasts.push({ id, message, type, action: options?.action });
-        notifyListeners();
-
-        const duration = options?.duration ?? (options?.action ? 8000 : 3000);
-        setTimeout(() => {
-            toasts = toasts.filter(t => t.id !== id);
-            notifyListeners();
-        }, duration);
-    },
-    success: (message: string) => toast.show(message, 'success'),
-    error: (message: string) => toast.show(message, 'error'),
-    warning: (message: string) => toast.show(message, 'warning'),
-    info: (message: string) => toast.show(message, 'info'),
-};
+import { subscribeToasts, dismissToast, type Toast } from '../lib/toast';
 
 const iconMap = {
     success: CheckCircle,
@@ -67,17 +28,10 @@ export function ToastContainer() {
     const [currentToasts, setCurrentToasts] = useState<Toast[]>([]);
 
     useEffect(() => {
-        const listener = (newToasts: Toast[]) => setCurrentToasts(newToasts);
-        toastListeners.push(listener);
-        return () => {
-            toastListeners = toastListeners.filter(l => l !== listener);
-        };
+        return subscribeToasts(setCurrentToasts);
     }, []);
 
-    const dismiss = useCallback((id: string) => {
-        toasts = toasts.filter(t => t.id !== id);
-        notifyListeners();
-    }, []);
+    const dismiss = useCallback((id: string) => dismissToast(id), []);
 
     if (currentToasts.length === 0) return null;
 

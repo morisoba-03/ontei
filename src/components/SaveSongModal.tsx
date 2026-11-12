@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { X, Save, Library, Database, Plus, RefreshCcw } from 'lucide-react';
 import { audioEngine } from '../lib/AudioEngine';
 import { storage } from '../lib/storage';
-import { toast } from './Toast';
+import { toast } from '../lib/toast';
 import { cn } from '../lib/utils';
 import type { PresetSong } from '../lib/presetSongs';
 
@@ -24,9 +24,7 @@ export function SaveSongModal({ open, onClose }: SaveSongModalProps) {
         if (!open) return;
         storage.loadUserPresets().then(songs => {
             setExistingSongs(songs);
-            if (songs.length > 0 && !selectedOverwriteId) {
-                setSelectedOverwriteId(songs[0].id);
-            }
+            if (songs.length > 0) setSelectedOverwriteId(prev => prev || songs[0].id);
         });
     }, [open]);
 

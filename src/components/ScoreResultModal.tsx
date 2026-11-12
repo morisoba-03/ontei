@@ -2,7 +2,7 @@
 import { useState } from 'react';
 import type { ScoreResult } from '../lib/ScoreAnalyzer';
 import { audioEngine } from '../lib/AudioEngine';
-import { toast } from './Toast';
+import { toast } from '../lib/toast';
 import { X, Trophy, Activity, Target, Music, Zap, TrendingUp, TrendingDown, AlertCircle, CheckCircle, Info, Repeat, ListChecks, Play } from 'lucide-react';
 import { cn } from '../lib/utils';
 

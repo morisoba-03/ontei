@@ -236,7 +236,6 @@ export class PracticePatternGenerator {
         durationSec: number = 60,
         bpm: number = 120,
         options: PracticeConfig = { mode: 'Mix' },
-        _unused: undefined = undefined,
         startBlockIndex: number = 0
     ): { notes: GhostNote[], nextStartTime: number, blocksGenerated: number } {
 

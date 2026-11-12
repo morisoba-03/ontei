@@ -13,19 +13,19 @@ export function WelcomeModal({ onClose }: Props) {
                         <Music className="w-8 h-8 text-white" />
                     </div>
                     <h1 className="text-2xl font-bold bg-gradient-to-r from-blue-400 to-indigo-400 bg-clip-text text-transparent">Ontei</h1>
-                    <p className="text-white/60 text-sm mt-1">音程訓練アプリへようこそ</p>
+                    <p className="text-white/60 text-sm mt-1">口笛・歌の音程練習アプリへようこそ</p>
                 </div>
 
                 <div className="p-6 space-y-3">
-                    <p className="text-white/50 text-xs text-center mb-4">3ステップで始められます</p>
+                    <p className="text-white/60 text-sm text-center mb-4">3ステップで始められます</p>
 
                     <div className="flex items-start gap-4 bg-blue-500/10 border border-blue-500/20 rounded-xl p-4">
                         <div className="w-8 h-8 rounded-full bg-blue-500 text-white flex items-center justify-center shrink-0 font-bold text-sm">1</div>
                         <div>
                             <div className="text-white font-medium text-sm flex items-center gap-2">
-                                <Music className="w-4 h-4 text-blue-400" /> ガイドを読み込む
+                                <Music className="w-4 h-4 text-blue-400" /> 曲を選ぶ
                             </div>
-                            <div className="text-white/50 text-xs mt-1">MIDIや音声ファイルを上部の「ガイド」ボタンから読み込みます。「練習曲」から保存済みの曲を選ぶこともできます。</div>
+                            <div className="text-white/60 text-sm mt-1">左上の「曲リスト」を押して、練習したい曲を選びます。</div>
                         </div>
                     </div>
 
@@ -33,9 +33,9 @@ export function WelcomeModal({ onClose }: Props) {
                         <div className="w-8 h-8 rounded-full bg-red-500 text-white flex items-center justify-center shrink-0 font-bold text-sm">2</div>
                         <div>
                             <div className="text-white font-medium text-sm flex items-center gap-2">
-                                <Mic className="w-4 h-4 text-red-400" /> マイクをONにして歌う
+                                <Mic className="w-4 h-4 text-red-400" /> マイクをONにする
                             </div>
-                            <div className="text-white/50 text-xs mt-1">画面上部のマイクボタンをONにして、ガイドに合わせて歌ってください。ブラウザのマイク許可が必要です。</div>
+                            <div className="text-white/60 text-sm mt-1">右上の「MIC」を押します。「マイクを使いますか？」と出たら「許可」を押してください。</div>
                         </div>
                     </div>
 
@@ -43,9 +43,9 @@ export function WelcomeModal({ onClose }: Props) {
                         <div className="w-8 h-8 rounded-full bg-green-500 text-white flex items-center justify-center shrink-0 font-bold text-sm">3</div>
                         <div>
                             <div className="text-white font-medium text-sm flex items-center gap-2">
-                                <BarChart3 className="w-4 h-4 text-green-400" /> 音程を確認・練習
+                                <BarChart3 className="w-4 h-4 text-green-400" /> ▶ を押して吹く
                             </div>
-                            <div className="text-white/50 text-xs mt-1">歌った音程が緑色の線でリアルタイム表示されます。ガイドとのずれを見ながら繰り返し練習しましょう。</div>
+                            <div className="text-white/60 text-sm mt-1">お手本（横の棒）に合わせて吹くと、吹いた音が線で表示されます。合っていると緑色になります。</div>
                         </div>
                     </div>
                 </div>

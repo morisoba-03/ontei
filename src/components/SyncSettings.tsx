@@ -4,7 +4,7 @@ import {
     getSyncStatus, subscribeSync, syncNow, connectSync, disconnectSync, preloadSync,
     getClientId, setClientId, isSyncEnabled, type SyncStatus,
 } from '../lib/driveSync';
-import { toast } from './Toast';
+import { toast } from '../lib/toast';
 
 function formatSyncTime(ts: number | null): string {
     if (!ts) return '未同期';
@@ -23,8 +23,9 @@ function useSyncStatus(): SyncStatus {
 /** 曲リストの見出しに置く小さな同期ボタン（同期を使っているときだけ表示） */
 export function SyncButton() {
     const s = useSyncStatus();
-    useEffect(() => { preloadSync(); }, []);
-    if (!isSyncEnabled()) return null;
+    const enabled = isSyncEnabled();
+    useEffect(() => { if (enabled) preloadSync(); }, [enabled]);
+    if (!enabled) return null;
     const busy = s.phase === 'syncing';
     return (
         <button

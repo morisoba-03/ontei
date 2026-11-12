@@ -4,6 +4,7 @@ import { audioEngine } from '../lib/AudioEngine';
 import { useState, useEffect, useRef } from 'react';
 import { HelpModal } from './HelpModal';
 import { SyncSettings } from './SyncSettings';
+import { isSyncEnabled } from '../lib/driveSync';
 import type { AudioEngineState } from '../lib/types';
 
 const NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
@@ -17,6 +18,20 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
     const [isCalibrating, setIsCalibrating] = useState(false);
     const [micLevel, setMicLevel] = useState(0);
     const rafRef = useRef<number | null>(null);
+
+    // PCとスマホの同期は管理者（作者）専用。同期済みの端末か、バージョン表示を 5 回タップした端末だけに出す
+    const [showSync, setShowSync] = useState(() => {
+        try { return isSyncEnabled() || localStorage.getItem('ontei-owner') === '1'; } catch { return isSyncEnabled(); }
+    });
+    const versionTaps = useRef<number[]>([]);
+    const onVersionTap = () => {
+        const now = Date.now();
+        versionTaps.current = [...versionTaps.current.filter(t => now - t < 3000), now];
+        if (versionTaps.current.length >= 5) {
+            try { localStorage.setItem('ontei-owner', '1'); } catch { /* ignore */ }
+            setShowSync(true);
+        }
+    };
 
     useEffect(() => {
         return audioEngine.subscribe(() => setState(audioEngine.state));
@@ -79,7 +94,10 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
                     <h3 className="font-bold flex items-center gap-2">
                         <span className="w-2 h-6 bg-blue-500 rounded-full" />
                         <span>設定</span>
-                        <span className="text-xs font-normal text-white/30 bg-white/10 px-1.5 py-0.5 rounded ml-2">{APP_VERSION}</span>
+                        <span
+                            onClick={onVersionTap}
+                            className="text-xs font-normal text-white/30 bg-white/10 px-1.5 py-0.5 rounded ml-2 select-none"
+                        >{APP_VERSION}</span>
                     </h3>
                     <div className="flex items-center gap-1">
                         <button
@@ -98,15 +116,29 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
                 <div className="p-5 space-y-6 overflow-y-auto overscroll-contain flex-1 min-h-0">
 
                     {/* ── 表示設定 ── */}
+                    {showSync && (
                     <div className="bg-white/5 rounded-lg overflow-hidden border border-white/5">
                         <div className="px-4 py-2 bg-white/10 text-xs font-bold uppercase tracking-wider text-white/70">PCとスマホの同期（Googleドライブ）</div>
                         <div className="p-4">
                             <SyncSettings />
                         </div>
                     </div>
+                    )}
                     <div className="bg-white/5 rounded-lg overflow-hidden border border-white/5">
                         <div className="px-4 py-2 bg-white/10 text-xs font-bold uppercase tracking-wider text-white/70">表示</div>
                         <div className="p-4 space-y-6">
+
+                            {/* 表示モード */}
+                            <div className="space-y-2">
+                                <div className="flex justify-between text-sm items-center">
+                                    <span>画面のボタン</span>
+                                    <div className="flex bg-white/5 rounded-lg p-1 text-xs">
+                                        <button onClick={() => update('uiMode', 'simple')} className={`px-3 py-1.5 rounded-md transition-colors ${(state.uiMode ?? 'simple') === 'simple' ? 'bg-blue-500 text-white' : 'text-white/50 hover:text-white'}`}>かんたん</button>
+                                        <button onClick={() => update('uiMode', 'full')} className={`px-3 py-1.5 rounded-md transition-colors ${state.uiMode === 'full' ? 'bg-blue-500 text-white' : 'text-white/50 hover:text-white'}`}>くわしく</button>
+                                    </div>
+                                </div>
+                                <p className="text-[10px] text-white/30 leading-relaxed">かんたん: 練習に使うボタンだけを表示します。くわしく: 録音・ループ・保存などすべての機能を表示します。</p>
+                            </div>
 
                             {/* 音名表記 */}
                             <div className="space-y-2">
@@ -328,36 +360,14 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
                         <div className="px-4 py-2 bg-white/10 text-xs font-bold uppercase tracking-wider text-white/70">音程判定</div>
                         <div className="p-4 space-y-6">
 
-                            {/* 判定エンジン */}
-                            <div className="space-y-2">
-                                <div className="flex justify-between text-sm items-center">
-                                    <span>判定エンジン</span>
-                                    <span className="font-mono text-violet-400 bg-violet-400/10 px-2 py-0.5 rounded">{{ v1: '従来 (v1)', v2: '厳密 (v2)', v3: '高精度 (v3)' }[state.pitchEngineVersion || 'v3']}</span>
-                                </div>
-                                <div className="flex bg-white/5 rounded-lg p-1 text-xs">
-                                    <button onClick={() => update('pitchEngineVersion', 'v1')} className={`flex-1 py-1.5 rounded-md transition-colors ${(state.pitchEngineVersion || 'v3') === 'v1' ? 'bg-violet-500 text-white' : 'text-white/50 hover:text-white'}`}>従来 (v1)</button>
-                                    <button onClick={() => update('pitchEngineVersion', 'v2')} className={`flex-1 py-1.5 rounded-md transition-colors ${(state.pitchEngineVersion || 'v3') === 'v2' ? 'bg-violet-500 text-white' : 'text-white/50 hover:text-white'}`}>厳密 (v2)</button>
-                                    <button onClick={() => update('pitchEngineVersion', 'v3')} className={`flex-1 py-1.5 rounded-md transition-colors ${(state.pitchEngineVersion || 'v3') === 'v3' ? 'bg-violet-500 text-white' : 'text-white/50 hover:text-white'}`}>高精度 (v3)</button>
-                                </div>
-                                <p className="text-[10px] text-white/30 leading-relaxed">{{
-                                    v1: 'ガイド音を基準にオクターブ補正・平滑化を行う安定重視の従来方式です。',
-                                    v2: '吹いた音をほぼそのまま判定（平滑化なしでセント精度が高い）。オクターブだけはガイドに合わせて補正するので、口笛の音域でそのまま吹けます。',
-                                    v3: '波形の周期と倍音の並びの両方から音程を決め、時間方向にも追跡します。雑音に強く、機械的なオクターブ誤検出をガイドに頼らず防ぎます。',
-                                }[state.pitchEngineVersion || 'v3']}</p>
+                            {/* オクターブ違いの扱い */}
+                            <div className="flex justify-between text-sm items-center">
+                                <span>オクターブ違いも正解にする</span>
+                                <button onClick={() => update('octaveFreeJudge', !(state.octaveFreeJudge ?? true))} className={`w-10 h-5 rounded-full transition-colors relative ${(state.octaveFreeJudge ?? true) ? 'bg-violet-500' : 'bg-white/10'}`}>
+                                    <span className={`absolute top-0.5 w-4 h-4 bg-white rounded-full transition-transform duration-200 ${(state.octaveFreeJudge ?? true) ? 'left-5.5' : 'left-0.5'}`} />
+                                </button>
                             </div>
-
-                            {/* オクターブ違いの扱い（v3） */}
-                            {(state.pitchEngineVersion || 'v3') === 'v3' && (
-                                <>
-                                    <div className="flex justify-between text-sm items-center pt-2 border-t border-white/5">
-                                        <span>オクターブ違いも正解にする</span>
-                                        <button onClick={() => update('octaveFreeJudge', !(state.octaveFreeJudge ?? true))} className={`w-10 h-5 rounded-full transition-colors relative ${(state.octaveFreeJudge ?? true) ? 'bg-violet-500' : 'bg-white/10'}`}>
-                                            <span className={`absolute top-0.5 w-4 h-4 bg-white rounded-full transition-transform duration-200 ${(state.octaveFreeJudge ?? true) ? 'left-5.5' : 'left-0.5'}`} />
-                                        </button>
-                                    </div>
-                                    <p className="text-[10px] text-white/30 -mt-4 leading-relaxed">オン: ガイドより何オクターブ上下で吹いても、音名が合っていれば正解として表示・採点します。オフ: 実際に出ている高さのまま判定します。</p>
-                                </>
-                            )}
+                            <p className="text-[10px] text-white/30 -mt-4 leading-relaxed">オン: お手本より何オクターブ上下で吹いても、音名が合っていれば正解にします。オフ: 実際に出ている高さのまま判定します。</p>
 
                             {/* 判定許容誤差 */}
                             <div className="space-y-2 pt-2 border-t border-white/5">

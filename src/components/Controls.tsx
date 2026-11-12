@@ -1,11 +1,11 @@
 import { useState, useEffect, useRef } from 'react';
-import { Play, Square, Hand, Settings, Activity, Repeat, SkipBack, Music2, Music, Volume2, X, Plus, Minus, ListMusic, Flag } from 'lucide-react';
+import { Play, Square, Settings, Activity, Repeat, SkipBack, Music2, Music, Volume2, X, Plus, Minus, Flag, SlidersHorizontal } from 'lucide-react';
 import { audioEngine } from '../lib/AudioEngine';
 import { MidiTrackSelector } from './MidiTrackSelector';
 import type { MidiTrackInfo } from './MidiTrackSelector';
 import type { Marker } from '../lib/types';
 import { cn } from '../lib/utils';
-import { toast } from './Toast';
+import { toast } from '../lib/toast';
 // Unused modal imports removed since they are handled by App.tsx callbacks
 
 interface ControlsProps {
@@ -25,9 +25,9 @@ export function Controls({ onOpenSettings, onOpenPractice, onRecordingComplete, 
     const [isGuideOn, setIsGuideOn] = useState(audioEngine.state.isGuideSoundEnabled);
     const [isBackingOn, setIsBackingOn] = useState(audioEngine.state.isBackingSoundEnabled);
     const [guideVolume, setGuideVolume] = useState(audioEngine.state.guideVolume);
-    const [availableTracks, setAvailableTracks] = useState<MidiTrackInfo[]>(audioEngine.state.midiAvailableTracks || []);
     const [currentTrackIndex, setCurrentTrackIndex] = useState(audioEngine.state.selectedMidiTrackId ?? audioEngine.state.melodyTrackIndex);
     const [markers, setMarkers] = useState<Marker[]>(audioEngine.state.markers);
+    const [simple, setSimple] = useState(audioEngine.state.uiMode !== 'full');
     const [markerLoopAnchor, setMarkerLoopAnchor] = useState<string | null>(null);
     const longPressTimer = useRef<number | null>(null);
     const longPressActivated = useRef(false);
@@ -42,10 +42,7 @@ export function Controls({ onOpenSettings, onOpenPractice, onRecordingComplete, 
             setGuideVolume(audioEngine.state.guideVolume);
             setCurrentTrackIndex(audioEngine.state.selectedMidiTrackId ?? audioEngine.state.melodyTrackIndex);
             setMarkers([...audioEngine.state.markers]);
-
-            if (audioEngine.state.midiAvailableTracks) {
-                setAvailableTracks(audioEngine.state.midiAvailableTracks);
-            }
+            setSimple(audioEngine.state.uiMode !== 'full');
 
             // Check for MIDI candidates to import (triggers selector popup)
             const candidates = audioEngine.state.midiTrackCandidates;
@@ -121,8 +118,8 @@ export function Controls({ onOpenSettings, onOpenPractice, onRecordingComplete, 
             className="fixed bottom-0 left-0 right-0 bg-neutral-900 border-t border-white/10 z-50 shadow-2xl"
             style={{ paddingBottom: 'max(0.5rem, env(safe-area-inset-bottom))' }}
         >
-            <div className="w-full overflow-x-auto no-scrollbar touch-pan-x">
-              <div className="flex items-center justify-start gap-1.5 md:gap-4 px-2 md:px-4 py-2 md:py-4 min-w-max md:mx-auto">
+            <div className="w-full">
+              <div className="flex flex-wrap items-center justify-center gap-x-2 gap-y-2 md:gap-4 px-2 md:px-4 py-2 md:py-3">
 
                 {/* Left: Playback & Recording */}
                 <div className="flex items-center gap-2 shrink-0">
@@ -153,7 +150,7 @@ export function Controls({ onOpenSettings, onOpenPractice, onRecordingComplete, 
                         {isPlaying ? <Square className="w-4 h-4 md:w-5 md:h-5 fill-current" /> : <Play className="w-4 h-4 md:w-5 md:h-5 fill-current translate-x-0.5" />}
                     </button>
 
-                    <button
+                    {!simple && <button
                         onClick={toggleRecord}
                         className={cn(
                             "w-9 h-9 md:w-10 md:h-10 rounded-full flex items-center justify-center transition-all border shrink-0",
@@ -167,7 +164,7 @@ export function Controls({ onOpenSettings, onOpenPractice, onRecordingComplete, 
                             "w-4 h-4 rounded-full transition-all",
                             isRecording ? "bg-white rounded-sm" : "bg-red-500"
                         )} />
-                    </button>
+                    </button>}
                 </div>
 
                 <div className="w-px h-8 bg-white/10 shrink-0 hidden sm:block" />
@@ -210,7 +207,7 @@ export function Controls({ onOpenSettings, onOpenPractice, onRecordingComplete, 
                 </div>
 
                 {/* Backing toggle */}
-                <button
+                {!simple && <button
                     onClick={() => audioEngine.updateState({ isBackingSoundEnabled: !isBackingOn })}
                     className={cn(
                         "p-1.5 rounded-lg border transition-all shrink-0",
@@ -221,7 +218,7 @@ export function Controls({ onOpenSettings, onOpenPractice, onRecordingComplete, 
                     title={isBackingOn ? "伴奏ON" : "伴奏OFF"}
                 >
                     <Volume2 className="w-4 h-4 md:w-5 md:h-5" />
-                </button>
+                </button>}
 
                 {/* Settings — placed between backing and scale for quick access */}
                 <button
@@ -232,9 +229,8 @@ export function Controls({ onOpenSettings, onOpenPractice, onRecordingComplete, 
                     <Settings className="w-4 h-4 md:w-5 md:h-5" />
                 </button>
 
-                {/* Tempo Control (Simple +/-) */}
                 {/* Display Scale Control (visual zoom only) */}
-                <div className="flex items-center bg-white/5 border border-white/10 rounded-lg p-0.5 shrink-0">
+                {!simple && <div className="flex items-center bg-white/5 border border-white/10 rounded-lg p-0.5 shrink-0">
                     <button
                         onClick={() => {
                             const current = audioEngine.state.pxPerSec || 130;
@@ -258,7 +254,7 @@ export function Controls({ onOpenSettings, onOpenPractice, onRecordingComplete, 
                     >
                         <Plus className="w-4 h-4" />
                     </button>
-                </div>
+                </div>}
 
                 {/* BPM Control */}
                 <div className="flex items-center bg-white/5 border border-white/10 rounded-lg p-0.5 shrink-0">
@@ -297,6 +293,7 @@ export function Controls({ onOpenSettings, onOpenPractice, onRecordingComplete, 
                     </button>
                 </div>
 
+                {!simple && (<>
                 {/* Loop Toggle */}
                 <button
                     onClick={() => {
@@ -359,37 +356,10 @@ export function Controls({ onOpenSettings, onOpenPractice, onRecordingComplete, 
                     <Flag className="w-4 h-4 md:w-5 md:h-5" />
                 </button>
 
-                {/* Center: Move Tool (pan only) */}
-                <div className="flex items-center bg-white/5 rounded-full p-0.5 shrink-0">
-                    <button
-                        className="p-1.5 md:p-2 rounded-full bg-blue-600 text-white shadow-md"
-                        title="移動"
-                    >
-                        <Hand className="w-4 h-4 md:w-5 md:h-5" />
-                    </button>
-                </div>
-
                 <div className="w-px h-8 bg-white/10 shrink-0 hidden sm:block" />
 
                 {/* Right: Actions */}
-                <div className="flex items-center gap-2 shrink-0 ml-auto">
-                    {/* Track change button — shown when MIDI with multiple tracks is loaded */}
-                    {availableTracks.filter(t => t.noteCount > 0).length > 1 && (
-                        <button
-                            onClick={() => {
-                                setMidiTracks(availableTracks);
-                                setShowMidiSelector(true);
-                            }}
-                            className="flex items-center gap-1.5 px-2.5 py-2 rounded-lg border border-emerald-500/30 bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 transition-all text-xs max-w-[120px]"
-                            title="練習トラックを変更"
-                        >
-                            <ListMusic className="w-4 h-4 shrink-0" />
-                            <span className="truncate">
-                                {availableTracks.find(t => t.id === currentTrackIndex)?.name || `Track ${currentTrackIndex + 1}`}
-                            </span>
-                        </button>
-                    )}
-
+                <div className="flex items-center gap-2 shrink-0">
                     {onOpenScalePractice && (
                         <button
                             onClick={onOpenScalePractice}
@@ -411,6 +381,17 @@ export function Controls({ onOpenSettings, onOpenPractice, onRecordingComplete, 
                     )}
 
                 </div>
+                </>)}
+
+                {/* かんたん表示 ⇔ くわしい表示 */}
+                <button
+                    onClick={() => audioEngine.updateState({ uiMode: simple ? 'full' : 'simple' })}
+                    className="flex items-center gap-1 px-2.5 py-2 rounded-lg border border-white/10 bg-white/5 text-white/70 hover:text-white hover:bg-white/10 text-xs shrink-0"
+                    title={simple ? 'すべての機能を表示' : 'よく使うボタンだけにする'}
+                >
+                    <SlidersHorizontal className="w-4 h-4" />
+                    {simple ? 'くわしく' : 'かんたん'}
+                </button>
             </div>
             </div>{/* end scroll inner */}
 

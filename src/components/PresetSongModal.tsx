@@ -1,14 +1,12 @@
-import { X, Music, Star, Zap, BookOpen, Loader2, Trash2, FolderSync, AlertCircle, QrCode, ScanLine, Clock, BarChart2, SortAsc } from 'lucide-react';
+import { X, Music, Star, Zap, BookOpen, Loader2, Trash2, FolderSync, AlertCircle, Clock, BarChart2, SortAsc } from 'lucide-react';
 import { type PresetSong } from '../lib/presetSongs';
-import { QRShareModal } from './QRShareModal';
-import { QRScanModal } from './QRScanModal';
 import { audioEngine } from '../lib/AudioEngine';
 import { storage } from '../lib/storage';
 import { CircleSongsSection } from './CircleSongsSection';
 import { SyncButton } from './SyncSettings';
 import { isSyncEnabled } from '../lib/driveSync';
 import { cn } from '../lib/utils';
-import { toast } from './Toast';
+import { toast } from '../lib/toast';
 import { useState, useEffect } from 'react';
 
 interface PresetSongModalProps {
@@ -38,8 +36,6 @@ function formatRelativeTime(ts?: number): string {
 export function PresetSongModal({ open, onClose }: PresetSongModalProps) {
     const [loadingId, setLoadingId] = useState<string | null>(null);
     const [userSongs, setUserSongs] = useState<PresetSong[]>([]);
-    const [sharingQR, setSharingQR] = useState<PresetSong | null>(null);
-    const [showScanner, setShowScanner] = useState(false);
     const [sortBy, setSortBy] = useState<SortKey>('recent');
 
     useEffect(() => {
@@ -173,15 +169,6 @@ export function PresetSongModal({ open, onClose }: PresetSongModalProps) {
         }
     };
 
-    const handleQRImported = async (song: PresetSong) => {
-        const current = await storage.loadUserPresets();
-        const updated = [...current, song];
-        await storage.saveUserPresets(updated);
-        setUserSongs(updated);
-        toast.success(`「${song.name}」をインポートしました`);
-        setShowScanner(false);
-    };
-
     if (!open) return null;
 
     const sortLabels: Record<SortKey, string> = {
@@ -213,25 +200,19 @@ export function PresetSongModal({ open, onClose }: PresetSongModalProps) {
                     </button>
                 </div>
 
-                {/* Warning */}
-                <div className="mx-3 mt-3 shrink-0 flex items-start gap-2 bg-amber-500/10 border border-amber-500/30 rounded-lg px-3 py-2">
-                    <AlertCircle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
-                    <p className="text-xs text-amber-300/80">
-                        {isSyncEnabled()
-                            ? <>マイリストはGoogleドライブと同期しています。</>
-                            : <>マイリストはこのブラウザにのみ保存されます。<strong>定期的にエクスポート</strong>するか、設定の「PCとスマホの同期」を使ってください。</>}
-                    </p>
-                </div>
+                {/* Warning: マイリストがあり、同期していないときだけ */}
+                {userSongs.length > 0 && !isSyncEnabled() && (
+                    <div className="mx-3 mt-3 shrink-0 flex items-start gap-2 bg-amber-500/10 border border-amber-500/30 rounded-lg px-3 py-2">
+                        <AlertCircle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+                        <p className="text-xs text-amber-300/80">
+                            マイリストはこの端末の中だけに保存されます。機種変更の前などは「入出力」から書き出してください。
+                        </p>
+                    </div>
+                )}
 
                 {/* Toolbar */}
                 <div className="px-3 pt-2 pb-2 flex items-center gap-2 shrink-0 flex-wrap">
                     <SyncButton />
-                    <button
-                        onClick={() => setShowScanner(true)}
-                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-500/20 hover:bg-blue-500/30 border border-blue-500/30 text-xs text-blue-300 hover:text-blue-200 transition-all"
-                    >
-                        <ScanLine className="w-3.5 h-3.5" /> QRスキャン
-                    </button>
 
                     {/* Sort selector */}
                     {userSongs.length > 1 && (
@@ -259,7 +240,7 @@ export function PresetSongModal({ open, onClose }: PresetSongModalProps) {
                     {sortedSongs.length > 0 && (
                         <div className="pt-1 text-xs font-semibold text-white/40">マイリスト（この端末{syncLabel}）</div>
                     )}
-                    {sortedSongs.length === 0 ? (
+                    {sortedSongs.length === 0 ? (audioEngine.state.uiMode === 'simple' ? null :
                         <div className="flex flex-col items-center gap-3 py-10 text-white/30">
                             <FolderSync className="w-10 h-10 opacity-40" />
                             <p className="text-sm">曲が保存されていません</p>
@@ -346,13 +327,6 @@ export function PresetSongModal({ open, onClose }: PresetSongModalProps) {
                                     {!isLoading && (
                                         <div className="absolute top-1/2 -translate-y-1/2 right-2 flex flex-col gap-1">
                                             <button
-                                                onClick={(e) => { e.stopPropagation(); setSharingQR(song); }}
-                                                className="p-2 rounded-full hover:bg-purple-500/20 text-white/30 hover:text-purple-400 transition-colors"
-                                                title="QRコードで共有"
-                                            >
-                                                <QrCode className="w-4 h-4" />
-                                            </button>
-                                            <button
                                                 onClick={(e) => handleDeleteUserSong(e, song.id)}
                                                 className="p-2 rounded-full hover:bg-red-500/20 text-white/30 hover:text-red-400 transition-colors"
                                                 title="削除"
@@ -378,8 +352,6 @@ export function PresetSongModal({ open, onClose }: PresetSongModalProps) {
                 </div>
             </div>
 
-            {sharingQR && <QRShareModal song={sharingQR} onClose={() => setSharingQR(null)} />}
-            {showScanner && <QRScanModal onClose={() => setShowScanner(false)} onImported={handleQRImported} />}
         </div>
     );
 }
