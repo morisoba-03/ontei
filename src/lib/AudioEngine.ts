@@ -304,8 +304,33 @@ export class AudioEngine {
         this.notify();
     }
 
+    /**
+     * iPhone（iOS 17 以降の Safari）では、Web Audio は既定で「周りの音と混ぜる」扱いになり、
+     * マナーモードだと無音になる。用途に合わせて音声セッションの種類を指定する。
+     *  - 'playback': マナーモードでも鳴らす（マイクを使っていないとき）
+     *  - 'play-and-record': マイクで録りながら鳴らす
+     * 対応していないブラウザ（Android・PC）では何もしない。
+     */
+    setAudioSessionType(type: 'playback' | 'play-and-record') {
+        try {
+            const session = (navigator as Navigator & { audioSession?: { type: string } }).audioSession;
+            if (session && session.type !== type) session.type = type;
+        } catch { /* ignore */ }
+    }
+
+    /** マイクを止める（ボタンからオフにしたとき） */
+    stopMic() {
+        if (this.micStream) {
+            this.micStream.getTracks().forEach(t => t.stop());
+            this.micStream = null;
+        }
+        this.setAudioSessionType('playback');
+        this.notify();
+    }
+
     async ensureAudio() {
         if (!this.audioCtx) {
+            this.setAudioSessionType(this.micStream ? 'play-and-record' : 'playback');
             const Ctx = window.AudioContext || window.webkitAudioContext;
             if (!Ctx) throw new Error('AudioContext not supported');
             this.audioCtx = new Ctx({ latencyHint: 'interactive' });
@@ -334,6 +359,7 @@ export class AudioEngine {
             if (this.micStream) {
                 this.micStream.getTracks().forEach(t => t.stop());
             }
+            this.setAudioSessionType('play-and-record');
 
             // Use `ideal: false` instead of `false` so iOS Safari accepts the constraint
             // without throwing an OverconstrainedError (it honours `exact` constraints strictly,
@@ -403,6 +429,7 @@ export class AudioEngine {
             return true;
         } catch (e) {
             console.error('initMic failed', e);
+            this.setAudioSessionType('playback');
             return false;
         }
     }

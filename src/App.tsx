@@ -94,9 +94,7 @@ function App() {
 
   const toggleMic = useCallback(async () => {
     if (audioEngine.micStream) {
-      audioEngine.micStream.getTracks().forEach(t => t.stop());
-      audioEngine.micStream = null;
-      audioEngine.notify();
+      audioEngine.stopMic();
     } else {
       if (!localStorage.getItem(MIC_EXPLAINED_KEY)) {
         setShowMicPermission(true);

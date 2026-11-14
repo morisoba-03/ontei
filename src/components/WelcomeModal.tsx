@@ -50,6 +50,10 @@ export function WelcomeModal({ onClose }: Props) {
                     </div>
                 </div>
 
+                <p className="px-5 pb-3 text-xs text-white/50 leading-relaxed">
+                    💡 ブラウザのメニューから「ホーム画面に追加」しておくと、次からアプリのように開けて、保存した曲も消えにくくなります。
+                </p>
+
                 <div className="p-4 border-t border-white/10">
                     <button
                         onClick={onClose}

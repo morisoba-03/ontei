@@ -318,6 +318,15 @@ export function HelpModal({ onClose }: HelpModalProps) {
                             </section>
 
                             <section>
+                                <h3 className="text-white font-bold text-lg mb-3">iPhone をお使いの方へ</h3>
+                                <div className="space-y-2 text-sm ml-2">
+                                    <p><span className="text-white font-medium">お手本の音が鳴らない</span> — 本体の音量を確認してください。iOS 16 以前では、マナーモード（消音）だとお手本の音が鳴りません。消音を解除するか、iOS を最新にしてください。</p>
+                                    <p><span className="text-white font-medium">マイクをオンにすると音が小さくなる</span> — iPhone の仕組み上、マイク使用中は音量が下がることがあります。イヤホンを使うと聞き取りやすくなります。</p>
+                                    <p><span className="text-white font-medium">マイリストや設定が消えた</span> — Safari は、しばらく開かなかったサイトのデータを消すことがあります。共有ボタン →「ホーム画面に追加」から開くと消えにくくなります（課題曲は消えません）。</p>
+                                </div>
+                            </section>
+
+                            <section>
                                 <h3 className="text-white font-bold text-lg mb-3 flex items-center gap-2">
                                     <Settings className="w-5 h-5 text-gray-400" />
                                     設定とデータの保存
