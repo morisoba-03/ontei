@@ -3,6 +3,7 @@
  *  - 曲: 同じ id なら updatedAt が新しい方。削除記録（tombstone）の方が新しければ消す
  *  - MIDI: 採用した側の曲に付いている MIDI。無ければもう一方
  *  - ベスト記録: スコアが高い方
+ *  - 曲ごとのオクターブ: 変更時刻が新しい方
  */
 
 export interface SyncSong {
@@ -20,6 +21,7 @@ export interface SyncSnapshot {
     tombstones: Record<string, number>;
     midi: Record<string, string>; // id -> base64
     best: Record<string, { score: number; ghost: unknown[] }>;
+    oct?: Record<string, { o: number; t: number }>; // 曲シグネチャ -> オクターブ（古いデータには無い）
 }
 
 export const emptySnapshot = (): SyncSnapshot => ({ v: 1, savedAt: 0, songs: [], tombstones: {}, midi: {}, best: {} });
@@ -60,7 +62,12 @@ export function mergeSnapshots(a: SyncSnapshot, b: SyncSnapshot): SyncSnapshot {
         if (!best[sig] || r.score > best[sig].score) best[sig] = r;
     }
 
-    return { v: 1, savedAt: Date.now(), songs, tombstones, midi, best };
+    const oct: NonNullable<SyncSnapshot['oct']> = { ...(a.oct ?? {}) };
+    for (const [sig, r] of Object.entries(b.oct ?? {})) {
+        if (!oct[sig] || r.t > oct[sig].t) oct[sig] = r;
+    }
+
+    return { v: 1, savedAt: Date.now(), songs, tombstones, midi, best, oct };
 }
 
 /** 中身が同じか（savedAt は無視） */
@@ -70,6 +77,7 @@ export function sameSnapshot(a: SyncSnapshot, b: SyncSnapshot): boolean {
         tombstones: Object.keys(s.tombstones).sort().map(k => [k, s.tombstones[k]]),
         midi: Object.keys(s.midi).sort().map(k => [k, s.midi[k].length, s.midi[k].slice(0, 64)]),
         best: Object.keys(s.best).sort().map(k => [k, s.best[k].score]),
+        oct: Object.keys(s.oct ?? {}).sort().map(k => [k, s.oct![k].o, s.oct![k].t]),
     });
     return norm(a) === norm(b);
 }

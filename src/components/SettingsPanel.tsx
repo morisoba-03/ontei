@@ -296,13 +296,13 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
                                     <span>オクターブ調整</span>
                                     <span className="font-mono text-yellow-400 bg-yellow-400/10 px-2 py-0.5 rounded">{state.guideOctaveOffset > 0 ? '+' : ''}{state.guideOctaveOffset} Oct</span>
                                 </div>
-                                <input type="range" min="-4" max="4" step="1" value={state.guideOctaveOffset} onChange={(e) => update('guideOctaveOffset', parseInt(e.target.value))} className="w-full h-2 bg-white/20 rounded-full appearance-none cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-6 [&::-webkit-slider-thumb]:h-6 [&::-webkit-slider-thumb]:bg-yellow-500 [&::-webkit-slider-thumb]:rounded-full hover:[&::-webkit-slider-thumb]:scale-110 transition-all" />
+                                <input type="range" min="-4" max="4" step="1" value={state.guideOctaveOffset} onChange={(e) => audioEngine.setGuideOctave(parseInt(e.target.value))} className="w-full h-2 bg-white/20 rounded-full appearance-none cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-6 [&::-webkit-slider-thumb]:h-6 [&::-webkit-slider-thumb]:bg-yellow-500 [&::-webkit-slider-thumb]:rounded-full hover:[&::-webkit-slider-thumb]:scale-110 transition-all" />
                                 <div className="flex justify-between text-[10px] text-white/30 px-1">
                                     <span>-4 Oct</span>
-                                    <button onClick={() => update('guideOctaveOffset', 0)} className="text-white/50 hover:text-white">Reset</button>
+                                    <button onClick={() => audioEngine.setGuideOctave(0)} className="text-white/50 hover:text-white">Reset</button>
                                     <span>+4 Oct</span>
                                 </div>
-                                <p className="text-[10px] text-white/30">移調と組み合わせて使うと±6オクターブ以上の調整が可能</p>
+                                <p className="text-[10px] text-white/30">今の曲にだけ保存され、次にその曲を開くと同じオクターブで始まります</p>
                             </div>
 
                             {/* オクターブ自動調整（口笛の音域に合わせる） */}
@@ -312,7 +312,7 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
                                     <span className={`absolute top-0.5 w-4 h-4 bg-white rounded-full transition-transform duration-200 ${(state.autoOctaveEstimate ?? true) ? 'left-5.5' : 'left-0.5'}`} />
                                 </button>
                             </div>
-                            <p className="text-[10px] text-white/30 -mt-4 leading-relaxed">曲（MIDI・音声）を読み込んだとき、ガイドが下の「口笛の音域」に収まるようオクターブを自動で合わせます（キーは変わりません）。</p>
+                            <p className="text-[10px] text-white/30 -mt-4 leading-relaxed">オクターブを一度も変えていない曲を読み込んだとき、ガイドが下の「口笛の音域」に収まるよう自動で合わせます（キーは変わりません）。</p>
 
                             <div className="space-y-2">
                                 <div className="text-sm">口笛の音域</div>

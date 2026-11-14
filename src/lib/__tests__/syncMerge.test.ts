@@ -30,4 +30,13 @@ describe('mergeSnapshots（PCとスマホの同期）', () => {
     it('どちらから合併しても同じ結果になる', () => {
         expect(sameSnapshot(mergeSnapshots(A, B), mergeSnapshots(B, A))).toBe(true);
     });
+    it('曲ごとのオクターブは新しく変えたほうを残す（古い形式のデータが相手でも消えない）', () => {
+        const pc = { ...emptySnapshot(), oct: { s1: { o: 2, t: 100 }, s2: { o: 1, t: 50 } } };
+        const phone = { ...emptySnapshot(), oct: { s1: { o: 1, t: 200 } } };
+        const m = mergeSnapshots(pc, phone);
+        expect(m.oct?.s1.o).toBe(1);
+        expect(m.oct?.s2.o).toBe(1);
+        expect(mergeSnapshots(pc, emptySnapshot()).oct?.s1.o).toBe(2);
+        expect(sameSnapshot(mergeSnapshots(pc, phone), mergeSnapshots(phone, pc))).toBe(true);
+    });
 });

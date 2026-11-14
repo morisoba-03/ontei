@@ -129,6 +129,16 @@ export const storage = {
         if (!opts.fromSync) notifyChange();
     },
 
+    // 曲ごとのオクターブ設定。キーは曲のシグネチャ（ベスト記録と同じ）。o=オクターブ, t=変更時刻
+    async loadSongOctaves(): Promise<Record<string, { o: number; t: number }>> {
+        return (await this._get<Record<string, { o: number; t: number }>>('song_octaves')) || {};
+    },
+
+    async saveSongOctaves(map: Record<string, { o: number; t: number }>, opts: { fromSync?: boolean } = {}) {
+        await this._put('song_octaves', map);
+        if (!opts.fromSync) notifyChange();
+    },
+
     async loadBestRun(sig: string): Promise<{ score: number; ghost: unknown[] } | null> {
         const result = await this._get<{ score: number; ghost: unknown[] }>(`best_${sig}`);
         return result && typeof result.score === 'number' ? result : null;

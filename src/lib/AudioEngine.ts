@@ -251,6 +251,11 @@ export class AudioEngine {
             showBestGhost: false
         };
         this.loadSettings();
+        this.loadSongOctaves();
+        if (typeof window !== 'undefined') {
+            // Drive 同期でほかの端末の設定が入ったら読み直す
+            window.addEventListener('ontei-library-updated', () => this.loadSongOctaves());
+        }
         // Start loading piano samples immediately
         this.loadPianoSamples();
     }
@@ -1335,7 +1340,7 @@ export class AudioEngine {
     /** localStorage に保存する設定（ここに 1 か所でまとめる） */
     static readonly PERSISTENT_KEYS: (keyof AudioEngineState)[] = [
         'verticalZoom', 'pxPerSec', 'noteNotation',
-        'guideOctaveOffset',
+        // guideOctaveOffset は曲ごとに保存する（songOctaves）。全体設定には入れない
         'guideVolume', 'accompVolume', 'gateThreshold', 'toleranceCents',
         'isParticlesEnabled', 'showPitchDeviation', 'inputLatency',
         'micRenderMode', 'showTuner', 'selectedMidiTrackId',
@@ -1928,10 +1933,7 @@ export class AudioEngine {
             // 折れ線はそのまま連続採点の対象になる（バー型ノートには変換しない）。
             if (result.notes.length > 0) {
                 const midiNums = result.notes.map(n => n.midi);
-                if (this.state.autoOctaveEstimate) {
-                    const fit = this.fitGuideOctave(result.notes);
-                    this.state.guideOctaveOffset = fit.offset; // 読み込み時は通知しない（設定画面で確認できる）
-                }
+                this.state.guideOctaveOffset = this.resolveSongOctave(result.notes);
                 const octShift = this.state.guideOctaveOffset * 12;
                 const minMidi = Math.min(...midiNums) + octShift;
                 const maxMidi = Math.max(...midiNums) + octShift;
@@ -2207,6 +2209,55 @@ export class AudioEngine {
         this.updateState({ phrases });
     }
 
+    // ── 曲ごとのオクターブ ──────────────────────────────
+    // 曲のシグネチャ → { o: オクターブ, t: 変更時刻 }。IndexedDB に保存し、Drive 同期にも載る
+    private songOctaves: Record<string, { o: number; t: number }> = {};
+
+    private loadSongOctaves() {
+        storage.loadSongOctaves().then(m => { this.songOctaves = m || {}; }).catch(() => {});
+    }
+
+    /** 読み込み時に使うオクターブ: 保存値 → 曲データの設定（fallback）→ 自動調整 → 0 */
+    private resolveSongOctave(notes: { midi: number; duration?: number }[], fallback?: number): number {
+        const sig = this.songSignature();
+        const saved = sig ? this.songOctaves[sig] : undefined;
+        if (saved && Number.isFinite(saved.o)) return saved.o;
+        if (fallback !== undefined) return fallback;
+        if (this.state.autoOctaveEstimate && notes.length > 0) return this.fitGuideOctave(notes).offset;
+        return 0;
+    }
+
+    /** 曲リストから読み込んだ後に呼ぶ。保存値が無いときだけ曲データの設定（古い保存形式）を使う */
+    applySongOctave(fallback?: number) {
+        const notes = this.currentGuideNotes();
+        if (notes.length === 0) return;
+        const o = this.resolveSongOctave(notes, fallback);
+        if (o === this.state.guideOctaveOffset) return;
+        this.updateState({ guideOctaveOffset: o });
+        this.centerViewOnGuide();
+    }
+
+    /** ユーザーがオクターブを変えたとき（ボタン・スライダー・自動調整ボタン）。今の曲にだけ保存する */
+    setGuideOctave(o: number) {
+        o = Math.max(-4, Math.min(4, Math.round(o)));
+        this.updateState({ guideOctaveOffset: o });
+        const sig = this.songSignature();
+        if (!sig) return;
+        this.songOctaves = { ...this.songOctaves, [sig]: { o, t: Date.now() } };
+        storage.saveSongOctaves(this.songOctaves).catch(() => {});
+    }
+
+    /** ガイド全体が見えるよう縦位置を合わせる */
+    private centerViewOnGuide() {
+        const r = this.getGuideRange();
+        if (!r) return;
+        const total = this.state.verticalZoom * 12;
+        const range = 132 - 36 - total;
+        if (range <= 0) return;
+        const offset = ((r.lo + r.hi) / 2 - total / 2 - 36) / range * 100;
+        this.updateState({ verticalOffset: Math.max(0, Math.min(100, offset)) });
+    }
+
     /**
      * ガイドを口笛の音域 [whistleLowMidi, whistleHighMidi] に収めるオクターブシフト（12 半音単位）を求める。
      *  1. 音域からはみ出す量（半音 × 音の長さ）が最小のシフトを優先する
@@ -2249,7 +2300,7 @@ export class AudioEngine {
             return false;
         }
         const r = this.fitGuideOctave(notes);
-        this.updateState({ guideOctaveOffset: r.offset });
+        this.setGuideOctave(r.offset);
         this.notifyAutoFit(r);
         return true;
     }
@@ -2360,11 +2411,8 @@ export class AudioEngine {
         if (ghostNotes.length > 0) {
             const midiNums = ghostNotes.map(n => n.midi);
 
-            // オクターブ自動推定: 口笛で吹きやすい音域へガイドを移動（キーは変えない）
-            if (this.state.autoOctaveEstimate) {
-                const fit = this.fitGuideOctave(ghostNotes);
-                this.state.guideOctaveOffset = fit.offset; // 読み込み時は通知しない（設定画面で確認できる）
-            }
+            // オクターブ: この曲で前に決めた値があればそれ、無ければ口笛の音域へ自動調整
+            this.state.guideOctaveOffset = this.resolveSongOctave(ghostNotes);
 
             // 音域全体が見えるよう verticalOffset を自動調整（縦ズームは変えない）
             // 表示音程は guideOctaveOffset 込みなので、それを反映して中心を求める

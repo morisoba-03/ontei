@@ -137,7 +137,6 @@ export function PresetSongModal({ open, onClose }: PresetSongModalProps) {
 
             // B案: Restore per-song settings + markers + loop
             audioEngine.updateState({
-                guideOctaveOffset: song.settings?.guideOctaveOffset ?? 0,
                 transposeOffset: song.settings?.transposeOffset ?? 0,
                 ...(song.settings?.toleranceCents !== undefined
                     ? { toleranceCents: song.settings.toleranceCents }
@@ -147,6 +146,8 @@ export function PresetSongModal({ open, onClose }: PresetSongModalProps) {
                 loopStart: song.loop?.start ?? 0,
                 loopEnd: song.loop?.end ?? 0,
             });
+            // オクターブは曲ごとに保存した値を優先（無ければ曲データの設定 → 自動調整）
+            audioEngine.applySongOctave(song.settings?.guideOctaveOffset);
 
             // C案: Update practice metadata
             const now = Date.now();

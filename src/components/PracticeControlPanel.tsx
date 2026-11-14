@@ -411,7 +411,7 @@ export const PracticeControlPanel: React.FC<Props> = ({ audioEngine, isPracticin
                             <div className="flex items-center gap-3">
                                 <button
                                     onClick={() => {
-                                        audioEngine.updateState({ guideOctaveOffset: audioEngine.state.guideOctaveOffset - 1 });
+                                        audioEngine.setGuideOctave(audioEngine.state.guideOctaveOffset - 1);
                                     }}
                                     className="p-1 hover:bg-white/10 rounded"
                                 >
@@ -422,7 +422,7 @@ export const PracticeControlPanel: React.FC<Props> = ({ audioEngine, isPracticin
                                 </span>
                                 <button
                                     onClick={() => {
-                                        audioEngine.updateState({ guideOctaveOffset: audioEngine.state.guideOctaveOffset + 1 });
+                                        audioEngine.setGuideOctave(audioEngine.state.guideOctaveOffset + 1);
                                     }}
                                     className="p-1 hover:bg-white/10 rounded"
                                 >

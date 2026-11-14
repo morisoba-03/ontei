@@ -164,7 +164,8 @@ async function localSnapshot(): Promise<SyncSnapshot> {
         const r = await storage.loadBestRun(sig);
         if (r) best[sig] = r;
     }
-    return { v: 1, savedAt: Date.now(), songs, tombstones: await storage.loadTombstones(), midi, best };
+    const oct = await storage.loadSongOctaves();
+    return { v: 1, savedAt: Date.now(), songs, tombstones: await storage.loadTombstones(), midi, best, oct };
 }
 
 async function applyLocal(before: SyncSnapshot, merged: SyncSnapshot) {
@@ -176,6 +177,7 @@ async function applyLocal(before: SyncSnapshot, merged: SyncSnapshot) {
     for (const [sig, r] of Object.entries(merged.best)) {
         if (!before.best[sig] || before.best[sig].score !== r.score) await storage.saveBestRun(sig, r, { fromSync: true });
     }
+    if (merged.oct) await storage.saveSongOctaves(merged.oct, { fromSync: true });
     await storage.saveTombstones(merged.tombstones);
     await storage.saveUserPresets(merged.songs as unknown as StoredSong[], { fromSync: true });
     window.dispatchEvent(new Event('ontei-library-updated'));
