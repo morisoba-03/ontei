@@ -1,11 +1,11 @@
 {
-    "name": "Ontei - Pitch Training AI",
+    "name": "Ontei 口笛練習",
     "short_name": "Ontei",
     "start_url": "./",
     "display": "standalone",
     "background_color": "#1a1a1a",
     "theme_color": "#1a1a1a",
-    "description": "AI-powered pitch training and visualization tool.",
+    "description": "口笛・歌の音程を練習できるアプリ",
     "icons": [
         {
             "src": "icon-192.png",
@@ -17,5 +17,6 @@
             "sizes": "512x512",
             "type": "image/png"
         }
-    ]
+    ],
+    "lang": "ja"
 }
